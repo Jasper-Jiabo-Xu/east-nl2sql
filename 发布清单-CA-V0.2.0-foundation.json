@@ -1,0 +1,92 @@
+{
+  "created_at_utc": "2026-08-05T12:06:02.743581+00:00",
+  "delivery_content_hash": "6cb0f385adae4e3e9e24558dc432132b43c437e8c2db5ce329c46bf68e8c4188",
+  "files": [
+    {
+      "classification": "DELIVERY_PAYLOAD",
+      "origin": "kb/working/20260727_000_goal_mode_v1/构建过程层/04_字段多字段与对象明细状态提取-V2/extension_assets_v1/20260805_扩展数据元约束资产V2_机构部门与会计科目树绑定/constraint_asset_extension_v2.sqlite",
+      "path": "05_新版本交付层/约束资产/CA-V0.2.0-foundation/constraint_assets.sqlite",
+      "sha256": "559279a20580126e599129dcf52a6931280b238a09d4d1f356de5a1cec285304",
+      "size_bytes": 442368
+    },
+    {
+      "classification": "DELIVERY_PAYLOAD",
+      "origin": "kb/working/20260727_000_goal_mode_v1/构建过程层/04_字段多字段与对象明细状态提取-V2/core_east_asset_v1/20260805_人工审批后核心库/local_code_value_library_core.sqlite",
+      "path": "05_新版本交付层/约束资产/CA-V0.2.0-foundation/装配视图与码表引用域/本地码表.sqlite",
+      "sha256": "3f9f05b47e6f4bfaada37abe06e17286228bf351edbd0a34ade2b09a2d5e82bd",
+      "size_bytes": 3411968
+    },
+    {
+      "classification": "DELIVERY_PAYLOAD",
+      "origin": "kb/working/20260727_000_goal_mode_v1/构建过程层/04_字段多字段与对象明细状态提取-V2/code_value_libraries/20260805_一表一码表_层级补全_v4/code_reference_library_v3.sqlite",
+      "path": "05_新版本交付层/约束资产/CA-V0.2.0-foundation/装配视图与码表引用域/国标与附件4码表.sqlite",
+      "sha256": "0932aecbdb4ed263ff5d8887cf1f833ecf76b220aec4fda42613df0b905de274",
+      "size_bytes": 2367488
+    },
+    {
+      "classification": "DELIVERY_PAYLOAD",
+      "origin": "kb/working/20260727_000_goal_mode_v1/构建过程层/04_字段多字段与对象明细状态提取-V2/extension_assets_v1/20260805_机构部门统一树V1_人工审查/extension_org_department_tree_v1.sqlite",
+      "path": "05_新版本交付层/约束资产/CA-V0.2.0-foundation/装配视图与码表引用域/机构部门统一树.sqlite",
+      "sha256": "f89d04c641116216db7c801b29bb7b525607d1fa030c4336ddebe7b2f647fd98",
+      "size_bytes": 1077248
+    },
+    {
+      "classification": "DELIVERY_PAYLOAD",
+      "origin": "kb/working/20260727_000_goal_mode_v1/构建过程层/04_字段多字段与对象明细状态提取-V2/extension_assets_v1/20260805_会计科目树V1_人工审批后/synthetic_chart_of_accounts_tree_v1.sqlite",
+      "path": "05_新版本交付层/约束资产/CA-V0.2.0-foundation/装配视图与码表引用域/会计科目树.sqlite",
+      "sha256": "b6a541f5a8e8a1926c03028939ac63501c00bf461bdba3fa44b5ce7b2aa714d9",
+      "size_bytes": 258048
+    },
+    {
+      "classification": "DELIVERY_PAYLOAD",
+      "origin": "kb/working/20260727_000_goal_mode_v1/构建过程层/04_字段多字段与对象明细状态提取-V2/extension_assets_v1/20260805_扩展数据元约束资产V2_机构部门与会计科目树绑定/扩展数据元约束资产V2设计.md",
+      "path": "05_新版本交付层/约束资产/CA-V0.2.0-foundation/000使用场景输入/数据元、机构部门树与会计科目树引用说明.md",
+      "sha256": "9553c79c72591fa45268ff169d62c9d534f7da4fd6a2c7401f56ab26a218ce91",
+      "size_bytes": 938
+    },
+    {
+      "classification": "DELIVERY_PAYLOAD",
+      "origin": "kb/working/20260727_000_goal_mode_v1/构建过程层/04_字段多字段与对象明细状态提取-V2/extension_assets_v1/20260805_扩展数据元约束资产V2_机构部门与会计科目树绑定/扩展资产V2构建审计.json",
+      "path": "05_新版本交付层/约束资产/CA-V0.2.0-foundation/覆盖与查询验收报告/扩展资产V2构建审计.json",
+      "sha256": "18b3a3880eeb7a19a40f2d844631c0926bd109acd488122285b8cb22fb249c69",
+      "size_bytes": 152
+    },
+    {
+      "classification": "DELIVERY_PAYLOAD",
+      "origin": "kb/working/20260727_000_goal_mode_v1/构建过程层/04_字段多字段与对象明细状态提取-V2/extension_assets_v1/20260805_会计科目树V1_人工审批后/会计科目树构建审计.json",
+      "path": "05_新版本交付层/约束资产/CA-V0.2.0-foundation/覆盖与查询验收报告/会计科目树构建审计.json",
+      "sha256": "e240c44576c4ab8955919120395e1393e18589ef6f28636ce73eaf7ad9448961",
+      "size_bytes": 721
+    },
+    {
+      "classification": "REFERENCE_CODE_SNAPSHOT",
+      "origin": "vnext/constraint_assets_v2/build_synthetic_chart_of_accounts_tree.py",
+      "path": "02_参考与旧版引入/按需引入台账/约束资产V2构建器来源快照/build_synthetic_chart_of_accounts_tree.py",
+      "sha256": "49faab647dd9718b19a712707501c0fe3eb01221fbfa049798c39a1b8baaba96",
+      "size_bytes": 37551
+    },
+    {
+      "classification": "REFERENCE_CODE_SNAPSHOT",
+      "origin": "vnext/constraint_assets_v2/approve_chart_of_accounts_tree.py",
+      "path": "02_参考与旧版引入/按需引入台账/约束资产V2构建器来源快照/approve_chart_of_accounts_tree.py",
+      "sha256": "999e52e3883aceb9a528d501a2e88a813142dbad7ae9c9e93a60d37e371d4fe5",
+      "size_bytes": 3900
+    },
+    {
+      "classification": "REFERENCE_CODE_SNAPSHOT",
+      "origin": "vnext/constraint_assets_v2/build_extension_constraint_asset_v2_chart_of_accounts.py",
+      "path": "02_参考与旧版引入/按需引入台账/约束资产V2构建器来源快照/build_extension_constraint_asset_v2_chart_of_accounts.py",
+      "sha256": "09042fdb65399cb77bcee6142120569e1b82c781783eef4be6a0aeff6b9cb6fe",
+      "size_bytes": 12416
+    },
+    {
+      "classification": "REFERENCE_CODE_SNAPSHOT",
+      "origin": "vnext/constraint_assets_v2/append_v5_foundation_v0_2_release.py",
+      "path": "02_参考与旧版引入/按需引入台账/约束资产V2构建器来源快照/append_v5_foundation_v0_2_release.py",
+      "sha256": "f287546b343b998755e0f3b0fe5b6366aa6d4371aa184e9099f8517ee858f83d",
+      "size_bytes": 8882
+    }
+  ],
+  "package_id": "CA-FOUNDATION-20260805-002",
+  "security_findings": []
+}
