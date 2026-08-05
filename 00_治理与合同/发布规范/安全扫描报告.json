@@ -1,0 +1,11 @@
+{
+  "blocked_categories": [
+    "API keys",
+    "dotenv",
+    "CoreBank databases",
+    "LLM raw responses",
+    "working/candidate assets"
+  ],
+  "findings": [],
+  "scanned_at_utc": "2026-08-05T11:24:29.056175+00:00"
+}

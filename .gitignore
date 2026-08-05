@@ -1,0 +1,12 @@
+.DS_Store
+__pycache__/
+*.py[cod]
+.env
+.env.*
+deepseek-key/
+GLM-key/
+**/api-key.txt
+**/*key*.txt
+**/deepseek_raw/
+**/glm_raw/
+**/model_cache/

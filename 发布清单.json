@@ -1,0 +1,372 @@
+{
+  "created_at_utc": "2026-08-05T11:24:29.056308+00:00",
+  "delivery_content_hash": "d636f1fe43d18acef7409eccff92c16756f9971ac7db8dc249022977a1df3395",
+  "package_id": "CA-FOUNDATION-20260805-001",
+  "tracked_file_count": 52,
+  "tracked_files": [
+    {
+      "classification": "GOVERNANCE",
+      "origin": "结构图/EAST数据集大图-V5-人工.drawio",
+      "path": "00_治理与合同/架构快照/EAST数据集大图-V5-人工.drawio",
+      "sha256": "13d8f5e12b3c2b70ef9da33ece8943ff0f72a444f4c7bc6c8365c509424054ac",
+      "size_bytes": 317649
+    },
+    {
+      "classification": "GOVERNANCE",
+      "origin": "结构图/V5项目文件树与归档规范.md",
+      "path": "00_治理与合同/架构快照/V5项目文件树与归档规范.md",
+      "sha256": "9ea791997ea9d125164663aa37384a1f0cdffe017fcc58e12cb497cc34871df4",
+      "size_bytes": 20702
+    },
+    {
+      "classification": "GOVERNANCE",
+      "origin": "结构图/V5项目上下文总览.md",
+      "path": "00_治理与合同/架构快照/V5项目上下文总览.md",
+      "sha256": "0a987931130e8c49ebaf63579d7267cf296d3678d94659c0319d94822f265747",
+      "size_bytes": 15083
+    },
+    {
+      "classification": "GOVERNANCE",
+      "origin": "结构图/agent划分与任务输入输出清单-V2.xlsx",
+      "path": "00_治理与合同/架构快照/agent划分与任务输入输出清单-V2.xlsx",
+      "sha256": "f26694522c3fae22182014a41d0cf36af1b10b5b5f19895366c8b55c83b8d831",
+      "size_bytes": 74511
+    },
+    {
+      "classification": "GOVERNANCE",
+      "origin": "结构图/约束资产V1-字段多字段与对象明细状态通路交接.md",
+      "path": "00_治理与合同/包协议/约束资产/约束资产V1-字段多字段与对象明细状态通路交接.md",
+      "sha256": "60edda7fc7b8aafc246c8dea4c6034c41f02a9eb981d255fd1fa716549074d32",
+      "size_bytes": 23006
+    },
+    {
+      "classification": "GOVERNANCE",
+      "origin": "vnext/constraint_assets_v2/Agent1_V3合同与Prompt.md",
+      "path": "00_治理与合同/提示词与固定码值/约束资产/Agent1_V3合同与Prompt.md",
+      "sha256": "20a4261e91f421746535d1b319d5c1f80df641bfd2484560c299707cd8c9f6da",
+      "size_bytes": 5870
+    },
+    {
+      "classification": "GOVERNANCE",
+      "origin": "vnext/constraint_assets_v2/V2任务合同与硬代码设计.md",
+      "path": "00_治理与合同/包协议/约束资产/V2任务合同与硬代码设计.md",
+      "sha256": "4680a1517638f65623e4f068e9d99ba8b0b934d89d22acb3f022cf3f98b82bb6",
+      "size_bytes": 4976
+    },
+    {
+      "classification": "EAST_RAW",
+      "origin": "data/raw/20260626_east_materials/east材料/5.脱敏规则-sm3密码杂凑算法.pdf",
+      "path": "01_来源冻结层/EAST原始材料快照/east材料/5.脱敏规则-sm3密码杂凑算法.pdf",
+      "sha256": "9bdd40da871e5bcb6f737e2b0b92ebfd248b973111ed588dbfda48ee7cb14505",
+      "size_bytes": 2655154
+    },
+    {
+      "classification": "EAST_RAW",
+      "origin": "data/raw/20260626_east_materials/east材料/《银行业金融机构监管数据标准化规范（2021版）填报口径》四期答疑口径整合.xlsx",
+      "path": "01_来源冻结层/EAST原始材料快照/east材料/《银行业金融机构监管数据标准化规范（2021版）填报口径》四期答疑口径整合.xlsx",
+      "sha256": "63d16175d8899105fa7308788c57c09afa91c2a511ea06aff21cbd9e75d212ce",
+      "size_bytes": 1978385
+    },
+    {
+      "classification": "EAST_RAW",
+      "origin": "data/raw/20260626_east_materials/east材料/《银行业金融机构监管数据标准化规范（2021版）填报口径（第一期）》.xlsx",
+      "path": "01_来源冻结层/EAST原始材料快照/east材料/《银行业金融机构监管数据标准化规范（2021版）填报口径（第一期）》.xlsx",
+      "sha256": "3ac20dcb18347e8a89597796216723c283f8b6a29c8483cba45a181fefe64fc7",
+      "size_bytes": 758477
+    },
+    {
+      "classification": "EAST_RAW",
+      "origin": "data/raw/20260626_east_materials/east材料/《银行业金融机构监管数据标准化规范（2021版）填报口径（第二期）》.xlsx",
+      "path": "01_来源冻结层/EAST原始材料快照/east材料/《银行业金融机构监管数据标准化规范（2021版）填报口径（第二期）》.xlsx",
+      "sha256": "4f80bb87fb854e166eae8ea854e80375d482a839424eb7c30f9f55fdda1cbba5",
+      "size_bytes": 625858
+    },
+    {
+      "classification": "EAST_RAW",
+      "origin": "data/raw/20260626_east_materials/east材料/《银行业金融机构监管数据标准化规范（2021版）填报口径（第四期）》.xlsx",
+      "path": "01_来源冻结层/EAST原始材料快照/east材料/《银行业金融机构监管数据标准化规范（2021版）填报口径（第四期）》.xlsx",
+      "sha256": "6222b3cd9c5284f221820eacd4eef1d41cef4b00077aa3e4c73a46ecfb54cfbc",
+      "size_bytes": 240888
+    },
+    {
+      "classification": "EAST_RAW",
+      "origin": "data/raw/20260626_east_materials/east材料/业务分组.xlsx",
+      "path": "01_来源冻结层/EAST原始材料快照/east材料/业务分组.xlsx",
+      "sha256": "70a4b5bf766b8d3fe39b2260fa6018e73346ad873d7bb655ee92295001b0050b",
+      "size_bytes": 138341
+    },
+    {
+      "classification": "EAST_RAW",
+      "origin": "data/raw/20260626_east_materials/east材料/规范附件1：银行业金融机构监管数据标准化规范（2021版）通用说明.doc",
+      "path": "01_来源冻结层/EAST原始材料快照/east材料/规范附件1：银行业金融机构监管数据标准化规范（2021版）通用说明.doc",
+      "sha256": "5ab48ad1ec37e4ed49e8b74f5ecfccd8729bfde296a03ac95d430930552e0fe3",
+      "size_bytes": 36107
+    },
+    {
+      "classification": "EAST_RAW",
+      "origin": "data/raw/20260626_east_materials/east材料/规范附件2：银行业金融机构监管数据标准化规范（2021版）采集技术接口说明(1).doc",
+      "path": "01_来源冻结层/EAST原始材料快照/east材料/规范附件2：银行业金融机构监管数据标准化规范（2021版）采集技术接口说明(1).doc",
+      "sha256": "6d5fb0808f366cfb6a4539776a6f953967e9c5e572eb036deb1626a4babc342f",
+      "size_bytes": 289564
+    },
+    {
+      "classification": "EAST_RAW",
+      "origin": "data/raw/20260626_east_materials/east材料/规范附件3数据元-规范附件3数据结构-规范附件4检核规则-字段粒度合并-已填充检核规则.xlsx",
+      "path": "01_来源冻结层/EAST原始材料快照/east材料/规范附件3数据元-规范附件3数据结构-规范附件4检核规则-字段粒度合并-已填充检核规则.xlsx",
+      "sha256": "9bd0f19a1afdd5c6d0e91bafb94ef06adafba748739a181e72490f4f8002c80e",
+      "size_bytes": 1949161
+    },
+    {
+      "classification": "EAST_RAW",
+      "origin": "data/raw/20260626_east_materials/east材料/规范附件3数据元-规范附件3数据结构-规范附件4检核规则-字段粒度合并.xlsx",
+      "path": "01_来源冻结层/EAST原始材料快照/east材料/规范附件3数据元-规范附件3数据结构-规范附件4检核规则-字段粒度合并.xlsx",
+      "sha256": "057782c942f4c2393782bbc86eacdd798bfa4e70dbe7da5fc40a1fe43e73890c",
+      "size_bytes": 1094793
+    },
+    {
+      "classification": "EAST_RAW",
+      "origin": "data/raw/20260626_east_materials/east材料/规范附件3：中国银保监会银行业金融机构监管数据标准化规范2021版（定稿版）.xlsx",
+      "path": "01_来源冻结层/EAST原始材料快照/east材料/规范附件3：中国银保监会银行业金融机构监管数据标准化规范2021版（定稿版）.xlsx",
+      "sha256": "e87b96e1a5647c136e99194f154aab47efd9a031453085b999b3095beaf96052",
+      "size_bytes": 640424
+    },
+    {
+      "classification": "EAST_RAW",
+      "origin": "data/raw/20260626_east_materials/east材料/规范附件4：监管标准化数据检核规则（2021版）.xlsx",
+      "path": "01_来源冻结层/EAST原始材料快照/east材料/规范附件4：监管标准化数据检核规则（2021版）.xlsx",
+      "sha256": "1e37f54111534340c6cdfce12332485f942b1636890988b3a9e7b871184b23da",
+      "size_bytes": 439775
+    },
+    {
+      "classification": "EAST_RAW",
+      "origin": "data/raw/20260626_east_materials/east材料/规范附件4：金融资产管理公司监管数据标准化规范业务代码表.xlsx",
+      "path": "01_来源冻结层/EAST原始材料快照/east材料/规范附件4：金融资产管理公司监管数据标准化规范业务代码表.xlsx",
+      "sha256": "c9031ef2098b192c7b4a0ecbc38b5e295c2b87b11d30e7d2406a510f4a281fd9",
+      "size_bytes": 359514
+    },
+    {
+      "classification": "EAST_RAW",
+      "origin": "data/raw/20260626_east_materials/east材料/资产类别（一、二、三级）码值表.xlsx",
+      "path": "01_来源冻结层/EAST原始材料快照/east材料/资产类别（一、二、三级）码值表.xlsx",
+      "sha256": "63f7c6f1a9be23480994f4d362e6210cf5af3996bdff130a95ebee6c9190c98e",
+      "size_bytes": 16814
+    },
+    {
+      "classification": "EAST_RAW",
+      "origin": "data/raw/20260626_east_materials/east材料/银保监办发〔2022〕7号中国银保监会办公厅关于印发银行金融机构监管数据标准化规范（2021版）的通知(1).pdf",
+      "path": "01_来源冻结层/EAST原始材料快照/east材料/银保监办发〔2022〕7号中国银保监会办公厅关于印发银行金融机构监管数据标准化规范（2021版）的通知(1).pdf",
+      "sha256": "a4adff5b9f3b27b1bba4762cd69641d7d5fa19bc94375027ee007bf2b141aa96",
+      "size_bytes": 227695
+    },
+    {
+      "classification": "EAST_RAW",
+      "origin": "data/raw/20260626_east_materials/east材料/附件：《银行业金融机构监管数据标准化规范（2021版）填报口径（第三期）》221014.xlsx",
+      "path": "01_来源冻结层/EAST原始材料快照/east材料/附件：《银行业金融机构监管数据标准化规范（2021版）填报口径（第三期）》221014.xlsx",
+      "sha256": "b06b3d7d6f9d9534401f70f189bd0fd3545113f022bc127b17282b282534c229",
+      "size_bytes": 370663
+    },
+    {
+      "classification": "EAST_MODEL",
+      "origin": "data/raw/20260626_east_model/east模型/业务模型梳理.xlsx",
+      "path": "01_来源冻结层/EAST模型快照/east模型/业务模型梳理.xlsx",
+      "sha256": "ef82e5c5780507bb260cc14890e42d92b6c34799b4aae047053669f66eeef3b9",
+      "size_bytes": 144998
+    },
+    {
+      "classification": "EAST_MODEL",
+      "origin": "data/raw/20260626_east_model/east模型/银监会处罚/银监会行政处罚_列表.xlsx",
+      "path": "01_来源冻结层/EAST模型快照/east模型/银监会处罚/银监会行政处罚_列表.xlsx",
+      "sha256": "cf4dfb6dd9d3638c76e3497100311136610343649498326734ecbeb3d7c9252b",
+      "size_bytes": 6120091
+    },
+    {
+      "classification": "EAST_MODEL",
+      "origin": "data/raw/20260626_east_model/east模型/银监会处罚/银监会行政处罚_文本.xlsx",
+      "path": "01_来源冻结层/EAST模型快照/east模型/银监会处罚/银监会行政处罚_文本.xlsx",
+      "sha256": "6efba7fdac46454fdc5accdc745c066ec2f0f78d2bf7d995cf177552ca53b624",
+      "size_bytes": 6368661
+    },
+    {
+      "classification": "RESTRICTED_COREBANK_SCHEMA_REFERENCE",
+      "origin": "data/raw/20260626_corebank_v4/corebank材料/info_analyzed_non_empty_datetime_adj.xlsx",
+      "path": "01_来源冻结层/CoreBank分布参考/info_analyzed_non_empty_datetime_adj.xlsx",
+      "sha256": "aa0542f1d74a35e7ed7f4620560908f60e09eb6fac52f35f0306893c4545e0a0",
+      "size_bytes": 635717
+    },
+    {
+      "classification": "REFERENCE_CODE_SNAPSHOT",
+      "origin": "vnext/constraint_assets_v2/Agent1_V3合同与Prompt.md",
+      "path": "02_参考与旧版引入/按需引入台账/约束资产V2构建器来源快照/Agent1_V3合同与Prompt.md",
+      "sha256": "20a4261e91f421746535d1b319d5c1f80df641bfd2484560c299707cd8c9f6da",
+      "size_bytes": 5870
+    },
+    {
+      "classification": "REFERENCE_CODE_SNAPSHOT",
+      "origin": "vnext/constraint_assets_v2/V2任务合同与硬代码设计.md",
+      "path": "02_参考与旧版引入/按需引入台账/约束资产V2构建器来源快照/V2任务合同与硬代码设计.md",
+      "sha256": "4680a1517638f65623e4f068e9d99ba8b0b934d89d22acb3f022cf3f98b82bb6",
+      "size_bytes": 4976
+    },
+    {
+      "classification": "REFERENCE_CODE_SNAPSHOT",
+      "origin": "vnext/constraint_assets_v2/__init__.py",
+      "path": "02_参考与旧版引入/按需引入台账/约束资产V2构建器来源快照/__init__.py",
+      "sha256": "42d7b0b9e8c548e72b52743878fe68af413bd5af568a8a42d2fc9639644d35fc",
+      "size_bytes": 197
+    },
+    {
+      "classification": "REFERENCE_CODE_SNAPSHOT",
+      "origin": "vnext/constraint_assets_v2/approve_extension_constraint_asset_v1.py",
+      "path": "02_参考与旧版引入/按需引入台账/约束资产V2构建器来源快照/approve_extension_constraint_asset_v1.py",
+      "sha256": "f173ab5ab1b2c497bba1397cd86fff84d52e89c6e126a877d5505502e305f605",
+      "size_bytes": 2772
+    },
+    {
+      "classification": "REFERENCE_CODE_SNAPSHOT",
+      "origin": "vnext/constraint_assets_v2/approve_org_department_tree.py",
+      "path": "02_参考与旧版引入/按需引入台账/约束资产V2构建器来源快照/approve_org_department_tree.py",
+      "sha256": "0d1c0d5793f3cd9a276a332081f1c7dac73647209acfab0f7517d992629a44f9",
+      "size_bytes": 3281
+    },
+    {
+      "classification": "REFERENCE_CODE_SNAPSHOT",
+      "origin": "vnext/constraint_assets_v2/build_code_value_libraries.py",
+      "path": "02_参考与旧版引入/按需引入台账/约束资产V2构建器来源快照/build_code_value_libraries.py",
+      "sha256": "4ad1345f7a6df765e1216228366665965d4ad9d4a98ce447a76ae2621a3026c0",
+      "size_bytes": 18108
+    },
+    {
+      "classification": "REFERENCE_CODE_SNAPSHOT",
+      "origin": "vnext/constraint_assets_v2/build_code_value_libraries_v3.py",
+      "path": "02_参考与旧版引入/按需引入台账/约束资产V2构建器来源快照/build_code_value_libraries_v3.py",
+      "sha256": "9d2e66de8949c4a0d4f8adc249add20c26305520b596c2708e7ae64ee54cb79a",
+      "size_bytes": 21986
+    },
+    {
+      "classification": "REFERENCE_CODE_SNAPSHOT",
+      "origin": "vnext/constraint_assets_v2/build_core_east_asset.py",
+      "path": "02_参考与旧版引入/按需引入台账/约束资产V2构建器来源快照/build_core_east_asset.py",
+      "sha256": "c4789c05ef32923bff67b6b9caa94e1739653bdb4d6f75da43a9ba11aad5ea24",
+      "size_bytes": 44282
+    },
+    {
+      "classification": "REFERENCE_CODE_SNAPSHOT",
+      "origin": "vnext/constraint_assets_v2/build_extension_constraint_asset_v1.py",
+      "path": "02_参考与旧版引入/按需引入台账/约束资产V2构建器来源快照/build_extension_constraint_asset_v1.py",
+      "sha256": "4bf54ca94c397557b5f7328adc8fa1cadc5a9c2250dcc2e7aef9cc642534b85e",
+      "size_bytes": 21741
+    },
+    {
+      "classification": "REFERENCE_CODE_SNAPSHOT",
+      "origin": "vnext/constraint_assets_v2/build_synthetic_org_department_tree.py",
+      "path": "02_参考与旧版引入/按需引入台账/约束资产V2构建器来源快照/build_synthetic_org_department_tree.py",
+      "sha256": "14be3f26896a0860388408cc01fd9a02312070a3412d2822961d260af7ae5f91",
+      "size_bytes": 30788
+    },
+    {
+      "classification": "REFERENCE_CODE_SNAPSHOT",
+      "origin": "vnext/constraint_assets_v2/contracts.py",
+      "path": "02_参考与旧版引入/按需引入台账/约束资产V2构建器来源快照/contracts.py",
+      "sha256": "01ed75410fb7ffdc939d5560ff498cf369d6b9450b3f86dd9a616524cfeb16e8",
+      "size_bytes": 27582
+    },
+    {
+      "classification": "REFERENCE_CODE_SNAPSHOT",
+      "origin": "vnext/constraint_assets_v2/export_agent1_other_review.py",
+      "path": "02_参考与旧版引入/按需引入台账/约束资产V2构建器来源快照/export_agent1_other_review.py",
+      "sha256": "a3d8d811e1aeb3035f10eccdbeb004817353ce54adc137312aa8da7cc52ba517",
+      "size_bytes": 1325
+    },
+    {
+      "classification": "REFERENCE_CODE_SNAPSHOT",
+      "origin": "vnext/constraint_assets_v2/finalize_agent1_review.py",
+      "path": "02_参考与旧版引入/按需引入台账/约束资产V2构建器来源快照/finalize_agent1_review.py",
+      "sha256": "84fab8d01dad1eaae749db6f3daf0a0ca897a5682a13253d002d3c6d1c5abf91",
+      "size_bytes": 4464
+    },
+    {
+      "classification": "REFERENCE_CODE_SNAPSHOT",
+      "origin": "vnext/constraint_assets_v2/package_v5_foundation_release.py",
+      "path": "02_参考与旧版引入/按需引入台账/约束资产V2构建器来源快照/package_v5_foundation_release.py",
+      "sha256": "b47819ae565d34f613ff80a79406f711ee312212a515ef2716df63844876b786",
+      "size_bytes": 11711
+    },
+    {
+      "classification": "REFERENCE_CODE_SNAPSHOT",
+      "origin": "vnext/constraint_assets_v2/pipeline.py",
+      "path": "02_参考与旧版引入/按需引入台账/约束资产V2构建器来源快照/pipeline.py",
+      "sha256": "9dd2e67e6b738afd699fed1f4b2cd8b5c0d644fb0b7d0acf0d533afcd01d928a",
+      "size_bytes": 65279
+    },
+    {
+      "classification": "REFERENCE_CODE_SNAPSHOT",
+      "origin": "vnext/constraint_assets_v2/码值库V3一表一码表设计.md",
+      "path": "02_参考与旧版引入/按需引入台账/约束资产V2构建器来源快照/码值库V3一表一码表设计.md",
+      "sha256": "a421e0ab50c556f516fb48b1812b0c5065023175b835b9c70d7c757615746aab",
+      "size_bytes": 3359
+    },
+    {
+      "classification": "REFERENCE_CODE_SNAPSHOT",
+      "origin": "vnext/constraint_assets_v2/码值库构建说明.md",
+      "path": "02_参考与旧版引入/按需引入台账/约束资产V2构建器来源快照/码值库构建说明.md",
+      "sha256": "897cd9380726cfa9056876584083b082bef8b6396d2fa02c95009ed6c8858b18",
+      "size_bytes": 2889
+    },
+    {
+      "classification": "DELIVERY_PAYLOAD",
+      "origin": "kb/working/20260727_000_goal_mode_v1/构建过程层/04_字段多字段与对象明细状态提取-V2/extension_assets_v1/20260805_扩展数据元约束资产V1_机构部门树绑定/constraint_asset_extension_v1.sqlite",
+      "path": "05_新版本交付层/约束资产/CA-V0.1.0-foundation/constraint_assets.sqlite",
+      "sha256": "59f700dd15cee94d5e2c16af9dab2fda5c064ec4bbbac274fca618f9a85aade1",
+      "size_bytes": 442368
+    },
+    {
+      "classification": "DELIVERY_PAYLOAD",
+      "origin": "kb/working/20260727_000_goal_mode_v1/构建过程层/04_字段多字段与对象明细状态提取-V2/core_east_asset_v1/20260805_人工审批后核心库/local_code_value_library_core.sqlite",
+      "path": "05_新版本交付层/约束资产/CA-V0.1.0-foundation/装配视图与码表引用域/本地码表.sqlite",
+      "sha256": "3f9f05b47e6f4bfaada37abe06e17286228bf351edbd0a34ade2b09a2d5e82bd",
+      "size_bytes": 3411968
+    },
+    {
+      "classification": "DELIVERY_PAYLOAD",
+      "origin": "kb/working/20260727_000_goal_mode_v1/构建过程层/04_字段多字段与对象明细状态提取-V2/code_value_libraries/20260805_一表一码表_层级补全_v4/code_reference_library_v3.sqlite",
+      "path": "05_新版本交付层/约束资产/CA-V0.1.0-foundation/装配视图与码表引用域/国标与附件4码表.sqlite",
+      "sha256": "0932aecbdb4ed263ff5d8887cf1f833ecf76b220aec4fda42613df0b905de274",
+      "size_bytes": 2367488
+    },
+    {
+      "classification": "DELIVERY_PAYLOAD",
+      "origin": "kb/working/20260727_000_goal_mode_v1/构建过程层/04_字段多字段与对象明细状态提取-V2/extension_assets_v1/20260805_机构部门统一树V1_人工审查/extension_org_department_tree_v1.sqlite",
+      "path": "05_新版本交付层/约束资产/CA-V0.1.0-foundation/装配视图与码表引用域/机构部门统一树.sqlite",
+      "sha256": "f89d04c641116216db7c801b29bb7b525607d1fa030c4336ddebe7b2f647fd98",
+      "size_bytes": 1077248
+    },
+    {
+      "classification": "DELIVERY_PAYLOAD",
+      "origin": "kb/working/20260727_000_goal_mode_v1/构建过程层/04_字段多字段与对象明细状态提取-V2/extension_assets_v1/20260805_扩展数据元约束资产V1_机构部门树绑定/扩展数据元约束资产V1设计.md",
+      "path": "05_新版本交付层/约束资产/CA-V0.1.0-foundation/000使用场景输入/数据元与机构部门树引用说明.md",
+      "sha256": "ffcde4dea54ec933a12c7fd5e42d38fa2df4019d65931df0b5c59e3b8cac773b",
+      "size_bytes": 1094
+    },
+    {
+      "classification": "DELIVERY_PAYLOAD",
+      "origin": "kb/working/20260727_000_goal_mode_v1/构建过程层/04_字段多字段与对象明细状态提取-V2/extension_assets_v1/20260805_扩展数据元约束资产V1_机构部门树绑定/扩展资产构建审计.json",
+      "path": "05_新版本交付层/约束资产/CA-V0.1.0-foundation/覆盖与查询验收报告/扩展资产构建审计.json",
+      "sha256": "6509e5025ba5e581f3185578366bb90fd4f8b4506997cfaee1c83174dfa83182",
+      "size_bytes": 1077
+    },
+    {
+      "classification": "DELIVERY_PAYLOAD",
+      "origin": "kb/working/20260727_000_goal_mode_v1/构建过程层/04_字段多字段与对象明细状态提取-V2/extension_assets_v1/20260805_机构部门统一树V1_人工审查/构建审计.json",
+      "path": "05_新版本交付层/约束资产/CA-V0.1.0-foundation/覆盖与查询验收报告/机构部门树构建审计.json",
+      "sha256": "cd1d7415a8da19fd47a6825dfa9d1f8d1e7d98ad1f1e30da2891416d83e73923",
+      "size_bytes": 868
+    },
+    {
+      "classification": "DELIVERY_PAYLOAD",
+      "origin": "kb/working/20260727_000_goal_mode_v1/构建过程层/04_字段多字段与对象明细状态提取-V2/core_east_asset_v1/20260805_人工审批后核心库/核心库构建审计.json",
+      "path": "05_新版本交付层/约束资产/CA-V0.1.0-foundation/覆盖与查询验收报告/核心数据元构建审计.json",
+      "sha256": "bf271c10cb9901bdce70b2bc4d1500f590d21f85a93a0ba46abcff31fe808f23",
+      "size_bytes": 1336
+    }
+  ]
+}

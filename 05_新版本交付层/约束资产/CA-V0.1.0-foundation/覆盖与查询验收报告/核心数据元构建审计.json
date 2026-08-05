@@ -1,0 +1,24 @@
+{
+  "asset_version": "constraint-assets-core-east-v1-20260805",
+  "publication_status": "review_only_not_released",
+  "source_layer": "EAST_CORE",
+  "core_constraint_sqlite": "/Users/yzw/Desktop/GienTech/AgentTeam/eastQuestionSet/kb/working/20260727_000_goal_mode_v1/构建过程层/04_字段多字段与对象明细状态提取-V2/core_east_asset_v1/20260805_人工审批后核心库/constraint_asset_core.sqlite",
+  "local_code_sqlite": "/Users/yzw/Desktop/GienTech/AgentTeam/eastQuestionSet/kb/working/20260727_000_goal_mode_v1/构建过程层/04_字段多字段与对象明细状态提取-V2/core_east_asset_v1/20260805_人工审批后核心库/local_code_value_library_core.sqlite",
+  "review_excel": "/Users/yzw/Desktop/GienTech/AgentTeam/eastQuestionSet/kb/working/20260727_000_goal_mode_v1/构建过程层/04_字段多字段与对象明细状态提取-V2/core_east_asset_v1/20260805_人工审批后核心库/核心库完整人工审查.xlsx",
+  "data_element_count": 301,
+  "local_code_table_count": 164,
+  "local_value_node_count": 1547,
+  "human_overlay_count": 79,
+  "overlay_dispositions": {
+    "DEFER_EXTENSION": 39,
+    "CORE_RETAIN_RAW": 2,
+    "APPLIED_CORE": 38
+  },
+  "partial_local_code_sets": [
+    "LCS_DE_009002"
+  ],
+  "integrity": {
+    "constraint_asset_core": "ok",
+    "local_code_value_library": "ok"
+  }
+}

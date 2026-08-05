@@ -1,0 +1,5 @@
+*.sqlite -diff
+*.xlsx -diff
+*.xls -diff
+*.doc -diff
+*.pdf -diff

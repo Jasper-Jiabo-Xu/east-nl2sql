@@ -1,0 +1,84 @@
+{
+  "approval_refs": [
+    "SRC_HUMAN_APPROVAL:20260805_机构部门统一树V1审查通过",
+    "SRC_HUMAN_APPROVAL:20260805_扩展数据元机构部门树绑定_没什么问题"
+  ],
+  "artifact_id": "CA-FOUNDATION-20260805-001",
+  "asset_version": "CA-V0.1.0-foundation",
+  "capabilities": [
+    "DATA_ELEMENT_CONSTRAINTS",
+    "LOCAL_AND_EXTERNAL_CODE_REFERENCES",
+    "ORG_DEPARTMENT_TREE",
+    "ORG_DEPARTMENT_TREE_BINDINGS"
+  ],
+  "consumer_guard": "不得作为完整约束资产或供000/数据生成流程的完整约束源；仅可按 capabilities 读取。",
+  "content_hash": "d636f1fe43d18acef7409eccff92c16756f9971ac7db8dc249022977a1df3395",
+  "created_at_utc": "2026-08-05T11:24:29.047358+00:00",
+  "not_in_scope": [
+    "SINGLE_FIELD_CONSTRAINTS",
+    "INTRA_TABLE_MULTI_FIELD_CONSTRAINTS",
+    "CROSS_TABLE_MULTI_FIELD_CONSTRAINTS",
+    "ODS_RELATIONS",
+    "ACCOUNTING_SUBJECT_TREE",
+    "EMPLOYEE_TELLER_CUSTOMER_OBJECT_POOLS"
+  ],
+  "payload": [
+    {
+      "classification": "DELIVERY_PAYLOAD",
+      "origin": "kb/working/20260727_000_goal_mode_v1/构建过程层/04_字段多字段与对象明细状态提取-V2/extension_assets_v1/20260805_扩展数据元约束资产V1_机构部门树绑定/constraint_asset_extension_v1.sqlite",
+      "path": "05_新版本交付层/约束资产/CA-V0.1.0-foundation/constraint_assets.sqlite",
+      "sha256": "59f700dd15cee94d5e2c16af9dab2fda5c064ec4bbbac274fca618f9a85aade1",
+      "size_bytes": 442368
+    },
+    {
+      "classification": "DELIVERY_PAYLOAD",
+      "origin": "kb/working/20260727_000_goal_mode_v1/构建过程层/04_字段多字段与对象明细状态提取-V2/core_east_asset_v1/20260805_人工审批后核心库/local_code_value_library_core.sqlite",
+      "path": "05_新版本交付层/约束资产/CA-V0.1.0-foundation/装配视图与码表引用域/本地码表.sqlite",
+      "sha256": "3f9f05b47e6f4bfaada37abe06e17286228bf351edbd0a34ade2b09a2d5e82bd",
+      "size_bytes": 3411968
+    },
+    {
+      "classification": "DELIVERY_PAYLOAD",
+      "origin": "kb/working/20260727_000_goal_mode_v1/构建过程层/04_字段多字段与对象明细状态提取-V2/code_value_libraries/20260805_一表一码表_层级补全_v4/code_reference_library_v3.sqlite",
+      "path": "05_新版本交付层/约束资产/CA-V0.1.0-foundation/装配视图与码表引用域/国标与附件4码表.sqlite",
+      "sha256": "0932aecbdb4ed263ff5d8887cf1f833ecf76b220aec4fda42613df0b905de274",
+      "size_bytes": 2367488
+    },
+    {
+      "classification": "DELIVERY_PAYLOAD",
+      "origin": "kb/working/20260727_000_goal_mode_v1/构建过程层/04_字段多字段与对象明细状态提取-V2/extension_assets_v1/20260805_机构部门统一树V1_人工审查/extension_org_department_tree_v1.sqlite",
+      "path": "05_新版本交付层/约束资产/CA-V0.1.0-foundation/装配视图与码表引用域/机构部门统一树.sqlite",
+      "sha256": "f89d04c641116216db7c801b29bb7b525607d1fa030c4336ddebe7b2f647fd98",
+      "size_bytes": 1077248
+    },
+    {
+      "classification": "DELIVERY_PAYLOAD",
+      "origin": "kb/working/20260727_000_goal_mode_v1/构建过程层/04_字段多字段与对象明细状态提取-V2/extension_assets_v1/20260805_扩展数据元约束资产V1_机构部门树绑定/扩展数据元约束资产V1设计.md",
+      "path": "05_新版本交付层/约束资产/CA-V0.1.0-foundation/000使用场景输入/数据元与机构部门树引用说明.md",
+      "sha256": "ffcde4dea54ec933a12c7fd5e42d38fa2df4019d65931df0b5c59e3b8cac773b",
+      "size_bytes": 1094
+    },
+    {
+      "classification": "DELIVERY_PAYLOAD",
+      "origin": "kb/working/20260727_000_goal_mode_v1/构建过程层/04_字段多字段与对象明细状态提取-V2/extension_assets_v1/20260805_扩展数据元约束资产V1_机构部门树绑定/扩展资产构建审计.json",
+      "path": "05_新版本交付层/约束资产/CA-V0.1.0-foundation/覆盖与查询验收报告/扩展资产构建审计.json",
+      "sha256": "6509e5025ba5e581f3185578366bb90fd4f8b4506997cfaee1c83174dfa83182",
+      "size_bytes": 1077
+    },
+    {
+      "classification": "DELIVERY_PAYLOAD",
+      "origin": "kb/working/20260727_000_goal_mode_v1/构建过程层/04_字段多字段与对象明细状态提取-V2/extension_assets_v1/20260805_机构部门统一树V1_人工审查/构建审计.json",
+      "path": "05_新版本交付层/约束资产/CA-V0.1.0-foundation/覆盖与查询验收报告/机构部门树构建审计.json",
+      "sha256": "cd1d7415a8da19fd47a6825dfa9d1f8d1e7d98ad1f1e30da2891416d83e73923",
+      "size_bytes": 868
+    },
+    {
+      "classification": "DELIVERY_PAYLOAD",
+      "origin": "kb/working/20260727_000_goal_mode_v1/构建过程层/04_字段多字段与对象明细状态提取-V2/core_east_asset_v1/20260805_人工审批后核心库/核心库构建审计.json",
+      "path": "05_新版本交付层/约束资产/CA-V0.1.0-foundation/覆盖与查询验收报告/核心数据元构建审计.json",
+      "sha256": "bf271c10cb9901bdce70b2bc4d1500f590d21f85a93a0ba46abcff31fe808f23",
+      "size_bytes": 1336
+    }
+  ],
+  "publication_status": "approved_partial_not_released"
+}

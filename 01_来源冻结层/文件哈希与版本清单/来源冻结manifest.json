@@ -1,0 +1,146 @@
+{
+  "files": [
+    {
+      "classification": "EAST_RAW",
+      "origin": "data/raw/20260626_east_materials/east材料/5.脱敏规则-sm3密码杂凑算法.pdf",
+      "path": "01_来源冻结层/EAST原始材料快照/east材料/5.脱敏规则-sm3密码杂凑算法.pdf",
+      "sha256": "9bdd40da871e5bcb6f737e2b0b92ebfd248b973111ed588dbfda48ee7cb14505",
+      "size_bytes": 2655154
+    },
+    {
+      "classification": "EAST_RAW",
+      "origin": "data/raw/20260626_east_materials/east材料/《银行业金融机构监管数据标准化规范（2021版）填报口径》四期答疑口径整合.xlsx",
+      "path": "01_来源冻结层/EAST原始材料快照/east材料/《银行业金融机构监管数据标准化规范（2021版）填报口径》四期答疑口径整合.xlsx",
+      "sha256": "63d16175d8899105fa7308788c57c09afa91c2a511ea06aff21cbd9e75d212ce",
+      "size_bytes": 1978385
+    },
+    {
+      "classification": "EAST_RAW",
+      "origin": "data/raw/20260626_east_materials/east材料/《银行业金融机构监管数据标准化规范（2021版）填报口径（第一期）》.xlsx",
+      "path": "01_来源冻结层/EAST原始材料快照/east材料/《银行业金融机构监管数据标准化规范（2021版）填报口径（第一期）》.xlsx",
+      "sha256": "3ac20dcb18347e8a89597796216723c283f8b6a29c8483cba45a181fefe64fc7",
+      "size_bytes": 758477
+    },
+    {
+      "classification": "EAST_RAW",
+      "origin": "data/raw/20260626_east_materials/east材料/《银行业金融机构监管数据标准化规范（2021版）填报口径（第二期）》.xlsx",
+      "path": "01_来源冻结层/EAST原始材料快照/east材料/《银行业金融机构监管数据标准化规范（2021版）填报口径（第二期）》.xlsx",
+      "sha256": "4f80bb87fb854e166eae8ea854e80375d482a839424eb7c30f9f55fdda1cbba5",
+      "size_bytes": 625858
+    },
+    {
+      "classification": "EAST_RAW",
+      "origin": "data/raw/20260626_east_materials/east材料/《银行业金融机构监管数据标准化规范（2021版）填报口径（第四期）》.xlsx",
+      "path": "01_来源冻结层/EAST原始材料快照/east材料/《银行业金融机构监管数据标准化规范（2021版）填报口径（第四期）》.xlsx",
+      "sha256": "6222b3cd9c5284f221820eacd4eef1d41cef4b00077aa3e4c73a46ecfb54cfbc",
+      "size_bytes": 240888
+    },
+    {
+      "classification": "EAST_RAW",
+      "origin": "data/raw/20260626_east_materials/east材料/业务分组.xlsx",
+      "path": "01_来源冻结层/EAST原始材料快照/east材料/业务分组.xlsx",
+      "sha256": "70a4b5bf766b8d3fe39b2260fa6018e73346ad873d7bb655ee92295001b0050b",
+      "size_bytes": 138341
+    },
+    {
+      "classification": "EAST_RAW",
+      "origin": "data/raw/20260626_east_materials/east材料/规范附件1：银行业金融机构监管数据标准化规范（2021版）通用说明.doc",
+      "path": "01_来源冻结层/EAST原始材料快照/east材料/规范附件1：银行业金融机构监管数据标准化规范（2021版）通用说明.doc",
+      "sha256": "5ab48ad1ec37e4ed49e8b74f5ecfccd8729bfde296a03ac95d430930552e0fe3",
+      "size_bytes": 36107
+    },
+    {
+      "classification": "EAST_RAW",
+      "origin": "data/raw/20260626_east_materials/east材料/规范附件2：银行业金融机构监管数据标准化规范（2021版）采集技术接口说明(1).doc",
+      "path": "01_来源冻结层/EAST原始材料快照/east材料/规范附件2：银行业金融机构监管数据标准化规范（2021版）采集技术接口说明(1).doc",
+      "sha256": "6d5fb0808f366cfb6a4539776a6f953967e9c5e572eb036deb1626a4babc342f",
+      "size_bytes": 289564
+    },
+    {
+      "classification": "EAST_RAW",
+      "origin": "data/raw/20260626_east_materials/east材料/规范附件3数据元-规范附件3数据结构-规范附件4检核规则-字段粒度合并-已填充检核规则.xlsx",
+      "path": "01_来源冻结层/EAST原始材料快照/east材料/规范附件3数据元-规范附件3数据结构-规范附件4检核规则-字段粒度合并-已填充检核规则.xlsx",
+      "sha256": "9bd0f19a1afdd5c6d0e91bafb94ef06adafba748739a181e72490f4f8002c80e",
+      "size_bytes": 1949161
+    },
+    {
+      "classification": "EAST_RAW",
+      "origin": "data/raw/20260626_east_materials/east材料/规范附件3数据元-规范附件3数据结构-规范附件4检核规则-字段粒度合并.xlsx",
+      "path": "01_来源冻结层/EAST原始材料快照/east材料/规范附件3数据元-规范附件3数据结构-规范附件4检核规则-字段粒度合并.xlsx",
+      "sha256": "057782c942f4c2393782bbc86eacdd798bfa4e70dbe7da5fc40a1fe43e73890c",
+      "size_bytes": 1094793
+    },
+    {
+      "classification": "EAST_RAW",
+      "origin": "data/raw/20260626_east_materials/east材料/规范附件3：中国银保监会银行业金融机构监管数据标准化规范2021版（定稿版）.xlsx",
+      "path": "01_来源冻结层/EAST原始材料快照/east材料/规范附件3：中国银保监会银行业金融机构监管数据标准化规范2021版（定稿版）.xlsx",
+      "sha256": "e87b96e1a5647c136e99194f154aab47efd9a031453085b999b3095beaf96052",
+      "size_bytes": 640424
+    },
+    {
+      "classification": "EAST_RAW",
+      "origin": "data/raw/20260626_east_materials/east材料/规范附件4：监管标准化数据检核规则（2021版）.xlsx",
+      "path": "01_来源冻结层/EAST原始材料快照/east材料/规范附件4：监管标准化数据检核规则（2021版）.xlsx",
+      "sha256": "1e37f54111534340c6cdfce12332485f942b1636890988b3a9e7b871184b23da",
+      "size_bytes": 439775
+    },
+    {
+      "classification": "EAST_RAW",
+      "origin": "data/raw/20260626_east_materials/east材料/规范附件4：金融资产管理公司监管数据标准化规范业务代码表.xlsx",
+      "path": "01_来源冻结层/EAST原始材料快照/east材料/规范附件4：金融资产管理公司监管数据标准化规范业务代码表.xlsx",
+      "sha256": "c9031ef2098b192c7b4a0ecbc38b5e295c2b87b11d30e7d2406a510f4a281fd9",
+      "size_bytes": 359514
+    },
+    {
+      "classification": "EAST_RAW",
+      "origin": "data/raw/20260626_east_materials/east材料/资产类别（一、二、三级）码值表.xlsx",
+      "path": "01_来源冻结层/EAST原始材料快照/east材料/资产类别（一、二、三级）码值表.xlsx",
+      "sha256": "63f7c6f1a9be23480994f4d362e6210cf5af3996bdff130a95ebee6c9190c98e",
+      "size_bytes": 16814
+    },
+    {
+      "classification": "EAST_RAW",
+      "origin": "data/raw/20260626_east_materials/east材料/银保监办发〔2022〕7号中国银保监会办公厅关于印发银行金融机构监管数据标准化规范（2021版）的通知(1).pdf",
+      "path": "01_来源冻结层/EAST原始材料快照/east材料/银保监办发〔2022〕7号中国银保监会办公厅关于印发银行金融机构监管数据标准化规范（2021版）的通知(1).pdf",
+      "sha256": "a4adff5b9f3b27b1bba4762cd69641d7d5fa19bc94375027ee007bf2b141aa96",
+      "size_bytes": 227695
+    },
+    {
+      "classification": "EAST_RAW",
+      "origin": "data/raw/20260626_east_materials/east材料/附件：《银行业金融机构监管数据标准化规范（2021版）填报口径（第三期）》221014.xlsx",
+      "path": "01_来源冻结层/EAST原始材料快照/east材料/附件：《银行业金融机构监管数据标准化规范（2021版）填报口径（第三期）》221014.xlsx",
+      "sha256": "b06b3d7d6f9d9534401f70f189bd0fd3545113f022bc127b17282b282534c229",
+      "size_bytes": 370663
+    },
+    {
+      "classification": "EAST_MODEL",
+      "origin": "data/raw/20260626_east_model/east模型/业务模型梳理.xlsx",
+      "path": "01_来源冻结层/EAST模型快照/east模型/业务模型梳理.xlsx",
+      "sha256": "ef82e5c5780507bb260cc14890e42d92b6c34799b4aae047053669f66eeef3b9",
+      "size_bytes": 144998
+    },
+    {
+      "classification": "EAST_MODEL",
+      "origin": "data/raw/20260626_east_model/east模型/银监会处罚/银监会行政处罚_列表.xlsx",
+      "path": "01_来源冻结层/EAST模型快照/east模型/银监会处罚/银监会行政处罚_列表.xlsx",
+      "sha256": "cf4dfb6dd9d3638c76e3497100311136610343649498326734ecbeb3d7c9252b",
+      "size_bytes": 6120091
+    },
+    {
+      "classification": "EAST_MODEL",
+      "origin": "data/raw/20260626_east_model/east模型/银监会处罚/银监会行政处罚_文本.xlsx",
+      "path": "01_来源冻结层/EAST模型快照/east模型/银监会处罚/银监会行政处罚_文本.xlsx",
+      "sha256": "6efba7fdac46454fdc5accdc745c066ec2f0f78d2bf7d995cf177552ca53b624",
+      "size_bytes": 6368661
+    },
+    {
+      "classification": "RESTRICTED_COREBANK_SCHEMA_REFERENCE",
+      "origin": "data/raw/20260626_corebank_v4/corebank材料/info_analyzed_non_empty_datetime_adj.xlsx",
+      "path": "01_来源冻结层/CoreBank分布参考/info_analyzed_non_empty_datetime_adj.xlsx",
+      "sha256": "aa0542f1d74a35e7ed7f4620560908f60e09eb6fac52f35f0306893c4545e0a0",
+      "size_bytes": 635717
+    }
+  ],
+  "frozen_at_utc": "2026-08-05T11:24:29.023096+00:00",
+  "policy": "Only approved EAST sources/models plus CoreBank info workbook; no CoreBank database."
+}
