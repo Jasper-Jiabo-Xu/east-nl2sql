@@ -1,0 +1,14 @@
+blank_issues_enabled: false
+contact_links:
+  - name: EAST NL2SQL V5 治理与合同
+    url: https://github.com/Jasper-Jiabo-Xu/east-nl2sql/tree/main/00_%E6%B2%BB%E7%90%86%E4%B8%8E%E5%90%88%E5%90%8C
+    about: 新建 Issue 前请先阅读治理与合同目录中的章程、架构快照和规范
+  - name: 人工审核与不确定项上报
+    url: https://github.com/Jasper-Jiabo-Xu/east-nl2sql/issues/new?template=east-task-template.md
+    about: 规则不确定、字段或码值无法唯一映射、需要外部标准或真实数据时，使用此模板并标记人工审核
+templates:
+  - name: EAST 任务模板
+    about: 适用于所有 EAST NL2SQL V5 Agent 任务、约束资产构建、question-SQL、data、Foundation 和发布任务
+    file: east-task-template.md
+    labels: [east-v5]
+    assignees: []
