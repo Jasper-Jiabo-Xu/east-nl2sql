@@ -1,0 +1,14 @@
+# EAST NL2SQL V5 Code Owners
+# 关键目录变更必须经指定所有者审批
+
+# 治理与合同 —— 项目负责人
+00_治理与合同/    @Jasper-Jiabo-Xu
+
+# 来源冻结层 —— 只读保护
+01_来源冻结层/    @Jasper-Jiabo-Xu
+
+# 新版本交付层 —— 发布管理员
+05_新版本交付层/   @Jasper-Jiabo-Xu
+
+# 公共代码 —— Agent 和验证器代码
+04_公共代码/      @Jasper-Jiabo-Xu
