@@ -1,0 +1,95 @@
+{
+  "artifact_id": "CA-MULTIFIELD-20260812-003",
+  "asset_version": "CA-V0.3.0-multifield",
+  "publication_status": "pending_pr_human_approval",
+  "created_at_utc": "2026-08-12T14:31:01Z",
+  "inherits": {
+    "artifact_id": "CA-FOUNDATION-20260805-002",
+    "asset_version": "CA-V0.2.0-foundation",
+    "mode": "capability_package_append_only_new_delivery_directory"
+  },
+  "supersedes_ref": null,
+  "capabilities": [
+    "INTRA_TABLE_MULTI_FIELD_CONSTRAINTS",
+    "CROSS_TABLE_MULTI_FIELD_CONSTRAINTS",
+    "STRUCTURED_PROVIDER_CONSUMER_DIRECTION",
+    "MULTIFIELD_DECISION_AUDIT"
+  ],
+  "not_in_scope": [
+    "SINGLE_FIELD_CONSTRAINTS",
+    "ODS_RELATIONS",
+    "FOUNDATION_OBJECT_POOLS",
+    "QUESTION_SQL",
+    "BUSINESS_DATA"
+  ],
+  "consumer_guard": "仅消费本包 capabilities；不得把本包当作完整四类约束资产或 Foundation 数据源。",
+  "source_refs": [
+    {
+      "source_file_id": "SRC_EAST_MERGED_20260626",
+      "sha256": "9bd0f19a1afdd5c6d0e91bafb94ef06adafba748739a181e72490f4f8002c80e",
+      "sheet": "目标"
+    },
+    {
+      "attachment_id": "019ff606-ccdb-7185-aa66-713fb7d43b60",
+      "sha256": "a3ffe34f6c44ddb1a5aa86a0676a66fb592078bfbeb3fa094dd1d85924fc32e3",
+      "sheet": "人工判断审查",
+      "column": "M"
+    }
+  ],
+  "approval_refs": [
+    "mention://issue/6d31ec83-5cba-4ff7-b64a-76bb769f09f9",
+    "mention://comment/a6289885-45e8-4479-8c4a-2e6c87ea8dd4",
+    "mention://comment/c7ce0266-f7cc-49e2-b7d5-abba1e8d353d"
+  ],
+  "counts": {
+    "approved_constraints": 470,
+    "reference_constraints": 443,
+    "comparison_constraints": 27,
+    "intra_table_constraints": 23,
+    "cross_table_constraints": 447,
+    "excluded_constraints": 2,
+    "remaining_human_review": 0,
+    "constraint_field_rows": 1007,
+    "referenced_fields": 535,
+    "referenced_evidence": 470
+  },
+  "payload": [
+    {
+      "path": "05_新版本交付层/约束资产/CA-V0.3.0-multifield/multifield_constraints.sqlite",
+      "classification": "DELIVERY_PAYLOAD",
+      "origin": "03_构建过程层/EAS-12_多字段约束资产审查与固化/single_field_candidates_v1.sqlite",
+      "sha256": "5e2753235bf1e47c9d015a05d28c45a20d17a26789d1c88498f80b6ec43577bb",
+      "size_bytes": 1900544
+    },
+    {
+      "path": "05_新版本交付层/约束资产/CA-V0.3.0-multifield/000使用场景输入/多字段约束查询说明.md",
+      "classification": "DELIVERY_DOCUMENTATION",
+      "origin": "EAS-43正式发布说明",
+      "sha256": "c67fde68243427362fe98985cd4adff3919b8fad5e6936f3424506037feab75f",
+      "size_bytes": 1658
+    },
+    {
+      "path": "05_新版本交付层/约束资产/CA-V0.3.0-multifield/覆盖与查询验收报告/build_validation.json",
+      "classification": "ACCEPTANCE_EVIDENCE",
+      "origin": "build_multifield_release.py",
+      "sha256": "0f9b5e3ccdced08fff73f32ce98127b228c3ee49633cf21528643b59b2b2000a",
+      "size_bytes": 469
+    },
+    {
+      "path": "05_新版本交付层/约束资产/CA-V0.3.0-multifield/覆盖与查询验收报告/security_scan.json",
+      "classification": "SECURITY_SCAN",
+      "origin": "EAS-43发布安全检查",
+      "sha256": "12c3ee76590800f3b17772d8b6f5b57063894e1291673a42112c71969e4150b2",
+      "size_bytes": 602
+    },
+    {
+      "path": "06_测试与验收/约束资产与000验收/CA-V0.3.0-multifield_验收摘要.md",
+      "classification": "ACCEPTANCE_REPORT",
+      "origin": "EAS-43确定性验收",
+      "sha256": "868fbadfece9273e8df4fb893f6699f59e188215543975da1171c9780d446604",
+      "size_bytes": 1687
+    }
+  ],
+  "content_hash": "cbcbd79e318f91522393403241b50919a656aa77d71c7f950f43725286b64d3d",
+  "security_findings": []
+}

@@ -1,0 +1,36 @@
+{
+  "result": "PASS",
+  "source": {
+    "attachment_id": "019ff606-ccdb-7185-aa66-713fb7d43b60",
+    "attachment_sha256": "a3ffe34f6c44ddb1a5aa86a0676a66fb592078bfbeb3fa094dd1d85924fc32e3",
+    "comment_id": "a6289885-45e8-4479-8c4a-2e6c87ea8dd4"
+  },
+  "counts": {
+    "candidates_total": 472,
+    "status": {
+      "APPROVE": 470,
+      "DISCARDED": 2
+    },
+    "review_promoted_to_approve": 82,
+    "field_groups_changed": 382,
+    "remaining_human_review": 0,
+    "qualified_field_items": 1011
+  },
+  "validations": {
+    "all_effective_endpoints_exist": true,
+    "all_effective_endpoints_fully_qualified": true,
+    "structured_direction_present_for_reference_rules": true,
+    "same_text_self_reference_guard": "PASS",
+    "sqlite_integrity_check": "ok"
+  },
+  "output": {
+    "sqlite_sha256": "611c99f31069c493154bb10d47e6db9b73bc8335d18b86199f610a3c18873478"
+  },
+  "decision_basis_counts": {
+    "DETERMINISTIC_ENDPOINT_QUALIFICATION": 361,
+    "HUMAN_EXPLICIT_M_COLUMN": 33,
+    "HUMAN_INTENT_PROPAGATED_AND_SCHEMA_VERIFIED": 51,
+    "NO_STATUS_CHANGE": 25
+  },
+  "unresolved": []
+}
