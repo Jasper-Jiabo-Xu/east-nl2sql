@@ -1,0 +1,3 @@
+scc_id,table_count,tables,decision
+CYCLE-01,2,"DGXDFHZ,DGXDYWJJB",EVENT_OWNED；不进入 Foundation，事件事务内处理
+CYCLE-02,2,"GRXDFHZ,GRXDYWJJB",EVENT_OWNED；不进入 Foundation，事件事务内处理

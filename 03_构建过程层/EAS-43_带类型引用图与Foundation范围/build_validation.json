@@ -1,0 +1,43 @@
+{
+  "approved_constraint_count": 470,
+  "build_at_utc": "2026-08-12T16:00:00Z",
+  "constraint_disposition_counts": {
+    "EXCLUDED": 0,
+    "INCLUDED": 470,
+    "MANUAL_REVIEW": 0
+  },
+  "cyclic_sccs": [
+    [
+      "DGXDFHZ",
+      "DGXDYWJJB"
+    ],
+    [
+      "GRXDFHZ",
+      "GRXDYWJJB"
+    ]
+  ],
+  "edge_count": 537,
+  "edge_type_counts": {
+    "CONDITIONAL_DEPENDENCY": 14,
+    "REFERENCE_PREREQUISITE": 499,
+    "SAME_RECORD_COMPANION": 22,
+    "STATE_SOURCE": 2
+  },
+  "foundation_decision_counts": {
+    "EVENT_OWNED": 45,
+    "INITIAL_SEED": 17,
+    "ON_DEMAND_ONLY": 12
+  },
+  "foundation_initial_table_count": 17,
+  "foundation_minimum_record_count": 18,
+  "foundation_reference_closed": true,
+  "manual_review_count": 0,
+  "scc_count": 72,
+  "schema_field_count": 1963,
+  "schema_table_count": 74,
+  "source_multifield_sha256": "5e2753235bf1e47c9d015a05d28c45a20d17a26789d1c88498f80b6ec43577bb",
+  "source_single_field_sha256": "f137be03a3814428b76507373d2032705dcacb1ff804adbddd96e397da5c1d6f",
+  "status": "PASS",
+  "table_projection_count": 262,
+  "unknown_endpoint_count": 0
+}

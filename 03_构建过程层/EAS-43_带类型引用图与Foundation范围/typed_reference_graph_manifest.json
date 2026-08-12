@@ -1,0 +1,79 @@
+{
+  "artifact_id": "EAS-TYPED-GRAPH-20260812-001",
+  "asset_version": "TRG-V1.0.0",
+  "built_at_utc": "2026-08-12T16:00:00Z",
+  "content_hash": "d2f0e90d62b2322a2f01ba35a12f488ccabeb81b99313230870e187ff2152d07",
+  "publication_status": "FROZEN_BUILD_PROCESS_INPUT_FOR_EAS_44",
+  "source_artifacts": [
+    {
+      "asset_version": "CA-V0.3.0-multifield",
+      "sha256": "5e2753235bf1e47c9d015a05d28c45a20d17a26789d1c88498f80b6ec43577bb"
+    },
+    {
+      "asset_version": "CA-V0.2.0-foundation",
+      "sha256": "f137be03a3814428b76507373d2032705dcacb1ff804adbddd96e397da5c1d6f"
+    }
+  ],
+  "tracked_files": [
+    {
+      "path": "03_构建过程层/EAS-43_带类型引用图与Foundation范围/README.md",
+      "sha256": "a0b20e9611fe5ac5066257837a4f98b8d9487d40124b6020250d78072d936ec4",
+      "size_bytes": 1777
+    },
+    {
+      "path": "03_构建过程层/EAS-43_带类型引用图与Foundation范围/typed_reference_graph.schema.json",
+      "sha256": "b88fbc8d8b61eb554efd61dc8cf8ddd640a2c0f362a4ff1be30038b4dde63c56",
+      "size_bytes": 956
+    },
+    {
+      "path": "03_构建过程层/EAS-43_带类型引用图与Foundation范围/typed_reference_graph_nodes.jsonl",
+      "sha256": "9d2247759f5071da6b8d22b57aa6b1515d17203d7ef02505895e202da84a6f4b",
+      "size_bytes": 715470
+    },
+    {
+      "path": "03_构建过程层/EAS-43_带类型引用图与Foundation范围/typed_reference_graph_edges.jsonl",
+      "sha256": "51a4b2a64f95ece7e1239a06a10c6a1cd6d79e4baf7699107f042ff0e707a45c",
+      "size_bytes": 548108
+    },
+    {
+      "path": "03_构建过程层/EAS-43_带类型引用图与Foundation范围/typed_reference_graph_projections.jsonl",
+      "sha256": "ddd202ba610d4e63600c2d242e8ac32bc5502ab7cbeb085183ab0951f65c5c30",
+      "size_bytes": 58545
+    },
+    {
+      "path": "03_构建过程层/EAS-43_带类型引用图与Foundation范围/typed_reference_graph_closures.jsonl",
+      "sha256": "84b40c1055296dd5be27dbb2ef6c0b1f48aace4d505fc1783feca62e67f34c7a",
+      "size_bytes": 15828
+    },
+    {
+      "path": "03_构建过程层/EAS-43_带类型引用图与Foundation范围/typed_reference_graph_review_queue.jsonl",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "03_构建过程层/EAS-43_带类型引用图与Foundation范围/constraint_dispositions.jsonl",
+      "sha256": "455ea549b933ec2b03f66c19405e87ac760ebda4caf24ef74e1014dced345905",
+      "size_bytes": 88479
+    },
+    {
+      "path": "03_构建过程层/EAS-43_带类型引用图与Foundation范围/foundation_eligibility_decisions.jsonl",
+      "sha256": "076718f605c7954406c7996c49d806f2c958eca82fd1d811b3709660e55521a8",
+      "size_bytes": 31709
+    },
+    {
+      "path": "03_构建过程层/EAS-43_带类型引用图与Foundation范围/foundation_initial_scope.json",
+      "sha256": "cba099ab1167bc8afbe3723c9cc58a07e766b9eadbd8ea6d657e2b13dd54664f",
+      "size_bytes": 9976
+    },
+    {
+      "path": "03_构建过程层/EAS-43_带类型引用图与Foundation范围/build_validation.json",
+      "sha256": "78e490874ebc4728b6b6998eeb6faa3bf6e4627900c9ae596a6bc477d20f9c85",
+      "size_bytes": 1097
+    },
+    {
+      "path": "03_构建过程层/EAS-43_带类型引用图与Foundation范围/typed_reference_graph_review.xlsx",
+      "sha256": "07567ac83982dc002d2b1af5ac858e1a4f6e75c7c7bd504b82b2e1ab46f1ffa0",
+      "size_bytes": 25488
+    }
+  ]
+}
