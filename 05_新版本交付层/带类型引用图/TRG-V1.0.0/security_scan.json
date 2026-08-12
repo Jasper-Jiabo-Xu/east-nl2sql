@@ -1,0 +1,19 @@
+{
+  "artifact_id": "EAS-TYPED-GRAPH-20260812-001",
+  "asset_version": "TRG-V1.0.0",
+  "scanned_at_utc": "2026-08-12T16:02:34Z",
+  "scope": [
+    "05_新版本交付层/带类型引用图/TRG-V1.0.0"
+  ],
+  "blocked_categories": [
+    "API keys and tokens",
+    "dotenv and credentials",
+    "CoreBank data",
+    "LLM raw responses and caches",
+    "SQLite WAL/SHM files",
+    "runtime temporary inputs",
+    "local absolute paths"
+  ],
+  "findings": [],
+  "result": "PASS"
+}
