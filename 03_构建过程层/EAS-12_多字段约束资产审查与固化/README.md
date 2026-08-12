@@ -1,8 +1,10 @@
 # EAST NL2SQL 单字段与多字段约束资产
 
 版本：`full_runs/20260808_001_full_single_field_v1`
-构建日期：2026-08-08（单字段）+ 2026-08-12（多字段审查固化完成）
+构建日期：2026-08-08（单字段）+ 2026-08-12（多字段人工批示扩展复核）
 来源：EAS-10（DeepSeek 全量单字段约束构建）→ EAS-12（多字段约束审查与固化）
+
+> 当前目录是 `03_构建过程层` 的已审查发布候选，不是 `05_新版本交付层` 的正式发布包。正式入 05 仍需独立 manifest、哈希、验收报告、PR 及人工合并。
 
 ---
 
@@ -11,6 +13,8 @@
 | 文件 | 说明 |
 |------|------|
 | `single_field_candidates_v1.sqlite` | 约束资产主库，含全部表 |
+| `apply_human_decision_templates.py` | 确定性复现人工批示传播、端点补全及审计记录 |
+| `human_decision_propagation_report.json` | 本次批示传播与验证结果 |
 | `README.md` | 本文件 |
 
 ---
@@ -28,7 +32,7 @@
 | `task_id` | TEXT | DeepSeek 任务 ID |
 | `candidate_local_id` | TEXT | 候选本地编号 |
 | `field_roles_json` | TEXT | 字段角色标注（JSON 数组），含 SUBJECT/REFERENCE/TARGET/CONDITION 角色 |
-| `constraint_json` | TEXT | 约束内容（JSON），含 constraint_item_type、condition_text、requirement_text |
+| `constraint_json` | TEXT | 约束内容（JSON），含原文、结构化方向及人工决策来源 |
 | `ods_classification` | TEXT | ODS 分类标注（文档用途，非 agent 决策依据） |
 | `ods_reason` | TEXT | ODS 分类理由 |
 | `few_shot_case_ids` | TEXT | Few-shot 案例 ID |
@@ -56,8 +60,8 @@
 
 | 状态 | 数量 | 说明 |
 |------|------|------|
-| APPROVE | 388 | 可直接使用 |
-| REVIEW | 82 | 需人工确认（主要为业务实体引用格式问题） |
+| APPROVE | 470 | 人工批示或确定性规则闭合并校验通过 |
+| REVIEW | 0 | 当前无待人工判断项 |
 | DISCARDED | 2 | 已废弃（循环自引用，经人工批示删除） |
 
 #### Agent 使用示例
@@ -169,9 +173,9 @@ SELECT DISTINCT src_table FROM closure WHERE src_table != '';
 
 ---
 
-### 6-7. human_decision_overlay / human_review_queue
+### 6-9. human_decision_overlay / human_review_queue / multi_field_decision_templates / multi_field_decision_audit
 
-人工决策覆盖记录和审核队列（当前包含 2 条已批准的人工裁决规则）。
+人工决策覆盖记录、模板及逐候选前后哈希审计。`multi_field_decision_templates` 保存同文案模板哈希和边界保护；`multi_field_decision_audit` 保存 470 条有效候选的来源、决策依据及前后内容哈希。
 
 ---
 
@@ -198,8 +202,10 @@ single_field_constraints      field_group (JSON数组)
 ## 完整性校验
 
 - SQLite integrity_check: **ok**
-- 全部 field_group 中的 TABLE.FIELD 均存在于 field_master
-- 中文实体名已全部映射为英文表代码
+- 470 条有效候选、2 条经人工批准废弃；待人工判断 0 条
+- 1,011 个有效 field_group 项全部为 `TABLE.FIELD`，且均存在于 field_master
+- 445 条引用存在性约束均保存 `PROVIDER_TO_CONSUMER` 方向；多目标引用保存 `ANY` 语义
+- 同文案传播同时校验主字段和提供者关系，避免把同文案自引用候选误批准
 - 跨表约束的 JOIN 路径均可追溯到 field_master
 
 ---
@@ -207,18 +213,19 @@ single_field_constraints      field_group (JSON数组)
 ## 构建过程
 
 1. **EAS-10**：DeepSeek 对 1,963 字段逐字段语义解析，输出单字段约束 + 多字段候选
-2. **EAS-12**：对 472 条多字段候选进行全量审查、去重、消歧、字段映射验证
-   - 中文实体名→英文表代码硬代码映射
-   - 复合 OR 实体人工判断后拆分为多个表引用
-   - 同表/跨表判定基于 field_master 中存在的英文表代码
-   - 银行业务逻辑审查（COMPARISON 方向、引用目标合理性）
-3. 人工审核 Excel 中标注的问题已全部修复
+2. **EAS-12**：对 472 条多字段候选进行全量审查、去重、消歧、字段映射验证。
+3. **人工批示扩展复核**：读取附件 `019ff606-ccdb-7185-aa66-713fb7d43b60`（SHA-256 `a3ffe34f6c44ddb1a5aa86a0676a66fb592078bfbeb3fa094dd1d85924fc32e3`）中“人工判断审查”Sheet 的 M 列：
+   - 33 条显式批示逐条落地；
+   - 对相同检核表述及同类确定性映射传播，另闭合 51 条原 `REVIEW`；
+   - 361 条既有 `APPROVE` 裸表端点补为 `TABLE.FIELD`；
+   - 对 M 列“个人/对公活期存款分户账”代码重复的单元格，以同格中文表述和冻结 field_master 校正为 `GRHQCKFHZ.HQCKZH` 与 `DGHQCKFHZ.HQCKZH`；
+   - 结果为 `APPROVE 470 / REVIEW 0 / DISCARDED 2`。
 
 ---
 
 ## 版本
 
 - 构建日期：2026-08-12
-- 审查状态：APPROVE 388 / REVIEW 82 / DISCARDED 2
+- 审查状态：APPROVE 470 / REVIEW 0 / DISCARDED 2
 - 冻结来源：`规范附件3数据元-规范附件3数据结构-规范附件4检核规则-字段粒度合并-已填充检核规则.xlsx`
-- SHA-256：`9bd0f19a1afdd5c6d0e91bafb94ef06adafba748739a181e72490f4f8002c80e`
+- 当前 SQLite SHA-256：`611c99f31069c493154bb10d47e6db9b73bc8335d18b86199f610a3c18873478`；正式发布时必须写入 05 层 manifest，不能复用历史哈希。
