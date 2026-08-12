@@ -1,0 +1,75 @@
+table_code,table_name,decision,minimum_record_count,downstream_evidence_edge_count,downstream_consumer_tables,reason,approval_basis
+BHYXYZB,保函与信用证表,EVENT_OWNED,0,1,MYBJXXB,合同、借据、担保、交易、明细、变动或事后状态类事件产物；由业务事件操作闭包负责,EAS-43/44 项目负责人最新裁决 + CA-V0.3.0 正式图证据
+BNWYWDBHTB,表内外业务担保合同表,EVENT_OWNED,0,2,"BNWYWDBR,BNWYWDZYW",合同、借据、担保、交易、明细、变动或事后状态类事件产物；由业务事件操作闭包负责,EAS-43/44 项目负责人最新裁决 + CA-V0.3.0 正式图证据
+BNWYWDBR,表内外业务担保人,EVENT_OWNED,0,0,,合同、借据、担保、交易、明细、变动或事后状态类事件产物；由业务事件操作闭包负责,EAS-43/44 项目负责人最新裁决 + CA-V0.3.0 正式图证据
+BNWYWDZYW,表内外业务抵质押物,EVENT_OWNED,0,0,,合同、借据、担保、交易、明细、变动或事后状态类事件产物；由业务事件操作闭包负责,EAS-43/44 项目负责人最新裁决 + CA-V0.3.0 正式图证据
+CZXXB,存折信息表,ON_DEMAND_ONLY,0,0,,存折对象，但正式图中无下游消费证据；仅在具体 profile 明确请求且重新通过下游证据闸门后扩容,EAS-43/44 项目负责人最新裁决 + CA-V0.3.0 正式图证据
+DGDQCKFHZ,对公定期存款分户账,INITIAL_SEED,1,2,"CZXXB,DGDQCKFHZMX",对公定期账户初始状态；存在 2 条下游证据，进入初次空库最小池,EAS-43/44 项目负责人最新裁决 + CA-V0.3.0 正式图证据
+DGDQCKFHZMX,对公定期存款分户账明细记录,EVENT_OWNED,0,0,,合同、借据、担保、交易、明细、变动或事后状态类事件产物；由业务事件操作闭包负责,EAS-43/44 项目负责人最新裁决 + CA-V0.3.0 正式图证据
+DGHQCKFHZ,对公活期存款分户账,INITIAL_SEED,1,3,"CZXXB,DGHQCKFHZMX,JJKXXB",对公活期账户初始状态；存在 3 条下游证据，进入初次空库最小池,EAS-43/44 项目负责人最新裁决 + CA-V0.3.0 正式图证据
+DGHQCKFHZMX,对公活期存款分户账明细记录,EVENT_OWNED,0,0,,合同、借据、担保、交易、明细、变动或事后状态类事件产物；由业务事件操作闭包负责,EAS-43/44 项目负责人最新裁决 + CA-V0.3.0 正式图证据
+DGKHCWXXB,对公客户财务信息表,ON_DEMAND_ONLY,0,0,,客户财务状态，但正式图中无下游消费证据；仅在具体 profile 明确请求且重新通过下游证据闸门后扩容,EAS-43/44 项目负责人最新裁决 + CA-V0.3.0 正式图证据
+DGKHXXB,对公客户信息表,INITIAL_SEED,1,45,"BHYXYZB,CZXXB,DGDQCKFHZ,DGDQCKFHZMX,DGHQCKFHZ,DGHQCKFHZMX,DGKHCWXXB,DGXDFHZ,DGXDFHZMX,DGXDYWJJB,DKDJB,DKHXB,DKWJXTBD,DKZJJYXXB,DKZQB,DLDJYXXB,GDXXB,GLGXB,GRDQCKFHZ,GRDQCKFHZMX,GRHQCKFHZ,GRHQCKFHZMX,GRKHGXB,GRXDFHZ,GRXDFHZMX,GRXDYWJJB,JJKXXB,JTKHB,KHLCZHXXB,LCCPXSMXB,RZZLYWB,SXXXB,WTDKXXB,XDHTB,XMDKXXB,XYKJYMXB,XYKXXB,YTDKXXB",对公客户对象；存在 45 条下游证据，进入初次空库最小池,EAS-43/44 项目负责人最新裁决 + CA-V0.3.0 正式图证据
+DGXDFHZ,对公信贷分户账,EVENT_OWNED,0,2,"DGXDFHZMX,DGXDYWJJB",合同、借据、担保、交易、明细、变动或事后状态类事件产物；由业务事件操作闭包负责,EAS-43/44 项目负责人最新裁决 + CA-V0.3.0 正式图证据
+DGXDFHZMX,对公信贷分户账明细记录,EVENT_OWNED,0,0,,合同、借据、担保、交易、明细、变动或事后状态类事件产物；由业务事件操作闭包负责,EAS-43/44 项目负责人最新裁决 + CA-V0.3.0 正式图证据
+DGXDYWJJB,对公信贷业务借据表,EVENT_OWNED,0,14,"DGXDFHZ,DGXDFHZMX,DKDJB,DKHXB,MYRZYWB,PJTXB,PJZTXB,RZZLYWB,STZFXXB,WTDKXXB,XMDKXXB,YTDKXXB,ZCZRGXB",合同、借据、担保、交易、明细、变动或事后状态类事件产物；由业务事件操作闭包负责,EAS-43/44 项目负责人最新裁决 + CA-V0.3.0 正式图证据
+DKDJB,垫款登记表,EVENT_OWNED,0,0,,合同、借据、担保、交易、明细、变动或事后状态类事件产物；由业务事件操作闭包负责,EAS-43/44 项目负责人最新裁决 + CA-V0.3.0 正式图证据
+DKHXB,贷款核销表,EVENT_OWNED,0,0,,合同、借据、担保、交易、明细、变动或事后状态类事件产物；由业务事件操作闭包负责,EAS-43/44 项目负责人最新裁决 + CA-V0.3.0 正式图证据
+DKWJXTBD,贷款五级形态变动表,EVENT_OWNED,0,0,,合同、借据、担保、交易、明细、变动或事后状态类事件产物；由业务事件操作闭包负责,EAS-43/44 项目负责人最新裁决 + CA-V0.3.0 正式图证据
+DKZJJYXXB,代客资金交易信息表,EVENT_OWNED,0,0,,合同、借据、担保、交易、明细、变动或事后状态类事件产物；由业务事件操作闭包负责,EAS-43/44 项目负责人最新裁决 + CA-V0.3.0 正式图证据
+DKZQB,贷款展期表,EVENT_OWNED,0,0,,合同、借据、担保、交易、明细、变动或事后状态类事件产物；由业务事件操作闭包负责,EAS-43/44 项目负责人最新裁决 + CA-V0.3.0 正式图证据
+DLDJYXXB,代理代销交易信息表,EVENT_OWNED,0,0,,合同、借据、担保、交易、明细、变动或事后状态类事件产物；由业务事件操作闭包负责,EAS-43/44 项目负责人最新裁决 + CA-V0.3.0 正式图证据
+FBZCMXXXB,非标资产明细信息表,EVENT_OWNED,0,0,,合同、借据、担保、交易、明细、变动或事后状态类事件产物；由业务事件操作闭包负责,EAS-43/44 项目负责人最新裁决 + CA-V0.3.0 正式图证据
+GDXXB,股东信息表,ON_DEMAND_ONLY,0,0,,股东对象，但正式图中无下游消费证据；仅在具体 profile 明确请求且重新通过下游证据闸门后扩容,EAS-43/44 项目负责人最新裁决 + CA-V0.3.0 正式图证据
+GLGXB,关联关系表,ON_DEMAND_ONLY,0,0,,关联关系对象，但正式图中无下游消费证据；仅在具体 profile 明确请求且重新通过下游证据闸门后扩容,EAS-43/44 项目负责人最新裁决 + CA-V0.3.0 正式图证据
+GRDQCKFHZ,个人定期存款分户账,INITIAL_SEED,1,2,"CZXXB,GRDQCKFHZMX",个人定期账户初始状态；存在 2 条下游证据，进入初次空库最小池,EAS-43/44 项目负责人最新裁决 + CA-V0.3.0 正式图证据
+GRDQCKFHZMX,个人定期存款分户账明细记录,EVENT_OWNED,0,0,,合同、借据、担保、交易、明细、变动或事后状态类事件产物；由业务事件操作闭包负责,EAS-43/44 项目负责人最新裁决 + CA-V0.3.0 正式图证据
+GRHQCKFHZ,个人活期存款分户账,INITIAL_SEED,1,3,"CZXXB,GRHQCKFHZMX,JJKXXB",个人活期账户初始状态；存在 3 条下游证据，进入初次空库最小池,EAS-43/44 项目负责人最新裁决 + CA-V0.3.0 正式图证据
+GRHQCKFHZMX,个人活期存款分户账明细记录,EVENT_OWNED,0,0,,合同、借据、担保、交易、明细、变动或事后状态类事件产物；由业务事件操作闭包负责,EAS-43/44 项目负责人最新裁决 + CA-V0.3.0 正式图证据
+GRJCXXB,个人基础信息表,INITIAL_SEED,1,41,"CZXXB,DGDQCKFHZ,DGDQCKFHZMX,DGHQCKFHZ,DGHQCKFHZMX,DGKHCWXXB,DGXDFHZ,DGXDFHZMX,DGXDYWJJB,DKDJB,DKHXB,DKWJXTBD,DKZJJYXXB,DKZQB,DLDJYXXB,GDXXB,GLGXB,GRDQCKFHZ,GRDQCKFHZMX,GRHQCKFHZ,GRHQCKFHZMX,GRKHGXB,GRXDFHZ,GRXDFHZMX,GRXDYWJJB,JJKXXB,KHLCZHXXB,LCCPXSMXB,RZZLYWB,SXXXB,WTDKXXB,XDHTB,XYKJYMXB,XYKXXB",个人客户对象；存在 41 条下游证据，进入初次空库最小池,EAS-43/44 项目负责人最新裁决 + CA-V0.3.0 正式图证据
+GRKHGXB,个人客户关系表,ON_DEMAND_ONLY,0,0,,个人客户关系对象，但正式图中无下游消费证据；仅在具体 profile 明确请求且重新通过下游证据闸门后扩容,EAS-43/44 项目负责人最新裁决 + CA-V0.3.0 正式图证据
+GRXDFHZ,个人信贷分户账,EVENT_OWNED,0,3,"GRXDFHZMX,GRXDYWJJB",合同、借据、担保、交易、明细、变动或事后状态类事件产物；由业务事件操作闭包负责,EAS-43/44 项目负责人最新裁决 + CA-V0.3.0 正式图证据
+GRXDFHZMX,个人信贷分户账明细记录,EVENT_OWNED,0,0,,合同、借据、担保、交易、明细、变动或事后状态类事件产物；由业务事件操作闭包负责,EAS-43/44 项目负责人最新裁决 + CA-V0.3.0 正式图证据
+GRXDYWJJB,个人信贷业务借据表,EVENT_OWNED,0,13,"DKDJB,DKHXB,GRXDFHZ,MYRZYWB,PJTXB,PJZTXB,RZZLYWB,STZFXXB,WTDKXXB,XMDKXXB,YTDKXXB,ZCZRGXB",合同、借据、担保、交易、明细、变动或事后状态类事件产物；由业务事件操作闭包负责,EAS-43/44 项目负责人最新裁决 + CA-V0.3.0 正式图证据
+GWXXB,岗位信息表,INITIAL_SEED,1,2,"GYB,YGB",岗位对象；存在 2 条下游证据，进入初次空库最小池,EAS-43/44 项目负责人最新裁决 + CA-V0.3.0 正式图证据
+GYB,柜员表,INITIAL_SEED,1,23,"CZXXB,DGDQCKFHZ,DGDQCKFHZMX,DGHQCKFHZ,DGHQCKFHZMX,DGXDFHZMX,GRDQCKFHZ,GRDQCKFHZMX,GRHQCKFHZ,GRHQCKFHZMX,GRXDFHZMX,JJKXXB,LCCPXSMXB,NBFHZMX,XYKXXB",柜员对象；存在 23 条下游证据，进入初次空库最小池,EAS-43/44 项目负责人最新裁决 + CA-V0.3.0 正式图证据
+HLXXB,汇率信息表,ON_DEMAND_ONLY,0,0,,汇率静态状态，但正式图中无下游消费证据；仅在具体 profile 明确请求且重新通过下游证据闸门后扩容,EAS-43/44 项目负责人最新裁决 + CA-V0.3.0 正式图证据
+JGGXB,机构关系表,ON_DEMAND_ONLY,0,0,,机构关系对象，但正式图中无下游消费证据；仅在具体 profile 明确请求且重新通过下游证据闸门后扩容,EAS-43/44 项目负责人最新裁决 + CA-V0.3.0 正式图证据
+JGXXB,机构信息表,INITIAL_SEED,1,234,"BHYXYZB,BNWYWDBHTB,BNWYWDBR,BNWYWDZYW,CZXXB,DGDQCKFHZ,DGDQCKFHZMX,DGHQCKFHZ,DGHQCKFHZMX,DGKHCWXXB,DGKHXXB,DGXDFHZ,DGXDFHZMX,DGXDYWJJB,DKDJB,DKHXB,DKWJXTBD,DKZJJYXXB,DKZQB,DLDJYXXB,GDXXB,GLGXB,GRDQCKFHZ,GRDQCKFHZMX,GRHQCKFHZ,GRHQCKFHZMX,GRJCXXB,GRKHGXB,GRXDFHZ,GRXDFHZMX,GRXDYWJJB,GWXXB,GYB,HLXXB,JGGXB,JJKXXB,JRGJXXB,JTKHB,KHLCZHXXB,MYBJXXB,MYRZYWB,NBFHZ,NBFHZMX,PJCPXXB,PJTXB,PJZTXB,RHJRJGZCFZXMBB,RZZLYWB,SDSHXXB,STZFXXB,SXXXB,WTDKXXB,XDHTB,XDZCZRB,XMDKXXB,XYKJYMXB,XYKXXB,YGB,YTDKXXB,ZCZRGXB,ZYZJJYXXB,ZYZJYWYEB",机构根对象；存在 234 条下游证据，进入初次空库最小池,EAS-43/44 项目负责人最新裁决 + CA-V0.3.0 正式图证据
+JJKXXB,借记卡信息表,ON_DEMAND_ONLY,0,0,,借记卡对象，但正式图中无下游消费证据；仅在具体 profile 明确请求且重新通过下游证据闸门后扩容,EAS-43/44 项目负责人最新裁决 + CA-V0.3.0 正式图证据
+JRGJXXB,金融工具信息表,INITIAL_SEED,1,4,"ZYZJJYXXB,ZYZJYWYEB",金融工具静态对象；存在 4 条下游证据，进入初次空库最小池,EAS-43/44 项目负责人最新裁决 + CA-V0.3.0 正式图证据
+JTKHB,集团客户表,ON_DEMAND_ONLY,0,0,,集团客户对象，但正式图中无下游消费证据；仅在具体 profile 明确请求且重新通过下游证据闸门后扩容,EAS-43/44 项目负责人最新裁决 + CA-V0.3.0 正式图证据
+KHLCZHXXB,客户理财账户信息表,ON_DEMAND_ONLY,0,0,,客户理财账户对象，但正式图中无下游消费证据；仅在具体 profile 明确请求且重新通过下游证据闸门后扩容,EAS-43/44 项目负责人最新裁决 + CA-V0.3.0 正式图证据
+LCCPDCCCXXB,理财产品底层持仓信息表,EVENT_OWNED,0,3,"FBZCMXXXB,LCCPZCJYXXB,QTFBZCMXXXB",合同、借据、担保、交易、明细、变动或事后状态类事件产物；由业务事件操作闭包负责,EAS-43/44 项目负责人最新裁决 + CA-V0.3.0 正式图证据
+LCCPXSMXB,理财产品销售明细表,EVENT_OWNED,0,0,,合同、借据、担保、交易、明细、变动或事后状态类事件产物；由业务事件操作闭包负责,EAS-43/44 项目负责人最新裁决 + CA-V0.3.0 正式图证据
+LCCPXXB,理财产品信息表,INITIAL_SEED,1,14,"KHLCZHXXB,LCCPDCCCXXB,LCCPXSMXB,LCCPZCJYXXB,LCCPZTB",理财产品静态对象；存在 14 条下游证据，进入初次空库最小池,EAS-43/44 项目负责人最新裁决 + CA-V0.3.0 正式图证据
+LCCPZCJYXXB,理财产品资产交易信息表,EVENT_OWNED,0,0,,合同、借据、担保、交易、明细、变动或事后状态类事件产物；由业务事件操作闭包负责,EAS-43/44 项目负责人最新裁决 + CA-V0.3.0 正式图证据
+LCCPZTB,理财产品状态表,EVENT_OWNED,0,0,,合同、借据、担保、交易、明细、变动或事后状态类事件产物；由业务事件操作闭包负责,EAS-43/44 项目负责人最新裁决 + CA-V0.3.0 正式图证据
+MYBJXXB,贸易背景信息表,EVENT_OWNED,0,0,,合同、借据、担保、交易、明细、变动或事后状态类事件产物；由业务事件操作闭包负责,EAS-43/44 项目负责人最新裁决 + CA-V0.3.0 正式图证据
+MYRZYWB,贸易融资业务表,EVENT_OWNED,0,0,,合同、借据、担保、交易、明细、变动或事后状态类事件产物；由业务事件操作闭包负责,EAS-43/44 项目负责人最新裁决 + CA-V0.3.0 正式图证据
+NBFHZ,内部分户账,INITIAL_SEED,1,1,NBFHZMX,内部账户初始状态；存在 1 条下游证据，进入初次空库最小池,EAS-43/44 项目负责人最新裁决 + CA-V0.3.0 正式图证据
+NBFHZMX,内部分户账明细记录,EVENT_OWNED,0,0,,合同、借据、担保、交易、明细、变动或事后状态类事件产物；由业务事件操作闭包负责,EAS-43/44 项目负责人最新裁决 + CA-V0.3.0 正式图证据
+NBKMDZB,内部科目对照表,ON_DEMAND_ONLY,0,0,,科目映射配置，但正式图中无下游消费证据；仅在具体 profile 明确请求且重新通过下游证据闸门后扩容,EAS-43/44 项目负责人最新裁决 + CA-V0.3.0 正式图证据
+PJCPXXB,票据出票信息表,EVENT_OWNED,0,1,MYBJXXB,合同、借据、担保、交易、明细、变动或事后状态类事件产物；由业务事件操作闭包负责,EAS-43/44 项目负责人最新裁决 + CA-V0.3.0 正式图证据
+PJTXB,票据贴现表,EVENT_OWNED,0,0,,合同、借据、担保、交易、明细、变动或事后状态类事件产物；由业务事件操作闭包负责,EAS-43/44 项目负责人最新裁决 + CA-V0.3.0 正式图证据
+PJZTXB,票据转贴现表,EVENT_OWNED,0,0,,合同、借据、担保、交易、明细、变动或事后状态类事件产物；由业务事件操作闭包负责,EAS-43/44 项目负责人最新裁决 + CA-V0.3.0 正式图证据
+QTFBZCMXXXB,其他非标资产明细信息表,EVENT_OWNED,0,0,,合同、借据、担保、交易、明细、变动或事后状态类事件产物；由业务事件操作闭包负责,EAS-43/44 项目负责人最新裁决 + CA-V0.3.0 正式图证据
+RHJRJGZCFZXMBB,人行金融机构资产负债项目报表,EVENT_OWNED,0,0,,合同、借据、担保、交易、明细、变动或事后状态类事件产物；由业务事件操作闭包负责,EAS-43/44 项目负责人最新裁决 + CA-V0.3.0 正式图证据
+RZZLYWB,融资租赁业务表,EVENT_OWNED,0,0,,合同、借据、担保、交易、明细、变动或事后状态类事件产物；由业务事件操作闭包负责,EAS-43/44 项目负责人最新裁决 + CA-V0.3.0 正式图证据
+SDSHXXB,收单商户信息表,INITIAL_SEED,1,2,XYKJYMXB,收单商户对象；存在 2 条下游证据，进入初次空库最小池,EAS-43/44 项目负责人最新裁决 + CA-V0.3.0 正式图证据
+STZFXXB,受托支付信息表,EVENT_OWNED,0,0,,合同、借据、担保、交易、明细、变动或事后状态类事件产物；由业务事件操作闭包负责,EAS-43/44 项目负责人最新裁决 + CA-V0.3.0 正式图证据
+SXXXB,授信信息表,INITIAL_SEED,2,2,"DGKHXXB,GRJCXXB",个人/对公客户授信初始状态；存在 2 条下游证据，进入初次空库最小池,EAS-43/44 项目负责人最新裁决 + CA-V0.3.0 正式图证据
+WTDKXXB,委托贷款信息表,EVENT_OWNED,0,0,,合同、借据、担保、交易、明细、变动或事后状态类事件产物；由业务事件操作闭包负责,EAS-43/44 项目负责人最新裁决 + CA-V0.3.0 正式图证据
+XDHTB,信贷合同表,EVENT_OWNED,0,14,"DGXDYWJJB,DKDJB,DKHXB,DKWJXTBD,DKZQB,GRXDYWJJB,MYRZYWB,PJTXB,PJZTXB,RZZLYWB,STZFXXB,WTDKXXB,XMDKXXB,YTDKXXB",合同、借据、担保、交易、明细、变动或事后状态类事件产物；由业务事件操作闭包负责,EAS-43/44 项目负责人最新裁决 + CA-V0.3.0 正式图证据
+XDZCZRB,信贷资产转让表,EVENT_OWNED,0,1,ZCZRGXB,合同、借据、担保、交易、明细、变动或事后状态类事件产物；由业务事件操作闭包负责,EAS-43/44 项目负责人最新裁决 + CA-V0.3.0 正式图证据
+XMDKXXB,项目贷款信息表,EVENT_OWNED,0,0,,合同、借据、担保、交易、明细、变动或事后状态类事件产物；由业务事件操作闭包负责,EAS-43/44 项目负责人最新裁决 + CA-V0.3.0 正式图证据
+XYKFQYWB,信用卡分期业务表,EVENT_OWNED,0,0,,合同、借据、担保、交易、明细、变动或事后状态类事件产物；由业务事件操作闭包负责,EAS-43/44 项目负责人最新裁决 + CA-V0.3.0 正式图证据
+XYKJYMXB,信用卡交易明细表,EVENT_OWNED,0,0,,合同、借据、担保、交易、明细、变动或事后状态类事件产物；由业务事件操作闭包负责,EAS-43/44 项目负责人最新裁决 + CA-V0.3.0 正式图证据
+XYKSXQKB,信用卡授信情况表,ON_DEMAND_ONLY,0,0,,信用卡授信状态；未进入正式多字段图且无下游消费证据；仅在具体 profile 明确请求且重新通过下游证据闸门后扩容,EAS-43/44 项目负责人最新裁决 + CA-V0.3.0 正式图证据
+XYKXXB,信用卡信息表,INITIAL_SEED,1,5,"DKHXB,XYKJYMXB,ZCZRGXB",信用卡对象及初始额度状态；存在 5 条下游证据，进入初次空库最小池,EAS-43/44 项目负责人最新裁决 + CA-V0.3.0 正式图证据
+YGB,员工表,INITIAL_SEED,1,20,"BHYXYZB,BNWYWDBHTB,CZXXB,DGXDYWJJB,DKHXB,DKWJXTBD,DKZJJYXXB,DKZQB,DLDJYXXB,GRXDYWJJB,GYB,JJKXXB,LCCPXXB,PJCPXXB,SXXXB,WTDKXXB,XDHTB,ZYZJJYXXB",员工对象；存在 20 条下游证据，进入初次空库最小池,EAS-43/44 项目负责人最新裁决 + CA-V0.3.0 正式图证据
+YTDKXXB,银团贷款信息表,EVENT_OWNED,0,0,,合同、借据、担保、交易、明细、变动或事后状态类事件产物；由业务事件操作闭包负责,EAS-43/44 项目负责人最新裁决 + CA-V0.3.0 正式图证据
+ZCZRGXB,资产转让关系表,EVENT_OWNED,0,0,,合同、借据、担保、交易、明细、变动或事后状态类事件产物；由业务事件操作闭包负责,EAS-43/44 项目负责人最新裁决 + CA-V0.3.0 正式图证据
+ZYZJJYXXB,自营资金交易信息表,EVENT_OWNED,0,0,,合同、借据、担保、交易、明细、变动或事后状态类事件产物；由业务事件操作闭包负责,EAS-43/44 项目负责人最新裁决 + CA-V0.3.0 正式图证据
+ZYZJYWYEB,自营资金业务余额表,EVENT_OWNED,0,0,,合同、借据、担保、交易、明细、变动或事后状态类事件产物；由业务事件操作闭包负责,EAS-43/44 项目负责人最新裁决 + CA-V0.3.0 正式图证据
+ZZKJQKMB,总账会计全科目表,INITIAL_SEED,1,44,"DGDQCKFHZ,DGDQCKFHZMX,DGHQCKFHZ,DGHQCKFHZMX,DGXDFHZ,DGXDFHZMX,DGXDYWJJB,GRDQCKFHZ,GRDQCKFHZMX,GRHQCKFHZ,GRHQCKFHZMX,GRXDFHZ,GRXDFHZMX,GRXDYWJJB,NBFHZ,NBFHZMX,NBKMDZB,XYKJYMXB,ZYZJJYXXB,ZYZJYWYEB",会计科目静态配置；存在 44 条下游证据，进入初次空库最小池,EAS-43/44 项目负责人最新裁决 + CA-V0.3.0 正式图证据
