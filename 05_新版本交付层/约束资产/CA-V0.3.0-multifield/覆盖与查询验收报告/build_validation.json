@@ -1,0 +1,15 @@
+{
+  "approved_constraints": 470,
+  "reference_constraints": 443,
+  "comparison_constraints": 27,
+  "intra_table_constraints": 23,
+  "cross_table_constraints": 447,
+  "excluded_constraints": 2,
+  "constraint_field_rows": 1007,
+  "referenced_fields": 535,
+  "referenced_evidence": 470,
+  "sqlite_integrity_check": "ok",
+  "foreign_key_violations": 0,
+  "sqlite_sha256": "5e2753235bf1e47c9d015a05d28c45a20d17a26789d1c88498f80b6ec43577bb",
+  "sqlite_size_bytes": 1900544
+}

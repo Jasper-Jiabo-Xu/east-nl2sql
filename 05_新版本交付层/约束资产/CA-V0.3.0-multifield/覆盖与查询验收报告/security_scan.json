@@ -1,0 +1,19 @@
+{
+  "artifact_id": "CA-MULTIFIELD-20260812-003",
+  "scanned_at_utc": "2026-08-12T14:31:01Z",
+  "scope": [
+    "05_新版本交付层/约束资产/CA-V0.3.0-multifield",
+    "06_测试与验收/约束资产与000验收/CA-V0.3.0-multifield_验收摘要.md",
+    "03_构建过程层/EAS-12_多字段约束资产审查与固化/build_multifield_release.py"
+  ],
+  "blocked_categories": [
+    "API keys and tokens",
+    "dotenv and credentials",
+    "CoreBank data",
+    "LLM raw responses and caches",
+    "SQLite WAL/SHM files",
+    "runtime temporary inputs"
+  ],
+  "findings": [],
+  "result": "PASS"
+}
