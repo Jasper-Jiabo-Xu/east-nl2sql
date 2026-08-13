@@ -1,0 +1,11 @@
+{
+  "artifact_layout": "config/artifact-layout.json",
+  "content_sha256": "5fe17d6aa305a73360fdc4168e0f97d077b9101bb3dca88f05e5d68778f5b2f0",
+  "downstream_contract": "config/downstream-contract.json",
+  "input_lock": "config/input-lock.json",
+  "migration_map": "config/migration-map.json",
+  "root_contract": "config/root-contract.json",
+  "schema_version": "v5.governance-manifest/v1",
+  "toolchain_contract": "config/toolchain-contract.json",
+  "workflow_policy": "config/workflow-policy.json"
+}

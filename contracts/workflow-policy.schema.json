@@ -1,0 +1,16 @@
+{
+  "$id": "https://east.example/contracts/workflow-policy/v1",
+  "title": "V5 工作流策略",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "max_attempts", "states", "retryable_failure_codes", "terminal_failure_codes", "release_rule", "rollback_rule"],
+  "properties": {
+    "schema_version": {"const": "v5.workflow-policy/v1"},
+    "max_attempts": {"const": 3},
+    "states": {"type": "array"},
+    "retryable_failure_codes": {"type": "array"},
+    "terminal_failure_codes": {"type": "array"},
+    "release_rule": {"type": "string"},
+    "rollback_rule": {"type": "string"}
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "$id": "https://east.example/contracts/input-lock/v1",
+  "title": "V5 冻结输入锁",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "drift_error", "inputs"],
+  "properties": {
+    "schema_version": {"const": "v5.input-lock/v1"},
+    "drift_error": {"const": "INPUT_VERSION_DRIFT"},
+    "inputs": {"type": "array", "minItems": 1}
+  }
+}

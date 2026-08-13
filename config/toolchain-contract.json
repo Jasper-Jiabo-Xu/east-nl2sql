@@ -1,0 +1,6 @@
+{
+  "schema_version": "v5.toolchain-contract/v1",
+  "commands": {"lint": "python3 scripts/v5.py lint", "type": "python3 scripts/v5.py type", "test": "python3 scripts/v5.py test", "schema": "python3 scripts/v5.py schema", "security": "python3 scripts/v5.py security", "check": "python3 scripts/v5.py check"},
+  "ci_entrypoint": "python3 scripts/v5.py check",
+  "exit_codes": {"0": "success", "2": "contract/rejection failure", "3": "toolchain failure"}
+}

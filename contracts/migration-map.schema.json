@@ -1,0 +1,8 @@
+{
+  "$id": "https://east.example/contracts/migration-map/v1",
+  "title": "V5 迁移映射",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "rules"],
+  "properties": {"schema_version": {"const": "v5.migration-map/v1"}, "rules": {"type": "array"}}
+}

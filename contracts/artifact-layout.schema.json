@@ -1,0 +1,15 @@
+{
+  "$id": "https://east.example/contracts/artifact-layout/v1",
+  "title": "V5 运行制品定位",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "run_id_pattern", "attempt_range", "attempt_template", "identity_rule", "children"],
+  "properties": {
+    "schema_version": {"const": "v5.artifact-layout/v1"},
+    "run_id_pattern": {"type": "string"},
+    "attempt_range": {"type": "array"},
+    "attempt_template": {"type": "string"},
+    "identity_rule": {"type": "string"},
+    "children": {"type": "array"}
+  }
+}

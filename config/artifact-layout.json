@@ -1,0 +1,8 @@
+{
+  "schema_version": "v5.artifact-layout/v1",
+  "run_id_pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$",
+  "attempt_range": [1, 3],
+  "attempt_template": "${V5_RUNTIME_ROOT}/vnext/03_构建过程层/issues/{issue_id}/{run_id}/{attempt}",
+  "identity_rule": "identity is issue_id+run_id+attempt+content_sha256; locator may change",
+  "children": ["logs", "responses", "sandbox", "candidate", "manifest"]
+}

@@ -1,0 +1,21 @@
+{
+  "$id": "https://east.example/contracts/root-config/v1",
+  "title": "V5 三根目录配置",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "roots"],
+  "properties": {
+    "schema_version": {"const": "v5.root-config/v1"},
+    "roots": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repo_root", "runtime_root", "reference_root", "reference_read_only"],
+      "properties": {
+        "repo_root": {"type": "string"},
+        "runtime_root": {"type": "string"},
+        "reference_root": {"type": "string"},
+        "reference_read_only": {"const": true}
+      }
+    }
+  }
+}
