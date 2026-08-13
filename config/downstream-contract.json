@@ -1,0 +1,7 @@
+{
+  "schema_version": "v5.downstream-contract/v1",
+  "consumer": "EAS-15",
+  "required_locators": ["contracts/common/", "src/east_v5/artifacts/", "tests/artifacts/", "runtime artifact registry locator"],
+  "write_boundary": "consumer may create only an empty COMMON-ENVELOPE development placeholder under validated runtime root; never reference root or formal delivery layer",
+  "content_hash_rule": "verify governance manifest hash and schema versions before write"
+}

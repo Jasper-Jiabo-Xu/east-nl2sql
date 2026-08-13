@@ -1,0 +1,8 @@
+{
+  "$id": "https://east.example/contracts/downstream-contract/v1",
+  "title": "EAS-15 消费合同",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "consumer", "required_locators", "write_boundary", "content_hash_rule"],
+  "properties": {"schema_version": {"const": "v5.downstream-contract/v1"}, "consumer": {"const": "EAS-15"}, "required_locators": {"type": "array"}, "write_boundary": {"type": "string"}, "content_hash_rule": {"type": "string"}}
+}

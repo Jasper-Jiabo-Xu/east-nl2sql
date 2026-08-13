@@ -1,0 +1,8 @@
+{
+  "schema_version": "v5.migration-map/v1",
+  "rules": [
+    {"legacy_locator": "02_参考与旧版引入/**", "v5_target": "none", "action": "reference_only", "direct_copy": "forbidden", "exception_approval": "human approval id required"},
+    {"legacy_locator": "old field generators/policies/table assemblers/registry", "v5_target": "none", "action": "retired", "direct_copy": "forbidden", "exception_approval": "not permitted"},
+    {"legacy_locator": "runtime output", "v5_target": "${V5_RUNTIME_ROOT}/vnext/03_构建过程层", "action": "recreate_from_contract", "direct_copy": "forbidden", "exception_approval": "human approval id required"}
+  ]
+}

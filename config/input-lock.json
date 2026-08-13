@@ -1,0 +1,14 @@
+{
+  "drift_error": "INPUT_VERSION_DRIFT",
+  "inputs": [
+    {"id": "git-baseline", "locator": "git:11e44e5b71972e67ae9be9ab1d567e7440c9c7d5", "sha256": "11e44e5b71972e67ae9be9ab1d567e7440c9c7d5", "purpose": "clean V5 implementation baseline", "read_only": true},
+    {"id": "eas-45-decision", "locator": "multica:issue/58a36a4e-38ac-4735-9e93-3e345657ace7/comment/8ab3457f-7548-45b1-87ae-e6bf4a6c93a9@2026-08-13T01:00:43Z", "sha256": "platform-version-locked", "purpose": "human decision", "read_only": true},
+    {"id": "agent-list", "locator": "reference:结构图/agent划分与任务输入输出清单-V2.xlsx", "sha256": "f26694522c3fae22182014a41d0cf36af1b10b5b5f19895366c8b55c83b8d831", "purpose": "architecture reference", "read_only": true},
+    {"id": "v5-map", "locator": "reference:结构图/EAST数据集大图-V5-人工.drawio", "sha256": "2ec689df49aef3161b57177952f0620fc85564acdf24c9bfb60f8eaf6cce03c3", "purpose": "architecture reference", "read_only": true},
+    {"id": "v5-overview", "locator": "reference:结构图/V5项目上下文总览.md", "sha256": "98eff3cc9d6ca02a41ee54fb815e04587d6e0f3bd5e9ef1be9419b707159308e", "purpose": "project reference", "read_only": true},
+    {"id": "file-tree", "locator": "reference:结构图/V5项目文件树与归档规范.md", "sha256": "1929438ccea853a1a6c4678b7e0288a5ea77a321b3a2bfd7d2fc470296ade40a", "purpose": "layout reference", "read_only": true},
+    {"id": "constraint-handoff", "locator": "reference:结构图/约束资产V1-字段多字段与对象明细状态通路交接.md", "sha256": "60edda7fc7b8aafc246c8dea4c6034c41f02a9eb981d255fd1fa716549074d32", "purpose": "constraint reference", "read_only": true},
+    {"id": "quality-standard", "locator": "reference:docs/total/10_quality_acceptance_standard.md", "sha256": "52517dce05fd209f6994e649880701423c8b1262c848a81163a86149e136faf9", "purpose": "quality reference", "read_only": true}
+  ],
+  "schema_version": "v5.input-lock/v1"
+}

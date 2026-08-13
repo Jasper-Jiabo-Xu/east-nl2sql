@@ -3,6 +3,15 @@ __pycache__/
 *.py[cod]
 .env
 .env.*
+*.db
+*.sqlite
+*.sqlite3
+*.log
+*.pem
+*.key
+id_rsa
+runtime/
+vnext/
 deepseek-key/
 GLM-key/
 **/api-key.txt

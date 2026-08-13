@@ -1,0 +1,9 @@
+{
+  "schema_version": "v5.workflow-policy/v1",
+  "max_attempts": 3,
+  "states": ["backlog", "todo", "in_progress", "in_review", "blocked_manual", "released", "rolled_back"],
+  "retryable_failure_codes": ["TOOL_TRANSIENT", "RUNTIME_TEMPORARY", "LOCATOR_TEMPORARY"],
+  "terminal_failure_codes": ["INPUT_VERSION_DRIFT", "ROOT_BOUNDARY_VIOLATION", "SCHEMA_VALIDATION_FAILED", "UNKNOWN_FIELD", "ATTEMPT_OUT_OF_RANGE", "IDENTITY_CONTENT_CONFLICT", "LEGACY_GENERATOR_REFERENCE", "FORMAL_RELEASE_FORBIDDEN"],
+  "release_rule": "only approved 010 fixed code may promote after independent review; this issue performs zero release calls",
+  "rollback_rule": "manifest/config update is atomic; failed validation leaves no partial target"
+}

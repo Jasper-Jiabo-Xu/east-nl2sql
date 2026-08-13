@@ -1,0 +1,8 @@
+{
+  "$id": "https://east.example/contracts/toolchain-contract/v1",
+  "title": "V5 工具链接口",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "commands", "ci_entrypoint", "exit_codes"],
+  "properties": {"schema_version": {"const": "v5.toolchain-contract/v1"}, "commands": {"type": "object"}, "ci_entrypoint": {"type": "string"}, "exit_codes": {"type": "object"}}
+}

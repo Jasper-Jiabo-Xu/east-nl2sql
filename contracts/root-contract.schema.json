@@ -1,0 +1,12 @@
+{
+  "$id": "https://east.example/contracts/root-contract/v1",
+  "title": "V5 三根目录治理合同",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "roots", "rules"],
+  "properties": {
+    "schema_version": {"const": "v5.root-contract/v1"},
+    "roots": {"type": "object"},
+    "rules": {"type": "array"}
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "schema_version": "v5.root-contract/v1",
+  "roots": {
+    "repo_root": {"config_key": "V5_REPO_ROOT", "access": "read-write", "purpose": "Git control plane", "forbidden": ["runtime artifacts", "real data", "logs", "raw model responses"]},
+    "runtime_root": {"config_key": "V5_RUNTIME_ROOT", "access": "read-write", "purpose": "local runtime data plane", "forbidden": ["repo nesting", "reference nesting", "formal delivery writes by this issue"]},
+    "reference_root": {"config_key": "V5_REFERENCE_ROOT", "access": "read-only", "purpose": "authoritative reference", "forbidden": ["writes", "repo root", "runtime root"]}
+  },
+  "rules": ["all roots are absolute, unique and non-nested", "storage locator is not immutable identity", "invalid configuration must fail before writes"]
+}

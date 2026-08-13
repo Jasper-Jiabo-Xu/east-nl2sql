@@ -1,0 +1,12 @@
+[
+  {"case":"missing_environment_variable","error":"ROOT_BOUNDARY_VIOLATION"},
+  {"case":"same_or_nested_roots","error":"ROOT_BOUNDARY_VIOLATION"},
+  {"case":"reference_root_writable","error":"ROOT_BOUNDARY_VIOLATION"},
+  {"case":"runtime_points_at_git","error":"ROOT_BOUNDARY_VIOLATION"},
+  {"case":"attempt_0_or_4","error":"ATTEMPT_OUT_OF_RANGE"},
+  {"case":"unknown_field","error":"UNKNOWN_FIELD"},
+  {"case":"illegal_state","error":"SCHEMA_VALIDATION_FAILED"},
+  {"case":"old_schema_version","error":"SCHEMA_VALIDATION_FAILED"},
+  {"case":"content_hash_drift","error":"CONTENT_HASH_DRIFT"},
+  {"case":"storage_locator_invalid","error":"LOCATOR_INVALID"}
+]
