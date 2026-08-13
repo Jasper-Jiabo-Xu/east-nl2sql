@@ -65,9 +65,10 @@ def validate_envelope(repo_root: Path, envelope: dict[str, Any], payload: Any) -
     if not isinstance(envelope["version"], int) or isinstance(envelope["version"], bool) or envelope["version"] < 1: _fail("VERSION_INVALID")
     if not isinstance(envelope["attempt_no"], int) or isinstance(envelope["attempt_no"], bool) or envelope["attempt_no"] not in (1, 2, 3): _fail("ATTEMPT_OUT_OF_RANGE")
     if envelope["mode"] not in {"question_sql", "event_data", "foundation"}: _fail("MODE_INVALID")
-    if envelope["mode"] == "foundation":
-        if envelope["qa_id"] not in (None, ""): _fail("QA_ID_INVALID")
-    elif not isinstance(envelope["qa_id"], str) or not envelope["qa_id"]: _fail("QA_ID_REQUIRED")
+    # An independent Foundation task has no QA identifier; a recovery Foundation
+    # task carries one.  Both are valid.  Non-Foundation event/question flows
+    # always require a QA identifier.
+    if envelope["mode"] != "foundation" and (not isinstance(envelope["qa_id"], str) or not envelope["qa_id"]): _fail("QA_ID_REQUIRED")
     if not isinstance(envelope["producer_id"], str) or not envelope["producer_id"] or not isinstance(envelope["trace_id"], str) or not envelope["trace_id"]: _fail("REQUIRED_VALUE_MISSING")
     if envelope["status"] not in STATUSES: _fail("STATUS_INVALID")
     if envelope["status"] == "released": _fail("FORMAL_RELEASE_FORBIDDEN")
@@ -93,6 +94,31 @@ class ArtifactRegistry:
         self.directory = attempt_path(roots, issue_id, run_id, attempt)
         self.path = self.directory / "artifact-registry.json"
         self.lock_path = self.directory / ".artifact-registry.lock"
+
+    @property
+    def run_directory(self) -> Path:
+        return self.directory.parent
+
+    def _locator_path(self, locator: str | None) -> Path | None:
+        """A locator is an existing regular file beneath this runtime attempt."""
+        if locator is None:
+            return None
+        if not isinstance(locator, str) or not locator:
+            _fail("LOCATOR_INVALID")
+        path = Path(locator)
+        if not path.is_absolute():
+            _fail("LOCATOR_INVALID")
+        resolved = path.resolve(strict=False)
+        runtime = Path(self.roots["runtime_root"]).resolve()
+        if runtime not in resolved.parents:
+            _fail("LOCATOR_OUT_OF_RUNTIME_ROOT")
+        if not resolved.is_file():
+            _fail("LOCATOR_MISSING")
+        return resolved
+
+    def validate_locator(self, locator: str | None) -> str | None:
+        resolved = self._locator_path(locator)
+        return str(resolved) if resolved else None
 
     @contextmanager
     def _locked_state(self) -> Iterator[dict[str, Any]]:
@@ -125,9 +151,22 @@ class ArtifactRegistry:
             if artifact_ref(record["envelope"]) == reference: return record
         return None
 
+    @classmethod
+    def _parent_reaches_artifact(cls, state: dict[str, Any], reference: dict[str, Any], artifact_id: str, seen: set[tuple[str, int, str]] | None = None) -> bool:
+        """Reject a direct or transitive parent edge back to the child artifact."""
+        key = (reference["artifact_id"], reference["version"], reference["content_hash"])
+        if seen is None: seen = set()
+        if key in seen: return True
+        seen.add(key)
+        if reference["artifact_id"] == artifact_id: return True
+        record = cls._find(state, reference)
+        if record is None: return False
+        return any(cls._parent_reaches_artifact(state, parent, artifact_id, seen.copy()) for parent in record["envelope"]["parent_artifact_refs"])
+
     def register(self, envelope: dict[str, Any], payload: Any) -> dict[str, Any]:
         validate_envelope(self.repo_root, envelope, payload)
         if envelope["status"] != "candidate": _fail("INITIAL_STATUS_INVALID")
+        self._locator_path(envelope["storage_locator"])
         with self._locked_state() as state:
             same_version = [r for r in state["artifacts"] if r["envelope"]["artifact_id"] == envelope["artifact_id"] and r["envelope"]["version"] == envelope["version"]]
             if same_version:
@@ -144,9 +183,9 @@ class ArtifactRegistry:
                 predecessor = next(r for r in previous if r["envelope"]["version"] == expected - 1)
                 if envelope["supersedes_ref"] != artifact_ref(predecessor["envelope"]): _fail("SUPERSEDES_INVALID")
             reference = artifact_ref(envelope)
-            if any(item["artifact_id"] == envelope["artifact_id"] for item in envelope["parent_artifact_refs"]): _fail("PARENT_CYCLE")
             for parent in envelope["parent_artifact_refs"]:
                 if self._find(state, parent) is None: _fail("PARENT_ORPHAN")
+                if self._parent_reaches_artifact(state, parent, envelope["artifact_id"]): _fail("PARENT_CYCLE")
             record = {"envelope": envelope.copy(), "payload": payload}
             state["artifacts"].append(record)
             state["audit_events"].append({"event": "registered", "ref": reference, "attempt_no": envelope["attempt_no"]})
@@ -158,6 +197,7 @@ class ArtifactRegistry:
         with self._locked_state() as state:
             record = self._find(state, reference)
             if record is None: _fail("ARTIFACT_NOT_FOUND")
+            self._locator_path(record["envelope"]["storage_locator"])
             return {"envelope": record["envelope"].copy(), "payload": record["payload"]}
 
     def transition(self, reference: dict[str, Any], target: str) -> dict[str, Any]:
@@ -176,7 +216,7 @@ class ArtifactRegistry:
             return {**record["envelope"], "status": target}
 
     def migrate_locator(self, reference: dict[str, Any], locator: str | None) -> dict[str, Any]:
-        if locator is not None and (not isinstance(locator, str) or not locator): _fail("LOCATOR_INVALID")
+        self._locator_path(locator)
         with self._locked_state() as state:
             record = self._find(state, reference)
             if record is None: _fail("ARTIFACT_NOT_FOUND")
@@ -184,6 +224,39 @@ class ArtifactRegistry:
             state["audit_events"].append({"event": "locator_migrated", "ref": reference, "locator": locator})
             self._save(state)
             return record["envelope"].copy()
+
+    def audit(self, reference: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+        with self._locked_state() as state:
+            events = state["audit_events"]
+            if reference is not None:
+                _check_ref(reference, "artifact_ref")
+                events = [event for event in events if event.get("ref") == reference]
+            return [event.copy() for event in events]
+
+    def record_transient_failure(self, operation: str, error_code: str) -> dict[str, Any]:
+        """Record only retryable runtime failures, isolated by attempt directory.
+
+        The third allowed attempt is terminal and deliberately cannot be retried.
+        """
+        if error_code not in {"STORAGE_FAILURE", "AUDIT_FAILURE", "LOCATOR_MISSING"}:
+            _fail("RETRY_ERROR_NOT_TRANSIENT")
+        retry_path = self.run_directory / "retry-state.json"
+        retry_path.parent.mkdir(parents=True, exist_ok=True)
+        prior: dict[str, Any] = load_json(retry_path) if retry_path.exists() else {"failures": []}
+        failures = prior["failures"]
+        if any(item["attempt"] == self.directory.name for item in failures):
+            return prior
+        state = {"operation": operation, "error_code": error_code, "attempt": self.directory.name,
+                 "status": "blocked_manual" if len(failures) + 1 >= 3 else "retryable"}
+        failures.append(state)
+        try:
+            fd, temporary = tempfile.mkstemp(prefix=".retry-", dir=retry_path.parent)
+            with os.fdopen(fd, "wb") as output:
+                output.write(canonical_bytes({"failures": failures})); output.flush(); os.fsync(output.fileno())
+            os.replace(temporary, retry_path)
+        except OSError as exc:
+            _fail("STORAGE_FAILURE")
+        return {"failures": failures}
 
     def lineage(self, reference: dict[str, Any]) -> dict[str, Any]:
         record = self.resolve(reference)

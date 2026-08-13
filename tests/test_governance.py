@@ -38,7 +38,9 @@ class GovernanceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             base = Path(temp)
             roots = self.roots(base)
-            envelope = {"artifact_id": "governance-fixture", "artifact_type": "constraint_asset_ref", "run_id": "stub-run", "qa_id": None, "version": 1, "schema_version": "COMMON-ENVELOPE/v1", "content_hash": "0" * 64, "supersedes_ref": None, "attempt_no": 1, "producer_id": "test", "parent_artifact_refs": [], "input_hashes": [], "status": "candidate", "mode": "foundation", "created_at": "2026-08-13T00:00:00+00:00", "trace_id": "test", "storage_locator": "candidate/test.json"}
+            locator = base / "runtime" / "locators" / "test.json"
+            locator.parent.mkdir(parents=True); locator.write_text("fixture", encoding="utf-8")
+            envelope = {"artifact_id": "governance-fixture", "artifact_type": "constraint_asset_ref", "run_id": "stub-run", "qa_id": None, "version": 1, "schema_version": "COMMON-ENVELOPE/v1", "content_hash": "0" * 64, "supersedes_ref": None, "attempt_no": 1, "producer_id": "test", "parent_artifact_refs": [], "input_hashes": [], "status": "candidate", "mode": "foundation", "created_at": "2026-08-13T00:00:00+00:00", "trace_id": "test", "storage_locator": str(locator)}
             payload = {"fixture": "governance"}
             envelope["content_hash"] = content_hash(envelope, payload)
             registry = ArtifactRegistry(ROOT, roots, "EAS-15", "stub-run", 1)

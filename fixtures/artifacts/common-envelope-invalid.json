@@ -1,12 +1,13 @@
 {
-  "unknown_field": "UNKNOWN_FIELD:COMMON_ENVELOPE",
-  "attempt_zero": "ATTEMPT_OUT_OF_RANGE",
-  "attempt_four": "ATTEMPT_OUT_OF_RANGE",
-  "old_schema": "SCHEMA_VERSION_UNSUPPORTED",
-  "bad_timestamp": "TIMESTAMP_INVALID",
-  "bad_hash": "CONTENT_HASH_DRIFT",
-  "old_registry_type": "ARTIFACT_TYPE_INVALID",
-  "version_skip": "VERSION_NOT_CONTIGUOUS",
-  "orphan_parent": "PARENT_ORPHAN",
-  "released": "FORMAL_RELEASE_FORBIDDEN"
+  "schema_version": "EAS-15.rejection-fixtures/v1",
+  "cases": [
+    {"name": "unknown_field", "set": {"unexpected": 1}, "error": "UNKNOWN_FIELD"},
+    {"name": "attempt_zero", "set": {"attempt_no": 0}, "error": "ATTEMPT_OUT_OF_RANGE"},
+    {"name": "attempt_four", "set": {"attempt_no": 4}, "error": "ATTEMPT_OUT_OF_RANGE"},
+    {"name": "bad_mode", "set": {"mode": "invalid"}, "error": "MODE_INVALID"},
+    {"name": "bad_hash", "set": {"content_hash": "not-a-hash"}, "error": "CONTENT_HASH_INVALID"},
+    {"name": "old_schema", "set": {"schema_version": "old"}, "error": "SCHEMA_VERSION_UNSUPPORTED"},
+    {"name": "missing_required", "set": {"producer_id": null}, "error": "REQUIRED_VALUE_MISSING"},
+    {"name": "old_registry_type", "set": {"artifact_type": "old_registry"}, "error": "ARTIFACT_TYPE_INVALID"}
+  ]
 }
