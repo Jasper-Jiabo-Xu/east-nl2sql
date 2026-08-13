@@ -1,0 +1,22 @@
+{
+  "envelope": {
+    "artifact_id": "CA-V0.3.0",
+    "artifact_type": "constraint_asset_ref",
+    "run_id": "fixture-run",
+    "qa_id": null,
+    "version": 1,
+    "schema_version": "COMMON-ENVELOPE/v1",
+    "content_hash": "2a6e140f48f72846414c2bc2ca82ccd8fe709525312245ccdb8cbc1be2fd6200",
+    "supersedes_ref": null,
+    "attempt_no": 1,
+    "producer_id": "fixture",
+    "parent_artifact_refs": [],
+    "input_hashes": [],
+    "status": "candidate",
+    "mode": "foundation",
+    "created_at": "2026-08-13T00:00:00+00:00",
+    "trace_id": "fixture-trace",
+    "storage_locator": "candidate/fixture.json"
+  },
+  "payload": {"fixture": "constraint_asset_ref", "value": 1}
+}

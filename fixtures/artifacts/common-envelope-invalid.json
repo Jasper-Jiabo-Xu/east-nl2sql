@@ -1,0 +1,12 @@
+{
+  "unknown_field": "UNKNOWN_FIELD:COMMON_ENVELOPE",
+  "attempt_zero": "ATTEMPT_OUT_OF_RANGE",
+  "attempt_four": "ATTEMPT_OUT_OF_RANGE",
+  "old_schema": "SCHEMA_VERSION_UNSUPPORTED",
+  "bad_timestamp": "TIMESTAMP_INVALID",
+  "bad_hash": "CONTENT_HASH_DRIFT",
+  "old_registry_type": "ARTIFACT_TYPE_INVALID",
+  "version_skip": "VERSION_NOT_CONTIGUOUS",
+  "orphan_parent": "PARENT_ORPHAN",
+  "released": "FORMAL_RELEASE_FORBIDDEN"
+}
