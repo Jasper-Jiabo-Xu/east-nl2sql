@@ -7,11 +7,9 @@
 | 文件 | SHA-256 |
 | --- | --- |
 | `contracts/common/common-envelope.schema.json` | `d13fba17cf19a08c166b67dc55a9b57cbbbeb59bde2d846a6606a03e6b54d6f1` |
-| `src/east_v5/artifacts/registry.py` | `2dc8efd165af86ca7d6bfe14cbda0aacc97e2d53792d77de26a540ab8ccf8e1b` |
+| `src/east_v5/artifacts/registry.py` | `180113155dd3b27a51e58ddacc7df2dbb81af96840dc43bed08adb0ea38a85da` |
 | `src/east_v5/artifacts/cli.py` | `166a16ec9434b6f3ffc13e5ea7911c90457be2d8c9656228fd6bbb1d4fc42886` |
 | `fixtures/artifacts/common-envelope-invalid.json` | `02c6b910d5a978c5c06ddd17af110cbab219c3ebfce82d29ba8c5fdb84e93bf6` |
-| `tests/artifacts/test_common_envelope.py` | `06beb7b3e034361fef02aa823ba2bb9d486b33c2e8c41a6989dad2baad83cf6e` |
-
 | `requirements.txt` | `cb9e5058abe248be8579db704a1c9e30e655b30cb7d5dd093bebf97f44766591` |
 | `src/east_v5/artifacts/schema.py` | `4f18659421e22e04a63bcca1405fbbcb8f941f318c3342d8ee109009a3925b60` |
 | `tests/artifacts/test_common_envelope.py` | `f9019bf4936092b1d058b1cb71c724028daa0affae4912d2c1c35d66c1be375b` |
