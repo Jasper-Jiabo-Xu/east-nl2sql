@@ -1,0 +1,13 @@
+{
+  "schema_version": "EAS-15.rejection-fixtures/v1",
+  "cases": [
+    {"name": "unknown_field", "set": {"unexpected": 1}, "error": "UNKNOWN_FIELD"},
+    {"name": "attempt_zero", "set": {"attempt_no": 0}, "error": "ATTEMPT_OUT_OF_RANGE"},
+    {"name": "attempt_four", "set": {"attempt_no": 4}, "error": "ATTEMPT_OUT_OF_RANGE"},
+    {"name": "bad_mode", "set": {"mode": "invalid"}, "error": "MODE_INVALID"},
+    {"name": "bad_hash", "set": {"content_hash": "not-a-hash"}, "error": "CONTENT_HASH_INVALID"},
+    {"name": "old_schema", "set": {"schema_version": "old"}, "error": "SCHEMA_VERSION_UNSUPPORTED"},
+    {"name": "missing_required", "set": {"producer_id": null}, "error": "REQUIRED_VALUE_MISSING"},
+    {"name": "old_registry_type", "set": {"artifact_type": "old_registry"}, "error": "ARTIFACT_TYPE_INVALID"}
+  ]
+}

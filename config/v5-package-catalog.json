@@ -10,6 +10,10 @@
     {"id": "frozen_orm", "producer": "252", "consumers": ["260"]},
     {"id": "database_copy_regression", "producer": "260", "consumers": ["210"]},
     {"id": "release_candidate", "producer": "210", "consumers": ["010"]},
-    {"id": "release_receipt", "producer": "010", "consumers": []}
+    {"id": "release_receipt", "producer": "010", "consumers": []},
+    {"id": "constraint_asset_ref", "producer": "EAS-16", "consumers": ["220", "241", "251"]},
+    {"id": "typed_reference_graph_ref", "producer": "EAS-16", "consumers": ["220", "241", "251"]},
+    {"id": "database_snapshot_ref", "producer": "EAS-19", "consumers": ["260"]},
+    {"id": "penalty_source_package", "producer": "EAS-21", "consumers": ["210"]}
   ]
 }

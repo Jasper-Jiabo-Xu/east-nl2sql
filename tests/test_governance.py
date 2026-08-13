@@ -8,7 +8,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
-from east_v5.artifacts.registry import consume_eas15_stub
+from east_v5.artifacts import ArtifactRegistry, content_hash
 from east_v5.governance import ContractError, attempt_path, canonical_bytes, governed_manifest, validate_roots, verify_governed_manifest, verify_input_lock
 
 
@@ -34,18 +34,26 @@ class GovernanceTests(unittest.TestCase):
             with self.assertRaisesRegex(ContractError, "UNKNOWN_FIELD"):
                 validate_roots({**self.roots(base), "unknown": True})
 
-    def test_eas15_stub_isolated_idempotent_and_conflict_safe(self) -> None:
+    def test_eas15_registry_isolated_idempotent_and_conflict_safe(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             base = Path(temp)
             roots = self.roots(base)
-            first = consume_eas15_stub(ROOT, roots, "EAS-15", "stub-run", 1)
-            second = consume_eas15_stub(ROOT, roots, "EAS-15", "stub-run", 1)
+            locator = base / "runtime" / "vnext" / "03_构建过程层" / "issues" / "EAS-15" / "stub-run" / "1" / "locators" / "test.json"
+            locator.parent.mkdir(parents=True); locator.write_text("fixture", encoding="utf-8")
+            envelope = {"artifact_id": "governance-fixture", "artifact_type": "constraint_asset_ref", "run_id": "stub-run", "qa_id": None, "version": 1, "schema_version": "COMMON-ENVELOPE/v1", "content_hash": "0" * 64, "supersedes_ref": None, "attempt_no": 1, "producer_id": "test", "parent_artifact_refs": [], "input_hashes": [], "status": "candidate", "mode": "foundation", "created_at": "2026-08-13T00:00:00+00:00", "trace_id": "test", "storage_locator": str(locator)}
+            payload = {"fixture": "governance"}
+            envelope["content_hash"] = content_hash(envelope, payload)
+            registry = ArtifactRegistry(ROOT, roots, "EAS-15", "stub-run", 1)
+            first = registry.register(envelope, payload)
+            second = registry.register(envelope, payload)
             self.assertEqual(first, second)
             self.assertFalse((base / "reference").exists())
-            self.assertNotIn("05_新版本交付层", str(first))
-            first.write_text("conflict\n", encoding="utf-8")
+            self.assertNotIn("05_新版本交付层", str(registry.path))
+            conflict = dict(envelope)
+            conflict_payload = {"fixture": "different"}
+            conflict["content_hash"] = content_hash(conflict, conflict_payload)
             with self.assertRaisesRegex(ContractError, "IDENTITY_CONTENT_CONFLICT"):
-                consume_eas15_stub(ROOT, roots, "EAS-15", "stub-run", 1)
+                registry.register(conflict, conflict_payload)
 
     def test_manifest_drift_is_rejected_without_write(self) -> None:
         manifest_path = ROOT / "governance-manifest.json"
