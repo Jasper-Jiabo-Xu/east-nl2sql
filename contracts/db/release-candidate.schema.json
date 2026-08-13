@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "FORMAL-RELEASE-CANDIDATE/v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "candidate_hash", "target_version", "base_version", "idempotency_key", "approved", "database_locator", "database_sha256", "regression_hash", "problem_set_hash"],
+  "properties": {
+    "schema_version": {"const": "FORMAL-RELEASE-CANDIDATE/v1"},
+    "candidate_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "target_version": {"type": "string", "minLength": 1},
+    "base_version": {"type": "string", "minLength": 1},
+    "idempotency_key": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"},
+    "approved": {"const": true},
+    "database_locator": {"type": "string", "minLength": 1},
+    "database_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "regression_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "problem_set_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  }
+}
