@@ -62,6 +62,18 @@ def assert_reference_unchanged(path: Path, expected_sha256: str) -> None:
         raise ContractError("INPUT_VERSION_DRIFT")
 
 
+def verify_input_lock(repo_root: Path, reference_root: Path) -> None:
+    """Verify every filesystem input before a consumer uses frozen references."""
+    lock = load_json(repo_root / "config" / "input-lock.json")
+    for item in lock["inputs"]:
+        locator = item["locator"]
+        if locator.startswith("reference:"):
+            relative = locator.removeprefix("reference:")
+            if Path(relative).is_absolute() or ".." in Path(relative).parts:
+                raise ContractError("ROOT_BOUNDARY_VIOLATION:input locator")
+            assert_reference_unchanged(reference_root / relative, item["sha256"])
+
+
 def governed_manifest(repo_root: Path) -> dict[str, Any]:
     locations = {
         "input_lock": "config/input-lock.json", "root_contract": "config/root-contract.json",

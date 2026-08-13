@@ -9,7 +9,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 from east_v5.artifacts.registry import consume_eas15_stub
-from east_v5.governance import ContractError, attempt_path, canonical_bytes, governed_manifest, validate_roots, verify_governed_manifest
+from east_v5.governance import ContractError, attempt_path, canonical_bytes, governed_manifest, validate_roots, verify_governed_manifest, verify_input_lock
 
 
 class GovernanceTests(unittest.TestCase):
@@ -58,6 +58,21 @@ class GovernanceTests(unittest.TestCase):
                 verify_governed_manifest(ROOT)
         finally:
             manifest_path.write_bytes(original)
+
+    def test_input_lock_rejects_reference_hash_drift(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            reference = Path(temp)
+            target = reference / "结构图"
+            target.mkdir()
+            for item in json.loads((ROOT / "config/input-lock.json").read_text(encoding="utf-8"))["inputs"]:
+                if item["locator"].startswith("reference:"):
+                    relative = item["locator"].removeprefix("reference:")
+                    path = reference / relative
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_text("not frozen", encoding="utf-8")
+                    with self.assertRaisesRegex(ContractError, "INPUT_VERSION_DRIFT"):
+                        verify_input_lock(ROOT, reference)
+                    break
 
 
 if __name__ == "__main__":
