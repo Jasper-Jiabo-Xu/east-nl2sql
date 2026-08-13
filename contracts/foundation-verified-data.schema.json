@@ -1,0 +1,14 @@
+{
+  "$id": "https://east.example/contracts/foundation-verified-data/v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "mode", "base_database_version", "constraint_asset_version", "graph_version", "records"],
+  "properties": {
+    "schema_version": {"const": "v5.foundation-verified-data/v1"},
+    "mode": {"const": "foundation"},
+    "base_database_version": {"type": "string"},
+    "constraint_asset_version": {"const": "CA-V0.3.0"},
+    "graph_version": {"const": "TRG-V1.0.0"},
+    "records": {"type": "array", "minItems": 1}
+  }
+}

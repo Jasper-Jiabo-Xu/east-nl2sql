@@ -1,0 +1,10 @@
+{
+  "$id": "https://east.example/contracts/v5-package-catalog/v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "packages"],
+  "properties": {
+    "schema_version": {"const": "v5.package-catalog/v1"},
+    "packages": {"type": "array", "minItems": 10}
+  }
+}

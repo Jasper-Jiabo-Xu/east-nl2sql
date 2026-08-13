@@ -80,6 +80,8 @@ def governed_manifest(repo_root: Path) -> dict[str, Any]:
         "artifact_layout": "config/artifact-layout.json", "workflow_policy": "config/workflow-policy.json",
         "toolchain_contract": "config/toolchain-contract.json", "migration_map": "config/migration-map.json",
         "downstream_contract": "config/downstream-contract.json",
+        "v5_architecture": "config/v5-architecture.json",
+        "v5_package_catalog": "config/v5-package-catalog.json",
     }
     manifest: dict[str, Any] = {"schema_version": "v5.governance-manifest/v1", **locations}
     manifest["content_sha256"] = sha256(manifest)

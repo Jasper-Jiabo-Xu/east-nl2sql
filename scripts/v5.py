@@ -13,8 +13,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 from east_v5.governance import governed_manifest, load_json, verify_governed_manifest
+from east_v5.architecture import scan_active_contracts, verify_architecture
 
-CONFIGS = ["input-lock", "root-contract", "artifact-layout", "workflow-policy", "toolchain-contract", "migration-map", "downstream-contract"]
+CONFIGS = ["input-lock", "root-contract", "artifact-layout", "workflow-policy", "toolchain-contract", "migration-map", "downstream-contract", "v5-architecture", "v5-package-catalog"]
 
 
 def validate(value: object, spec: dict[str, object], label: str) -> None:
@@ -44,6 +45,8 @@ def schema() -> None:
     manifest = governed_manifest(ROOT)
     (ROOT / "governance-manifest.json").write_bytes(json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True).encode() + b"\n")
     verify_governed_manifest(ROOT)
+    verify_architecture(ROOT)
+    scan_active_contracts(ROOT)
 
 
 def lint() -> None:
