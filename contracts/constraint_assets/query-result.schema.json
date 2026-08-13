@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://east.example/contracts/constraint-assets/query-result/v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "artifact_type", "artifact_id", "asset_version", "content_hash", "records"],
+  "properties": {
+    "schema_version": {"const": "v5.constraint-asset-query-result/v1"},
+    "artifact_type": {"enum": ["constraint_asset_ref", "typed_reference_graph_ref"]},
+    "artifact_id": {"type": "string"},
+    "asset_version": {"type": "string"},
+    "content_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "records": {"type": "array"}
+  }
+}

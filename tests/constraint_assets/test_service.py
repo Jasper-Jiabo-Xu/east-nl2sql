@@ -1,0 +1,133 @@
+from __future__ import annotations
+
+import hashlib
+import json
+import sqlite3
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "src"))
+
+from east_v5.constraint_assets import ConstraintAssetService, validate_runtime_manifest
+from east_v5.governance import ContractError
+
+
+def digest(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+class ConstraintAssetServiceTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temp = tempfile.TemporaryDirectory()
+        self.base = Path(self.temp.name)
+        self.runtime = self.base / "runtime"
+        self.runtime.mkdir()
+        self.roots = {"repo_root": str(ROOT), "runtime_root": str(self.runtime), "reference_root": str(self.base / "reference"), "reference_read_only": True}
+        self.sqlite = self.runtime / "ca.sqlite"
+        self.edges = self.runtime / "edges.jsonl"
+        self.nodes = self.runtime / "nodes.jsonl"
+        self.projections = self.runtime / "projections.jsonl"
+        self.closures = self.runtime / "closures.jsonl"
+        self._create_sqlite()
+        self.edges.write_text(json.dumps({"provider_table_code": "PARENT", "consumer_table_code": "CHILD", "edge_type": "REFERENCE"}) + "\n", encoding="utf-8")
+        for path in (self.nodes, self.projections, self.closures):
+            path.write_text("{}\n", encoding="utf-8")
+        self.control = self.base / "approved-assets.json"
+        self.manifest = self.runtime / "asset-manifest.json"
+        self._write_control_and_manifest()
+
+    def tearDown(self) -> None:
+        self.temp.cleanup()
+
+    def _create_sqlite(self) -> None:
+        con = sqlite3.connect(self.sqlite)
+        con.executescript("""
+        PRAGMA foreign_keys=ON;
+        CREATE TABLE decision_audit (id TEXT PRIMARY KEY);
+        CREATE TABLE evidence (id TEXT PRIMARY KEY);
+        CREATE TABLE excluded_constraint_audit (id TEXT PRIMARY KEY);
+        CREATE TABLE field_master (field_id TEXT PRIMARY KEY, endpoint TEXT UNIQUE, table_code TEXT NOT NULL);
+        CREATE TABLE multifield_constraint (constraint_id TEXT PRIMARY KEY, constraint_item_type TEXT NOT NULL, scope TEXT NOT NULL, structured_expression_json TEXT NOT NULL, evidence_refs_json TEXT NOT NULL, content_sha256 TEXT NOT NULL, approval_status TEXT NOT NULL);
+        CREATE TABLE multifield_constraint_field (constraint_id TEXT NOT NULL REFERENCES multifield_constraint(constraint_id), field_ordinal INTEGER NOT NULL, field_ref TEXT NOT NULL REFERENCES field_master(endpoint), PRIMARY KEY(constraint_id, field_ordinal));
+        CREATE TABLE release_meta (id TEXT PRIMARY KEY);
+        CREATE TABLE source_manifest (id TEXT PRIMARY KEY);
+        CREATE VIEW approved_comparison_constraints AS SELECT * FROM multifield_constraint WHERE constraint_item_type = 'COMPARISON';
+        CREATE VIEW approved_reference_constraints AS SELECT * FROM multifield_constraint WHERE constraint_item_type = 'REFERENCE_EXISTENCE';
+        CREATE VIEW cross_table_constraints AS SELECT * FROM multifield_constraint WHERE scope = 'CROSS_TABLE';
+        CREATE VIEW intra_table_constraints AS SELECT * FROM multifield_constraint WHERE scope = 'INTRA_TABLE';
+        INSERT INTO field_master VALUES ('child-id', 'CHILD.ID', 'CHILD');
+        INSERT INTO multifield_constraint VALUES ('MFC-1', 'REFERENCE_EXISTENCE', 'CROSS_TABLE', '{"kind":"ref"}', '["E-1"]', 'a', 'APPROVED');
+        INSERT INTO multifield_constraint_field VALUES ('MFC-1', 1, 'CHILD.ID');
+        """)
+        con.commit(); con.close()
+
+    def _write_control_and_manifest(self) -> None:
+        ca_hash, edge_hash = digest(self.sqlite), digest(self.edges)
+        payloads = {"nodes": digest(self.nodes), "edges": edge_hash, "projections": digest(self.projections), "closures": digest(self.closures)}
+        control = {"schema_version": "v5.constraint-assets-control/v1", "assets": [
+            {"artifact_type": "constraint_asset_ref", "artifact_id": "ca-id", "asset_version": "CA-V0.3.0", "content_hash": "a" * 64, "required_payload": {"sqlite": ca_hash}, "required_sqlite_tables": ["decision_audit", "evidence", "excluded_constraint_audit", "field_master", "multifield_constraint", "multifield_constraint_field", "release_meta", "source_manifest"], "required_sqlite_views": ["approved_comparison_constraints", "approved_reference_constraints", "cross_table_constraints", "intra_table_constraints"]},
+            {"artifact_type": "typed_reference_graph_ref", "artifact_id": "graph-id", "asset_version": "TRG-V1.0.0", "content_hash": "b" * 64, "required_payload": payloads}
+        ]}
+        self.control.write_text(json.dumps(control), encoding="utf-8")
+        manifest = {"schema_version": "v5.constraint-assets-runtime-manifest/v1", "assets": [
+            {"artifact_id": "ca-id", "artifact_type": "constraint_asset_ref", "asset_version": "CA-V0.3.0", "content_hash": "a" * 64, "payload": {"sqlite": {"locator": str(self.sqlite), "sha256": ca_hash}}},
+            {"artifact_id": "graph-id", "artifact_type": "typed_reference_graph_ref", "asset_version": "TRG-V1.0.0", "content_hash": "b" * 64, "payload": {role: {"locator": str(getattr(self, role)), "sha256": value} for role, value in payloads.items()}}
+        ]}
+        self.manifest.write_text(json.dumps(manifest), encoding="utf-8")
+
+    def service(self) -> ConstraintAssetService:
+        return ConstraintAssetService(ROOT, self.roots, self.manifest, control_path=self.control)
+
+    def test_000_and_220_stubs_consume_same_versioned_readonly_assets(self) -> None:
+        service = self.service()
+        zero_stub = service.constraints_for_table("CHILD")
+        structure_stub = service.graph_edges_for_table("CHILD")
+        self.assertEqual(zero_stub["asset_version"], "CA-V0.3.0")
+        self.assertEqual(zero_stub["content_hash"], "a" * 64)
+        self.assertEqual([row["constraint_id"] for row in zero_stub["records"]], ["MFC-1"])
+        self.assertEqual(structure_stub["asset_version"], "TRG-V1.0.0")
+        self.assertEqual(len(structure_stub["records"]), 1)
+        with self.assertRaises(sqlite3.OperationalError):
+            con = sqlite3.connect(f"file:{self.sqlite}?mode=ro", uri=True)
+            con.execute("DELETE FROM field_master")
+
+    def test_hash_drift_unknown_version_and_outside_runtime_are_rejected_before_query(self) -> None:
+        data = json.loads(self.manifest.read_text())
+        data["assets"][0]["payload"]["sqlite"]["sha256"] = "0" * 64
+        self.manifest.write_text(json.dumps(data), encoding="utf-8")
+        with self.assertRaisesRegex(ContractError, "ASSET_PAYLOAD_HASH_DRIFT"):
+            self.service()
+        self._write_control_and_manifest()
+        data = json.loads(self.manifest.read_text())
+        data["assets"][0]["asset_version"] = "CA-V9.9.9"
+        self.manifest.write_text(json.dumps(data), encoding="utf-8")
+        with self.assertRaisesRegex(ContractError, "ASSET_VERSION_UNSUPPORTED"):
+            validate_runtime_manifest(ROOT, self.roots, self.manifest, control_path=self.control)
+        self._write_control_and_manifest()
+        data = json.loads(self.manifest.read_text())
+        data["assets"][0]["payload"]["sqlite"]["locator"] = str(self.base / "outside.sqlite")
+        self.manifest.write_text(json.dumps(data), encoding="utf-8")
+        with self.assertRaisesRegex(ContractError, "ASSET_LOCATOR_OUT_OF_RUNTIME"):
+            self.service()
+
+    def test_schema_and_query_rejections_are_stable_and_idempotent(self) -> None:
+        service = self.service()
+        first, second = service.constraints_for_table("CHILD"), service.constraints_for_table("CHILD")
+        self.assertEqual(first, second)
+        with self.assertRaisesRegex(ContractError, "ASSET_QUERY_INVALID"):
+            service.constraints_for_table("")
+        for value in (0, 101):
+            with self.assertRaisesRegex(ContractError, "ASSET_QUERY_INVALID"):
+                service.constraints_for_table("CHILD", limit=value)
+        data = json.loads(self.manifest.read_text())
+        data["assets"][0]["unexpected"] = True
+        self.manifest.write_text(json.dumps(data), encoding="utf-8")
+        with self.assertRaisesRegex(ContractError, "ASSET_RUNTIME_MANIFEST_INVALID"):
+            self.service()
+
+
+if __name__ == "__main__":
+    unittest.main()
