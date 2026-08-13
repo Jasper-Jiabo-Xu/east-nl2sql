@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 from east_v5.governance import governed_manifest, load_json, verify_governed_manifest
 from east_v5.architecture import scan_active_contracts, verify_architecture
+from east_v5.artifacts.schema import validate_common_envelope_schema
 
 CONFIGS = ["input-lock", "root-contract", "artifact-layout", "workflow-policy", "toolchain-contract", "migration-map", "downstream-contract", "v5-architecture", "v5-package-catalog"]
 
@@ -42,6 +43,10 @@ def schema() -> None:
         value = load_json(ROOT / "config" / f"{name}.json")
         schema_doc = load_json(ROOT / "contracts" / f"{name}.schema.json")
         validate(value, schema_doc, name)
+    # Execute the actual Draft 2020-12 schema, instead of merely treating it as
+    # documentation.  The committed fixture has its runtime locator rebased only
+    # for semantic registry tests; JSON Schema validates its portable shape here.
+    validate_common_envelope_schema(ROOT, load_json(ROOT / "fixtures" / "artifacts" / "common-envelope-valid.json")["envelope"])
     manifest = governed_manifest(ROOT)
     (ROOT / "governance-manifest.json").write_bytes(json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True).encode() + b"\n")
     verify_governed_manifest(ROOT)

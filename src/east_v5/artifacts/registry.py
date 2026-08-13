@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any, Iterator
 
 from east_v5.governance import ContractError, attempt_path, canonical_bytes, load_json, verify_governed_manifest
+from east_v5.artifacts.schema import validate_common_envelope_schema
 
 SCHEMA_VERSION = "COMMON-ENVELOPE/v1"
 STATUSES = {"candidate", "pending_validation", "validated", "pending_review", "approved", "rejected", "blocked_manual", "released"}
@@ -84,6 +85,7 @@ def validate_envelope(repo_root: Path, envelope: dict[str, Any], payload: Any) -
     if envelope["input_hashes"] != [item["content_hash"] for item in envelope["parent_artifact_refs"]]: _fail("INPUT_HASH_ORDER_INVALID")
     if len({(x["artifact_id"], x["version"], x["content_hash"]) for x in envelope["parent_artifact_refs"]}) != len(envelope["parent_artifact_refs"]): _fail("PARENT_DUPLICATE")
     if envelope["supersedes_ref"] is not None: _check_ref(envelope["supersedes_ref"], "supersedes_ref")
+    validate_common_envelope_schema(repo_root, envelope)
 
 
 class ArtifactRegistry:
@@ -100,7 +102,7 @@ class ArtifactRegistry:
         return self.directory.parent
 
     def _locator_path(self, locator: str | None) -> Path | None:
-        """A locator is an existing regular file beneath this runtime attempt."""
+        """A locator is an existing file owned by this issue/run/attempt only."""
         if locator is None:
             return None
         if not isinstance(locator, str) or not locator:
@@ -112,6 +114,10 @@ class ArtifactRegistry:
         runtime = Path(self.roots["runtime_root"]).resolve()
         if runtime not in resolved.parents:
             _fail("LOCATOR_OUT_OF_RUNTIME_ROOT")
+        # This exact scope excludes the Git control plane, the reference root,
+        # every other issue/attempt, and runtime_root/vnext/05_新版本交付层.
+        if self.directory.resolve() not in resolved.parents:
+            _fail("LOCATOR_OUT_OF_ATTEMPT_SCOPE")
         if not resolved.is_file():
             _fail("LOCATOR_MISSING")
         return resolved
@@ -140,10 +146,20 @@ class ArtifactRegistry:
             with os.fdopen(fd, "wb") as output:
                 output.write(canonical_bytes(state)); output.flush(); os.fsync(output.fileno())
             os.replace(temporary, self.path)
-        except Exception:
+        except OSError:
             try: os.unlink(temporary)
             except FileNotFoundError: pass
-            raise
+            _fail("RUNTIME_TEMPORARY")
+
+    @staticmethod
+    def _append_audit(state: dict[str, Any], event: dict[str, Any]) -> None:
+        state["audit_events"].append(event)
+
+    def _audit(self, state: dict[str, Any], event: dict[str, Any]) -> None:
+        try:
+            self._append_audit(state, event)
+        except OSError:
+            _fail("RUNTIME_TEMPORARY")
 
     @staticmethod
     def _find(state: dict[str, Any], reference: dict[str, Any]) -> dict[str, Any] | None:
@@ -188,7 +204,7 @@ class ArtifactRegistry:
                 if self._parent_reaches_artifact(state, parent, envelope["artifact_id"]): _fail("PARENT_CYCLE")
             record = {"envelope": envelope.copy(), "payload": payload}
             state["artifacts"].append(record)
-            state["audit_events"].append({"event": "registered", "ref": reference, "attempt_no": envelope["attempt_no"]})
+            self._audit(state, {"event": "registered", "ref": reference, "attempt_no": envelope["attempt_no"]})
             self._save(state)
             return envelope.copy()
 
@@ -211,7 +227,7 @@ class ArtifactRegistry:
             # alter the immutable stored package whose content_hash includes the
             # candidate status at registration time.
             record["registry_status"] = target
-            state["audit_events"].append({"event": "status_changed", "ref": reference, "from": old, "to": target})
+            self._audit(state, {"event": "status_changed", "ref": reference, "from": old, "to": target})
             self._save(state)
             return {**record["envelope"], "status": target}
 
@@ -221,7 +237,7 @@ class ArtifactRegistry:
             record = self._find(state, reference)
             if record is None: _fail("ARTIFACT_NOT_FOUND")
             record["envelope"]["storage_locator"] = locator
-            state["audit_events"].append({"event": "locator_migrated", "ref": reference, "locator": locator})
+            self._audit(state, {"event": "locator_migrated", "ref": reference, "locator": locator})
             self._save(state)
             return record["envelope"].copy()
 
@@ -238,16 +254,26 @@ class ArtifactRegistry:
 
         The third allowed attempt is terminal and deliberately cannot be retried.
         """
-        if error_code not in {"STORAGE_FAILURE", "AUDIT_FAILURE", "LOCATOR_MISSING"}:
+        policy = load_json(self.repo_root / "config" / "workflow-policy.json")
+        if error_code not in policy["retryable_failure_codes"]:
             _fail("RETRY_ERROR_NOT_TRANSIENT")
         retry_path = self.run_directory / "retry-state.json"
         retry_path.parent.mkdir(parents=True, exist_ok=True)
         prior: dict[str, Any] = load_json(retry_path) if retry_path.exists() else {"failures": []}
         failures = prior["failures"]
-        if any(item["attempt"] == self.directory.name for item in failures):
-            return prior
+        attempt = int(self.directory.name)
+        numbers = [item.get("attempt") for item in failures]
+        if len(numbers) != len(set(numbers)) or any(not isinstance(item, str) or not item.isdigit() for item in numbers):
+            _fail("ATTEMPT_SEQUENCE_INVALID")
+        numbers = [int(item) for item in numbers]
+        if attempt in numbers:
+            _fail("ATTEMPT_REPLAY_FORBIDDEN")
+        if attempt in (1, 2) and numbers != list(range(1, attempt)):
+            _fail("ATTEMPT_SEQUENCE_INVALID")
+        if attempt == 3 and numbers and numbers != [1, 2]:
+            _fail("ATTEMPT_SEQUENCE_INVALID")
         state = {"operation": operation, "error_code": error_code, "attempt": self.directory.name,
-                 "status": "blocked_manual" if len(failures) + 1 >= 3 else "retryable"}
+                 "status": "blocked_manual" if attempt == policy["max_attempts"] else "retryable"}
         failures.append(state)
         try:
             fd, temporary = tempfile.mkstemp(prefix=".retry-", dir=retry_path.parent)
