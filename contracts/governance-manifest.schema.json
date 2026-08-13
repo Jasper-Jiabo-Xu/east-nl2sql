@@ -3,7 +3,7 @@
   "title": "V5 治理入口 manifest",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "content_sha256", "input_lock", "root_contract", "artifact_layout", "workflow_policy", "toolchain_contract", "migration_map", "downstream_contract"],
+  "required": ["schema_version", "content_sha256", "input_lock", "root_contract", "artifact_layout", "workflow_policy", "toolchain_contract", "migration_map", "downstream_contract", "v5_architecture", "v5_package_catalog"],
   "properties": {
     "schema_version": {"const": "v5.governance-manifest/v1"},
     "content_sha256": {"type": "string"},
@@ -13,6 +13,8 @@
     "workflow_policy": {"type": "string"},
     "toolchain_contract": {"type": "string"},
     "migration_map": {"type": "string"},
-    "downstream_contract": {"type": "string"}
+    "downstream_contract": {"type": "string"},
+    "v5_architecture": {"type": "string"},
+    "v5_package_catalog": {"type": "string"}
   }
 }

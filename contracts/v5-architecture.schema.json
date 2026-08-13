@@ -1,0 +1,17 @@
+{
+  "$id": "https://east.example/contracts/v5-architecture/v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "decision_version", "authority", "reference_versions", "pipelines", "fan_out", "agents", "foundation", "prohibited_runtime_components"],
+  "properties": {
+    "schema_version": {"const": "v5.architecture/v1"},
+    "decision_version": {"type": "string"},
+    "authority": {"type": "string"},
+    "reference_versions": {"type": "object"},
+    "pipelines": {"type": "object"},
+    "fan_out": {"type": "object"},
+    "agents": {"type": "object"},
+    "foundation": {"type": "object"},
+    "prohibited_runtime_components": {"type": "array", "minItems": 6}
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "$id": "https://east.example/contracts/foundation-write-batch/v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "compiler_version", "base_database_version", "source_sha256", "transaction", "operations", "content_sha256"],
+  "properties": {
+    "schema_version": {"const": "v5.foundation-write-batch/v1"},
+    "compiler_version": {"const": "east-foundation-insert-compiler/v1"},
+    "base_database_version": {"type": "string"},
+    "source_sha256": {"type": "string"},
+    "transaction": {"type": "object"},
+    "operations": {"type": "array", "minItems": 1},
+    "content_sha256": {"type": "string"}
+  }
+}

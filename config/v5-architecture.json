@@ -1,0 +1,48 @@
+{
+  "schema_version": "v5.architecture/v1",
+  "decision_version": "2026-08-11",
+  "authority": "Jiabo Xu",
+  "reference_versions": {
+    "constraint_assets": "CA-V0.3.0",
+    "typed_reference_graph": "TRG-V1.0.0"
+  },
+  "pipelines": {
+    "event_data": ["210", "220", "230", "241", "242", "260", "210", "010"],
+    "event_orm": ["210", "220", "230", "251", "252", "260", "210", "010"],
+    "foundation": ["210", "220", "241", "242", "260", "210", "010"]
+  },
+  "fan_out": {
+    "producer": "230",
+    "artifact": "operation_closure",
+    "consumers": ["241", "251"],
+    "mode": "event"
+  },
+  "agents": {
+    "010": {"role": "fixed_release_committer", "writes_formal_store": true},
+    "210": {"role": "release_candidate_assembler", "writes_formal_store": false},
+    "220": {"role": "structure_closure", "writes_formal_store": false},
+    "230": {"role": "operation_closure_event_only", "writes_formal_store": false},
+    "241": {"role": "bound_data_generator", "writes_formal_store": false},
+    "242": {"role": "data_validator", "writes_formal_store": false},
+    "251": {"role": "restricted_orm_generator", "writes_formal_store": false},
+    "252": {"role": "orm_validator_and_hash_freezer", "writes_formal_store": false},
+    "260": {"role": "database_copy_binder_and_regression", "writes_formal_store": false}
+  },
+  "foundation": {
+    "forbidden_agents": ["230", "251", "252"],
+    "forbidden_artifacts": ["operation_closure", "orm_code", "independent_ods_asset"],
+    "compiler": "east-foundation-insert-compiler/v1",
+    "initial_seed_classes": 17,
+    "initial_seed_records": 18,
+    "on_demand_only_classes": 12,
+    "event_owned_classes": 45
+  },
+  "prohibited_runtime_components": [
+    "legacy_field_generator",
+    "legacy_field_policy",
+    "legacy_table_assembler",
+    "legacy_registry",
+    "independent_ods_generator",
+    "independent_ods_validator"
+  ]
+}

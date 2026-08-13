@@ -1,0 +1,24 @@
+<mxfile host="app.diagrams.net" modified="2026-08-13T00:00:00.000Z" agent="EAS-44" version="24.7.17">
+  <diagram id="event" name="非Foundation双通路">
+    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" page="1" pageWidth="1169" pageHeight="827">
+      <root>
+        <mxCell id="0"/><mxCell id="1" parent="0"/>
+        <mxCell id="210" value="210 会审/装配" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1"><mxGeometry x="40" y="200" width="120" height="50" as="geometry"/></mxCell>
+        <mxCell id="220" value="220 结构闭包" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1"><mxGeometry x="200" y="200" width="120" height="50" as="geometry"/></mxCell>
+        <mxCell id="230" value="230 唯一操作闭包" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;" vertex="1" parent="1"><mxGeometry x="360" y="200" width="140" height="50" as="geometry"/></mxCell>
+        <mxCell id="241" value="241 数据生成 → 242 验证" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;" vertex="1" parent="1"><mxGeometry x="550" y="130" width="180" height="50" as="geometry"/></mxCell>
+        <mxCell id="251" value="251 ORM → 252 冻结" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;" vertex="1" parent="1"><mxGeometry x="550" y="270" width="180" height="50" as="geometry"/></mxCell>
+        <mxCell id="260" value="260 copy 回归" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1"><mxGeometry x="780" y="200" width="130" height="50" as="geometry"/></mxCell>
+        <mxCell id="010" value="210 → 010 固定发布" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1"><mxGeometry x="960" y="200" width="160" height="50" as="geometry"/></mxCell>
+        <mxCell id="e1" edge="1" parent="1" source="210" target="220"><mxGeometry relative="1" as="geometry"/></mxCell><mxCell id="e2" edge="1" parent="1" source="220" target="230"><mxGeometry relative="1" as="geometry"/></mxCell><mxCell id="e3" value="同一包" edge="1" parent="1" source="230" target="241"><mxGeometry relative="1" as="geometry"/></mxCell><mxCell id="e4" value="同一包" edge="1" parent="1" source="230" target="251"><mxGeometry relative="1" as="geometry"/></mxCell><mxCell id="e5" edge="1" parent="1" source="241" target="260"><mxGeometry relative="1" as="geometry"/></mxCell><mxCell id="e6" edge="1" parent="1" source="251" target="260"><mxGeometry relative="1" as="geometry"/></mxCell><mxCell id="e7" edge="1" parent="1" source="260" target="010"><mxGeometry relative="1" as="geometry"/></mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="foundation" name="Foundation">
+    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" page="1" pageWidth="1169" pageHeight="827">
+      <root><mxCell id="0"/><mxCell id="1" parent="0"/>
+        <mxCell id="f1" value="210 → 220 → 241 → 242 → 260 固定 INSERT 编译器 → 210 → 010&#xa;禁止 230 / 251 / 252 / ORM / 操作闭包 / 独立 ODS" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;fontSize=18;" vertex="1" parent="1"><mxGeometry x="120" y="200" width="900" height="150" as="geometry"/></mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
