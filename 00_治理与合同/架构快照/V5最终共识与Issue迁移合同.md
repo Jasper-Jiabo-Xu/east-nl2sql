@@ -3,6 +3,8 @@
 > 冻结日期：2026-08-12
 > 输入：CA-V0.3.0 多字段约束、TRG-V1.0.0 带类型引用图、EAS-42 Foundation 初次范围
 
+> 2026-08-13 EAS-44 迁移说明：本文件保留为人工裁决记录。运行期机器权威入口为仓库根目录的 `config/v5-architecture.json`、`config/v5-package-catalog.json` 与 `governance-manifest.json`；可读架构见 `docs/architecture/V5双通路与Foundation架构.md`。同目录旧 Draw.io 与 V2 Excel 仅作历史快照，不得作为实现合同。
+
 ## 唯一目标拓扑
 
 非 Foundation：
