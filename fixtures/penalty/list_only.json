@@ -1,0 +1,56 @@
+{
+  "source_document_id": "PENALTY-DEMO-002",
+  "doc_id": "demo-002",
+  "list_source_ref": {
+    "relative_path": "sanitized/list.xlsx",
+    "sheet_name": "bank_punish_detail_list",
+    "row_number": 3,
+    "file_sha256": "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
+    "row_sha256": "e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e500"
+  },
+  "text_source_ref": null,
+  "join_status": "list_only",
+  "common_field_conflicts": [],
+  "decision_document_number_raw": "示例罚决字〔2023〕第2号",
+  "punished_person_name_raw": null,
+  "punished_org_name_raw": "示例金融有限公司",
+  "legal_representative_name_raw": "示例人乙",
+  "violation_facts_raw": "违反反洗钱规定",
+  "penalty_basis_raw": "《示例反洗钱法》第Y条",
+  "penalty_decision_raw": "罚款人民币50万元",
+  "decision_authority_raw": "示例监管分局",
+  "decision_date_raw": "2023-07-20",
+  "disclosure_recommendation_raw": null,
+  "list_document_title_raw": "行政处罚信息公开表",
+  "list_publish_date_raw": "2023-07-20",
+  "list_document_source_raw": "示例监管分局",
+  "list_source_url": "https://example.gov.cn/sanitized/list/002",
+  "text_document_title_raw": null,
+  "text_publish_date_raw": null,
+  "text_document_source_raw": null,
+  "text_source_url": null,
+  "full_text_raw": null,
+  "full_text_status": "missing_record",
+  "source_spans": [
+    {
+      "source_span_id": "span-0001",
+      "char_start": 0,
+      "char_end": 8,
+      "line_start": 1,
+      "line_end": 1,
+      "text": "违反反洗钱规定"
+    }
+  ],
+  "source_snapshot": {
+    "files": [
+      {
+        "relative_path": "sanitized/list.xlsx",
+        "sheet_name": "bank_punish_detail_list",
+        "file_sha256": "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
+        "row_count": 5,
+        "collected_at": "2026-08-13T00:00:00+00:00"
+      }
+    ]
+  },
+  "source_package_schema_version": "penalty-source-v1"
+}

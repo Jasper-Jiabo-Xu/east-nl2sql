@@ -14,6 +14,7 @@
     {"id": "constraint_asset_ref", "producer": "EAS-16", "consumers": ["220", "241", "251"]},
     {"id": "typed_reference_graph_ref", "producer": "EAS-16", "consumers": ["220", "241", "251"]},
     {"id": "database_snapshot_ref", "producer": "EAS-19", "consumers": ["260"]},
-    {"id": "penalty_source_package", "producer": "EAS-21", "consumers": ["210"]}
+    {"id": "penalty_source_package", "producer": "010", "consumers": ["120"]},
+    {"id": "penalty_fact_package", "producer": "120", "consumers": ["130", "140", "150", "170", "180"]}
   ]
 }
