@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "v5.validator-result/v1",
+  "title": "EAS-17 validator result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "validator_id",
+    "registry_version",
+    "constraint_asset_version",
+    "verdict",
+    "violations",
+    "content_sha256"
+  ],
+  "properties": {
+    "schema_version": { "const": "v5.validator-result/v1" },
+    "validator_id": { "type": "string", "minLength": 1 },
+    "registry_version": { "const": "v5.validator-registry/v1" },
+    "constraint_asset_version": { "type": "string", "minLength": 1 },
+    "verdict": { "enum": ["YES", "NO"] },
+    "violations": { "type": "array", "items": { "$ref": "#/$defs/violation" } },
+    "content_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+  },
+  "$defs": {
+    "violation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "constraint_id", "asset_id", "rule_kind", "location", "message"],
+      "properties": {
+        "code": { "type": "string" },
+        "constraint_id": { "type": "string", "minLength": 1 },
+        "asset_id": { "type": "string", "minLength": 1 },
+        "rule_kind": { "type": "string", "minLength": 1 },
+        "location": { "$ref": "#/$defs/location" },
+        "message": { "type": "string" }
+      }
+    },
+    "location": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["table_code", "endpoint", "field_code", "record_index"],
+      "properties": {
+        "table_code": { "type": ["string", "null"] },
+        "endpoint": { "type": ["string", "null"] },
+        "field_code": { "type": ["string", "null"] },
+        "record_index": { "type": ["integer", "null"], "minimum": 0 }
+      }
+    }
+  }
+}

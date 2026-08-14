@@ -1,0 +1,85 @@
+{
+  "artifact_id": "VALIDATOR-242-MODULES-TEMPLATE",
+  "asset_version": "validator-v1",
+  "publication_status": "pending_pr_human_approval",
+  "created_at_utc": "TEMPLATE_PLACEHOLDER",
+  "inherits": null,
+  "supersedes_ref": null,
+  "issue_ref": "EAS-17",
+  "agent_ref": {
+    "agent_id": "7d50dabd-40f8-40a1-807f-041eeed941a9",
+    "agent_name": "EAST DeepSeek 构建员",
+    "model": "deepseek-v4-pro",
+    "runtime_id": "TEMPLATE_PLACEHOLDER"
+  },
+  "capabilities": [
+    "DETERMINISTIC_READ_ONLY_VALIDATION",
+    "SINGLE_FIELD_AND_DATA_ELEMENT_VALIDATION",
+    "INTRA_TABLE_MULTI_FIELD_VALIDATION",
+    "CROSS_TABLE_REFERENCE_AND_COMPARISON_VALIDATION",
+    "IMMUTABLE_YES_NO_VERDICT_WITH_LOCATED_VIOLATIONS"
+  ],
+  "not_in_scope": [
+    "DATA_GENERATION_OR_MODIFICATION",
+    "ORM_GENERATION",
+    "PHYSICAL_FOREIGN_KEY_CASCADE",
+    "242_DISPATCH_AGENT",
+    "FORMAL_DATABASE_WRITE"
+  ],
+  "source_refs": [
+    {
+      "source_type": "constraint_asset_ref",
+      "asset_version": "CA-V0.3.0",
+      "rule_layers": ["table", "cross_table"]
+    },
+    {
+      "source_type": "constraint_asset_ref",
+      "asset_version": "CA-V0.2.0",
+      "rule_layers": ["field"]
+    }
+  ],
+  "contract_refs": [
+    "contracts/validators/validator-result.schema.json",
+    "contracts/validators/validator-registry.schema.json",
+    "contracts/validators/coverage-matrix.json"
+  ],
+  "code_refs": [
+    "src/east_v5/validators/__init__.py",
+    "src/east_v5/validators/result.py",
+    "src/east_v5/validators/snapshot.py",
+    "src/east_v5/validators/expression.py",
+    "src/east_v5/validators/registry.py",
+    "src/east_v5/validators/field/rules.py",
+    "src/east_v5/validators/table/rules.py",
+    "src/east_v5/validators/cross_table/rules.py"
+  ],
+  "test_refs": [
+    "tests/validators/test_result.py",
+    "tests/validators/test_field.py",
+    "tests/validators/test_table.py",
+    "tests/validators/test_cross_table.py",
+    "tests/validators/test_registry.py"
+  ],
+  "evidence": {
+    "v5_check": "112 tests OK",
+    "v5_security": "pass",
+    "v5_schema": "pass",
+    "v5_type": "pass",
+    "registry_content_sha256": "bb7996f4a5446df2908a4f0a74cc533a4bb489cd8b6ed9407dd32491dffa895f",
+    "coverage": {
+      "rule_kinds": 14,
+      "field_rule_kinds": 10,
+      "table_rule_kinds": 3,
+      "cross_table_rule_kinds": 3,
+      "acceptance_categories": 10,
+      "approved_multifield_rules": 470,
+      "east_tables": 74,
+      "intra_table_rule_tables": 17,
+      "cross_table_rule_tables": 72
+    }
+  },
+  "approval_refs": [
+    "TEMPLATE_PLACEHOLDER_SOL_AUTHORIZATION",
+    "TEMPLATE_PLACEHOLDER_INDEPENDENT_REVIEW"
+  ]
+}
