@@ -1,0 +1,69 @@
+{
+  "artifact_id": "PENALTY-FACT-120-TEMPLATE",
+  "asset_version": "penalty-fact-v1",
+  "publication_status": "pending_pr_human_approval",
+  "created_at_utc": "TEMPLATE_PLACEHOLDER",
+  "inherits": null,
+  "supersedes_ref": null,
+  "issue_ref": "EAS-21",
+  "agent_ref": {
+    "agent_id": "22533152-db59-4a1b-8d01-5f251c618e6b",
+    "agent_name": "120-监管处罚不可丢失事实构造agent",
+    "model": "claude-sonnet-4-6",
+    "runtime_id": "0e5e9dd9-5135-4937-bb03-92b77adb8395"
+  },
+  "capabilities": [
+    "DETERMINISTIC_FACT_EXTRACTION",
+    "LLM_FACT_AUGMENTATION",
+    "EXTERNAL_EVIDENCE_ENRICHMENT",
+    "REVIEW_DRIVEN_RE_EXTRACTION"
+  ],
+  "not_in_scope": [
+    "EAST_TABLE_FIELD_MAPPING",
+    "QUESTION_SQL_GENERATION",
+    "ORM_GENERATION",
+    "FORMAL_DATABASE_WRITE"
+  ],
+  "source_refs": [
+    {
+      "source_type": "penalty_source_package",
+      "schema_version": "penalty-source-v1",
+      "fixture_files": [
+        "fixtures/penalty/matched.json",
+        "fixtures/penalty/list_only.json",
+        "fixtures/penalty/text_only.json"
+      ]
+    }
+  ],
+  "contract_refs": [
+    "contracts/packages/penalty-source-package.schema.json",
+    "contracts/packages/penalty-fact-package.schema.json"
+  ],
+  "code_refs": [
+    "src/east_v5/agents/east_120/__init__.py",
+    "src/east_v5/agents/east_120/extractor.py"
+  ],
+  "definition_refs": [
+    "agents/120/definition.md",
+    "agents/120/prompt.md",
+    "agents/contracts/120.md"
+  ],
+  "test_refs": [
+    "tests/agents/east_120/test_extractor.py"
+  ],
+  "evidence": {
+    "v5_check": "70 tests OK",
+    "v5_security": "pass",
+    "v5_schema": "pass",
+    "v5_type": "pass",
+    "minimal_runtime": {
+      "matched": {"facts": 7, "uncertainties": 0, "status": "PASS"},
+      "list_only": {"facts": 8, "uncertainties": 1, "status": "PASS"},
+      "text_only": {"facts": 7, "uncertainties": 0, "status": "PASS"}
+    }
+  },
+  "approval_refs": [
+    "TEMPLATE_PLACEHOLDER_SOL_AUTHORIZATION",
+    "TEMPLATE_PLACEHOLDER_INDEPENDENT_REVIEW"
+  ]
+}

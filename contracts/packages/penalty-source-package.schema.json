@@ -1,0 +1,143 @@
+{
+  "$id": "https://east.example/contracts/packages/penalty-source-package/v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PENALTY-SOURCE-PACKAGE",
+  "description": "Frozen raw penalty material package produced by 010, consumed by 120.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "source_document_id", "doc_id", "list_source_ref", "text_source_ref",
+    "join_status", "common_field_conflicts",
+    "decision_document_number_raw", "punished_person_name_raw", "punished_org_name_raw",
+    "legal_representative_name_raw", "violation_facts_raw", "penalty_basis_raw",
+    "penalty_decision_raw", "decision_authority_raw", "decision_date_raw",
+    "disclosure_recommendation_raw",
+    "list_document_title_raw", "list_publish_date_raw", "list_document_source_raw",
+    "list_source_url",
+    "text_document_title_raw", "text_publish_date_raw", "text_document_source_raw",
+    "text_source_url",
+    "full_text_raw", "full_text_status", "source_spans", "source_snapshot",
+    "source_package_schema_version"
+  ],
+  "properties": {
+    "source_document_id": {"type": "string", "pattern": "^PENALTY-[A-Za-z0-9_-]+$"},
+    "doc_id": {"type": "string", "minLength": 1},
+    "list_source_ref": {"$ref": "#/$defs/source_ref"},
+    "text_source_ref": {"anyOf": [{"$ref": "#/$defs/source_ref"}, {"type": "null"}]},
+    "join_status": {"enum": ["matched", "list_only", "text_only", "duplicate", "conflict"]},
+    "common_field_conflicts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["field", "list_value", "text_value"],
+        "properties": {
+          "field": {"type": "string", "minLength": 1},
+          "list_value": {"type": ["string", "null"]},
+          "text_value": {"type": ["string", "null"]}
+        }
+      }
+    },
+    "decision_document_number_raw": {"type": "string"},
+    "punished_person_name_raw": {"type": ["string", "null"]},
+    "punished_org_name_raw": {"type": ["string", "null"]},
+    "legal_representative_name_raw": {"type": ["string", "null"]},
+    "violation_facts_raw": {"type": "string"},
+    "penalty_basis_raw": {"type": "string"},
+    "penalty_decision_raw": {"type": "string"},
+    "decision_authority_raw": {"type": "string"},
+    "decision_date_raw": {"type": "string"},
+    "disclosure_recommendation_raw": {"type": ["string", "null"]},
+    "list_document_title_raw": {"type": "string"},
+    "list_publish_date_raw": {"type": "string"},
+    "list_document_source_raw": {"type": "string"},
+    "list_source_url": {"type": "string"},
+    "text_document_title_raw": {"type": ["string", "null"]},
+    "text_publish_date_raw": {"type": ["string", "null"]},
+    "text_document_source_raw": {"type": ["string", "null"]},
+    "text_source_url": {"type": ["string", "null"]},
+    "full_text_raw": {"type": ["string", "null"]},
+    "full_text_status": {"enum": ["available", "missing_record", "empty_content"]},
+    "source_spans": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/source_span"}
+    },
+    "source_snapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["files"],
+      "properties": {
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["relative_path", "sheet_name", "file_sha256", "row_count", "collected_at"],
+            "properties": {
+              "relative_path": {"type": "string", "minLength": 1},
+              "sheet_name": {"type": "string", "minLength": 1},
+              "file_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+              "row_count": {"type": "integer", "minimum": 0},
+              "collected_at": {"type": "string", "format": "date-time"}
+            }
+          }
+        }
+      }
+    },
+    "source_package_schema_version": {"const": "penalty-source-v1"}
+  },
+  "$defs": {
+    "source_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["relative_path", "sheet_name", "row_number", "file_sha256", "row_sha256"],
+      "properties": {
+        "relative_path": {"type": "string", "minLength": 1},
+        "sheet_name": {"type": "string", "minLength": 1},
+        "row_number": {"type": "integer", "minimum": 1},
+        "file_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "row_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    },
+    "source_span": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_span_id", "char_start", "char_end", "line_start", "line_end", "text"],
+      "properties": {
+        "source_span_id": {"type": "string", "pattern": "^span-[0-9]{4,}$"},
+        "char_start": {"type": "integer", "minimum": 0},
+        "char_end": {"type": "integer", "minimum": 0},
+        "line_start": {"type": "integer", "minimum": 1},
+        "line_end": {"type": "integer", "minimum": 1},
+        "text": {"type": "string"}
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"join_status": {"const": "matched"}}},
+      "then": {
+        "properties": {
+          "text_source_ref": {"type": "object"},
+          "full_text_status": {"enum": ["available", "empty_content"]}
+        }
+      }
+    },
+    {
+      "if": {"properties": {"join_status": {"const": "list_only"}}},
+      "then": {
+        "properties": {
+          "full_text_status": {"enum": ["missing_record", "empty_content"]}
+        }
+      }
+    },
+    {
+      "if": {"properties": {"join_status": {"const": "text_only"}}},
+      "then": {
+        "properties": {
+          "list_source_ref": {"type": "object"}
+        }
+      }
+    }
+  ]
+}

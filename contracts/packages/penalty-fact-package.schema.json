@@ -1,0 +1,139 @@
+{
+  "$id": "https://east.example/contracts/packages/penalty-fact-package/v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PENALTY-FACT-PACKAGE",
+  "description": "Non-lossable penalty fact package produced by 120, consumed by 130/140/150/170/180.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "source_facts", "external_evidence", "evidence_conflicts",
+    "uncertainties", "penalty_fact_package_schema_version"
+  ],
+  "properties": {
+    "source_facts": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/source_fact"}
+    },
+    "external_evidence": {"$ref": "#/$defs/external_evidence"},
+    "evidence_conflicts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["party_a", "party_b", "conflict_detail", "resolution_status"],
+        "properties": {
+          "party_a": {"type": "string", "minLength": 1},
+          "party_b": {"type": "string", "minLength": 1},
+          "conflict_detail": {"type": "string", "minLength": 1},
+          "resolution_status": {"enum": ["unresolved", "source_priority", "external_priority", "human_review"]}
+        }
+      }
+    },
+    "uncertainties": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["type", "description", "needs_human_review"],
+        "properties": {
+          "type": {"enum": ["missing_info", "ambiguity", "span_unverifiable", "rule_version_unclear", "other"]},
+          "description": {"type": "string", "minLength": 1},
+          "needs_human_review": {"type": "boolean"}
+        }
+      }
+    },
+    "penalty_fact_package_schema_version": {"const": "penalty-fact-v1"}
+  },
+  "$defs": {
+    "source_fact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["penalty_fact_id", "fact_type", "structured_fact", "original_text", "source_span_refs", "must_preserve_in_question"],
+      "properties": {
+        "penalty_fact_id": {"type": "string", "pattern": "^fact-[0-9]{3}$"},
+        "fact_type": {"enum": ["subject", "behavior", "object", "time", "amount", "condition", "result", "regulatory_conclusion", "unknown"]},
+        "structured_fact": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["subject", "predicate", "object", "qualifier", "value"],
+          "properties": {
+            "subject": {"type": "string", "minLength": 1},
+            "predicate": {"type": "string", "minLength": 1},
+            "object": {"type": ["string", "null"]},
+            "qualifier": {"type": ["string", "null"]},
+            "value": {"type": ["string", "null"]}
+          }
+        },
+        "original_text": {"type": "string", "minLength": 1},
+        "source_span_refs": {
+          "type": "array",
+          "items": {"type": "string", "pattern": "^span-[0-9]{4,}$"}
+        },
+        "must_preserve_in_question": {"enum": ["yes", "no", "conditional"]}
+      }
+    },
+    "evidence_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["url", "publishing_org", "publish_date", "access_date", "applicable_time", "snippet"],
+      "properties": {
+        "url": {"type": "string", "minLength": 1},
+        "publishing_org": {"type": "string", "minLength": 1},
+        "publish_date": {"type": "string"},
+        "access_date": {"type": "string", "format": "date"},
+        "applicable_time": {"type": "string"},
+        "snippet": {"type": "string", "minLength": 1}
+      }
+    },
+    "external_evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["penalty_intent", "regulatory_rules", "business_meaning", "penalty_background"],
+      "properties": {
+        "penalty_intent": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["description", "evidence_refs"],
+          "properties": {
+            "description": {"type": "string", "minLength": 1},
+            "evidence_refs": {"type": "array", "items": {"$ref": "#/$defs/evidence_ref"}}
+          }
+        },
+        "regulatory_rules": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["rule_name", "clause", "effective_date", "scope", "evidence_refs"],
+            "properties": {
+              "rule_name": {"type": "string", "minLength": 1},
+              "clause": {"type": "string"},
+              "effective_date": {"type": "string"},
+              "scope": {"type": "string"},
+              "evidence_refs": {"type": "array", "items": {"$ref": "#/$defs/evidence_ref"}}
+            }
+          }
+        },
+        "business_meaning": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["description", "evidence_refs"],
+          "properties": {
+            "description": {"type": "string", "minLength": 1},
+            "evidence_refs": {"type": "array", "items": {"$ref": "#/$defs/evidence_ref"}}
+          }
+        },
+        "penalty_background": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["description", "evidence_refs"],
+          "properties": {
+            "description": {"type": "string", "minLength": 1},
+            "evidence_refs": {"type": "array", "items": {"$ref": "#/$defs/evidence_ref"}}
+          }
+        }
+      }
+    }
+  }
+}

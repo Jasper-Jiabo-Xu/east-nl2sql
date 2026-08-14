@@ -1,0 +1,77 @@
+{
+  "source_document_id": "PENALTY-DEMO-003",
+  "doc_id": "demo-003",
+  "list_source_ref": {
+    "relative_path": "sanitized/list.xlsx",
+    "sheet_name": "bank_punish_detail_list",
+    "row_number": 4,
+    "file_sha256": "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
+    "row_sha256": "f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f600"
+  },
+  "text_source_ref": {
+    "relative_path": "sanitized/text.xlsx",
+    "sheet_name": "bank_punish_detail_txt",
+    "row_number": 4,
+    "file_sha256": "c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4",
+    "row_sha256": "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a100"
+  },
+  "join_status": "text_only",
+  "common_field_conflicts": [],
+  "decision_document_number_raw": "示例罚决字〔2023〕第3号",
+  "punished_person_name_raw": "示例人丙",
+  "punished_org_name_raw": null,
+  "legal_representative_name_raw": null,
+  "violation_facts_raw": "违规开展同业业务",
+  "penalty_basis_raw": "《示例监管法》第Z条",
+  "penalty_decision_raw": "警告",
+  "decision_authority_raw": "示例银保监局",
+  "decision_date_raw": "2023-08-10",
+  "disclosure_recommendation_raw": null,
+  "list_document_title_raw": "行政处罚信息公开表",
+  "list_publish_date_raw": "2023-08-10",
+  "list_document_source_raw": "示例银保监局",
+  "list_source_url": "https://example.gov.cn/sanitized/list/003",
+  "text_document_title_raw": "行政处罚决定书",
+  "text_publish_date_raw": "2023-08-10",
+  "text_document_source_raw": "示例银保监局",
+  "text_source_url": "https://example.gov.cn/sanitized/text/003",
+  "full_text_raw": "经调查，示例人丙在某银行业务中存在严重违规行为。依据相关法规，给予警告处罚。",
+  "full_text_status": "available",
+  "source_spans": [
+    {
+      "source_span_id": "span-0001",
+      "char_start": 0,
+      "char_end": 24,
+      "line_start": 1,
+      "line_end": 1,
+      "text": "经调查，示例人丙在某银行业务中存在严重违规行为。"
+    },
+    {
+      "source_span_id": "span-0002",
+      "char_start": 24,
+      "char_end": 42,
+      "line_start": 1,
+      "line_end": 1,
+      "text": "依据相关法规，给予警告处罚。"
+    }
+  ],
+  "source_snapshot": {
+    "files": [
+      {
+        "relative_path": "sanitized/list.xlsx",
+        "sheet_name": "bank_punish_detail_list",
+        "file_sha256": "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
+        "row_count": 5,
+        "collected_at": "2026-08-13T00:00:00+00:00"
+      },
+      {
+        "relative_path": "sanitized/text.xlsx",
+        "sheet_name": "bank_punish_detail_txt",
+        "file_sha256": "c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4",
+        "row_count": 5,
+        "collected_at": "2026-08-13T00:00:00+00:00"
+      }
+    ]
+  },
+  "source_package_schema_version": "penalty-source-v1"
+}
