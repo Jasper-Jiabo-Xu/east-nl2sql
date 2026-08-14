@@ -1,0 +1,49 @@
+{
+  "schema_version": "v5.constraint-assets-reconciliation/v1",
+  "asset": {
+    "asset_version": "CA-V0.2.0-foundation",
+    "artifact_id": "CA-FOUNDATION-20260805-002",
+    "content_hash": "6cb0f385adae4e3e9e24558dc432132b43c437e8c2db5ce329c46bf68e8c4188"
+  },
+  "human_override": {
+    "comment_id": "daac427c-8b32-4524-b805-cfc02bcba47f",
+    "effective_role": "single_field_and_code_tables",
+    "authority": "Jiabo Xu",
+    "decision": "CA-V0.2.0 是单字段约束资产与码表；CA-V0.3.0 是多字段约束资产；TRG-V1.0.0 是带类型引用图。"
+  },
+  "registered_files": [
+    {
+      "role": "single_field",
+      "relative_path": "05_新版本交付层/约束资产/CA-V0.2.0-foundation/single_field_final.sqlite",
+      "sha256": "f137be03a3814428b76507373d2032705dcacb1ff804adbddd96e397da5c1d6f",
+      "registered_in_legacy_manifest": false
+    },
+    {
+      "role": "local_codes",
+      "relative_path": "05_新版本交付层/约束资产/CA-V0.2.0-foundation/装配视图与码表引用域/本地码表.sqlite",
+      "sha256": "3f9f05b47e6f4bfaada37abe06e17286228bf351edbd0a34ade2b09a2d5e82bd",
+      "registered_in_legacy_manifest": true
+    },
+    {
+      "role": "national_codes",
+      "relative_path": "05_新版本交付层/约束资产/CA-V0.2.0-foundation/装配视图与码表引用域/国标与附件4码表.sqlite",
+      "sha256": "0932aecbdb4ed263ff5d8887cf1f833ecf76b220aec4fda42613df0b905de274",
+      "registered_in_legacy_manifest": true
+    }
+  ],
+  "legacy_source_facts": {
+    "legacy_manifest_path": "05_新版本交付层/约束资产/CA-V0.2.0-foundation/manifest/asset_manifest.json",
+    "legacy_publication_status": "approved_partial_not_released",
+    "legacy_not_in_scope": [
+      "SINGLE_FIELD_CONSTRAINTS",
+      "INTRA_TABLE_MULTI_FIELD_CONSTRAINTS",
+      "CROSS_TABLE_MULTI_FIELD_CONSTRAINTS",
+      "ODS_RELATIONS",
+      "EMPLOYEE_TELLER_CUSTOMER_OBJECT_POOLS"
+    ],
+    "preservation_rule": "旧 manifest 保留为历史来源事实，不回写 publication_status，不重建或改动约束内容；单字段与码表由本 reconciliation manifest 版本化登记。"
+  },
+  "excluded_assets": [
+    "CA-V0.2.0-foundation 目录内 0 字节且未登记入 manifest 的审计占位文件"
+  ]
+}

@@ -11,7 +11,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 
-from east_v5.constraint_assets import ConstraintAssetService, validate_runtime_manifest
+from east_v5.constraint_assets import ConstraintAssetService, validate_reconciliation_manifest, validate_runtime_manifest
 from east_v5.governance import ContractError
 
 
@@ -127,6 +127,55 @@ class ConstraintAssetServiceTests(unittest.TestCase):
         self.manifest.write_text(json.dumps(data), encoding="utf-8")
         with self.assertRaisesRegex(ContractError, "ASSET_RUNTIME_MANIFEST_INVALID"):
             self.service()
+
+    def test_reconciliation_manifest_freezes_ca_v020_roles_and_hashes(self) -> None:
+        service = self.service()
+        manifest = service.reconciliation_manifest()
+        self.assertEqual(manifest["schema_version"], "v5.constraint-assets-reconciliation/v1")
+        self.assertEqual(manifest["asset"]["asset_version"], "CA-V0.2.0-foundation")
+        self.assertEqual(manifest["human_override"]["effective_role"], "single_field_and_code_tables")
+        roles = {record["role"]: record for record in manifest["registered_files"]}
+        self.assertEqual(set(roles), {"single_field", "local_codes", "national_codes"})
+        self.assertEqual(roles["single_field"]["sha256"], "f137be03a3814428b76507373d2032705dcacb1ff804adbddd96e397da5c1d6f")
+        self.assertFalse(roles["single_field"]["registered_in_legacy_manifest"])
+        self.assertIn("SINGLE_FIELD_CONSTRAINTS", manifest["legacy_source_facts"]["legacy_not_in_scope"])
+        # A valid reconciliation manifest must round-trip through the schema unchanged.
+        self.assertEqual(validate_reconciliation_manifest(ROOT), manifest)
+        # Drifted hash and unknown field are rejected before any consumer can use it.
+        with tempfile.TemporaryDirectory() as temp:
+            temp_root = Path(temp)
+            contracts = temp_root / "contracts" / "constraint_assets"
+            contracts.mkdir(parents=True)
+            src = ROOT / "contracts" / "constraint_assets"
+            for name in ("reconciliation-manifest.json", "reconciliation-manifest.schema.json"):
+                (contracts / name).write_bytes((src / name).read_bytes())
+            bad_hash = json.loads((contracts / "reconciliation-manifest.json").read_text())
+            bad_hash["registered_files"][0]["sha256"] = "0" * 64
+            (contracts / "reconciliation-manifest.json").write_text(json.dumps(bad_hash), encoding="utf-8")
+            with self.assertRaisesRegex(ContractError, "ASSET_RECONCILIATION_HASH_DRIFT"):
+                validate_reconciliation_manifest(temp_root)
+            unknown = json.loads((contracts / "reconciliation-manifest.json").read_text())
+            unknown["unexpected"] = True
+            (contracts / "reconciliation-manifest.json").write_text(json.dumps(unknown), encoding="utf-8")
+            with self.assertRaisesRegex(ContractError, "ASSET_RECONCILIATION_MANIFEST_INVALID"):
+                validate_reconciliation_manifest(temp_root)
+
+    def test_242_and_252_stubs_consume_versioned_readonly_assets(self) -> None:
+        service = self.service()
+        # 242 (data validator) consumes the CA-V0.3.0 constraints to validate a bound record.
+        constraints = service.constraints_for_table("CHILD")
+        self.assertEqual(constraints["asset_version"], "CA-V0.3.0")
+        record = {"table_code": "CHILD", "constraint_id": "MFC-1"}
+        validator_verdict = {"consumer": "242", "constraint_ref": constraints["content_hash"], "rows": constraints["records"], "record": record}
+        self.assertEqual(validator_verdict["rows"][0]["constraint_id"], "MFC-1")
+        # 252 (ORM hash freezer) consumes the TRG-V1.0.0 edges and freezes a deterministic hash.
+        edges = service.graph_edges_for_table("CHILD")
+        self.assertEqual(edges["asset_version"], "TRG-V1.0.0")
+        freezer_hash = hashlib.sha256(json.dumps(edges["records"], sort_keys=True).encode("utf-8")).hexdigest()
+        self.assertEqual(len(freezer_hash), 64)
+        # Both downstream stubs observe the same immutable content identity.
+        self.assertEqual(constraints["content_hash"], "a" * 64)
+        self.assertEqual(edges["content_hash"], "b" * 64)
 
 
 if __name__ == "__main__":

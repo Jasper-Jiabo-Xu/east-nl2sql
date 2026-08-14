@@ -21,8 +21,21 @@ from east_v5.governance import ContractError, load_json, validate_roots
 CONTROL_PATH = Path("contracts/constraint_assets/approved-assets.json")
 RUNTIME_SCHEMA_PATH = Path("contracts/constraint_assets/runtime-manifest.schema.json")
 RESULT_SCHEMA_PATH = Path("contracts/constraint_assets/query-result.schema.json")
+RECONCILIATION_PATH = Path("contracts/constraint_assets/reconciliation-manifest.json")
+RECONCILIATION_SCHEMA_PATH = Path("contracts/constraint_assets/reconciliation-manifest.schema.json")
+RECONCILIATION_SCHEMA_VERSION = "v5.constraint-assets-reconciliation/v1"
 RESULT_SCHEMA_VERSION = "v5.constraint-asset-query-result/v1"
 _SHA = __import__("re").compile(r"^[0-9a-f]{64}$")
+
+# CA-V0.2.0 frozen input lock (Sol freeze, 2026-08-13).  These are the only
+# authoritative payload hashes for the reconciliation manifest; any drift from
+# them is a rejection, not an auto-fix.
+FROZEN_CA_V020 = {
+    "content_hash": "6cb0f385adae4e3e9e24558dc432132b43c437e8c2db5ce329c46bf68e8c4188",
+    "single_field": "f137be03a3814428b76507373d2032705dcacb1ff804adbddd96e397da5c1d6f",
+    "local_codes": "3f9f05b47e6f4bfaada37abe06e17286228bf351edbd0a34ade2b09a2d5e82bd",
+    "national_codes": "0932aecbdb4ed263ff5d8887cf1f833ecf76b220aec4fda42613df0b905de274",
+}
 
 
 def _fail(code: str) -> None:
@@ -75,6 +88,29 @@ def _runtime_entries(repo_root: Path, roots: dict[str, Any], manifest_path: Path
     if len(entries) != len(manifest["assets"]):
         _fail("ASSET_RUNTIME_MANIFEST_DUPLICATE")
     return entries
+
+
+def validate_reconciliation_manifest(repo_root: Path, *, path: Path = RECONCILIATION_PATH) -> dict[str, Any]:
+    """Validate the CA-V0.2 reconciliation manifest and return its frozen registration."""
+    try:
+        manifest = load_json(repo_root / path)
+        schema = load_json(repo_root / RECONCILIATION_SCHEMA_PATH)
+        Draft202012Validator(schema).validate(manifest)
+    except (OSError, json.JSONDecodeError, ValidationError) as exc:
+        raise ContractError("ASSET_RECONCILIATION_MANIFEST_INVALID") from exc
+    if manifest["schema_version"] != RECONCILIATION_SCHEMA_VERSION:
+        _fail("ASSET_RECONCILIATION_MANIFEST_INVALID")
+    if manifest["human_override"]["effective_role"] != "single_field_and_code_tables":
+        _fail("ASSET_RECONCILIATION_OVERRIDE_DRIFT")
+    roles = {record["role"] for record in manifest["registered_files"]}
+    if roles != {"single_field", "local_codes", "national_codes"}:
+        _fail("ASSET_RECONCILIATION_ROLE_DRIFT")
+    if manifest["asset"]["content_hash"] != FROZEN_CA_V020["content_hash"]:
+        _fail("ASSET_RECONCILIATION_HASH_DRIFT")
+    for record in manifest["registered_files"]:
+        if record["sha256"] != FROZEN_CA_V020[record["role"]]:
+            _fail("ASSET_RECONCILIATION_HASH_DRIFT")
+    return manifest
 
 
 def validate_runtime_manifest(repo_root: Path, roots: dict[str, Any], manifest_path: Path, *, control_path: Path = CONTROL_PATH) -> dict[str, dict[str, Any]]:
@@ -145,6 +181,9 @@ class ConstraintAssetService:
         _, self.runtime_root, _ = validate_roots(roots)
         self.ca = self.entries["CA-V0.3.0"]
         _validate_ca_database(_runtime_file(self.runtime_root, self.ca["payload"]["sqlite"]["locator"]), self.control["CA-V0.3.0"])
+
+    def reconciliation_manifest(self) -> dict[str, Any]:
+        return validate_reconciliation_manifest(self.repo_root)
 
     def asset_ref(self, asset_version: str) -> dict[str, Any]:
         if asset_version not in self.entries:
