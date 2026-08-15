@@ -1,0 +1,24 @@
+{
+  "$id": "https://east.example/contracts/packages/foundation-profile-package/v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Foundation profile package",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["envelope", "payload"],
+  "properties": {
+    "envelope": {
+      "allOf": [
+        {"$ref": "https://east.example/contracts/common-envelope/v1"},
+        {
+          "type": "object",
+          "properties": {
+            "artifact_type": {"const": "foundation_profile"},
+            "producer_id": {"const": "210"},
+            "mode": {"const": "foundation"}
+          }
+        }
+      ]
+    },
+    "payload": {"$ref": "https://east.example/contracts/v5-runtime-packages/v1#/$defs/foundation_profile"}
+  }
+}

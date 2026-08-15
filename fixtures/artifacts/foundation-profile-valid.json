@@ -1,0 +1,35 @@
+{
+  "envelope": {
+    "artifact_id": "foundation-profile-fixture",
+    "artifact_type": "foundation_profile",
+    "run_id": "foundation-fixture",
+    "qa_id": null,
+    "version": 1,
+    "schema_version": "COMMON-ENVELOPE/v1",
+    "content_hash": "6c244393ffc1adc5c721e9612b70a697b457ee0e3f799f5c9493fd8432dd8325",
+    "supersedes_ref": null,
+    "attempt_no": 1,
+    "producer_id": "210",
+    "parent_artifact_refs": [
+      {"artifact_id": "CA-V0.3.0", "version": 1, "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+      {"artifact_id": "TRG-V1.0.0", "version": 1, "content_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}
+    ],
+    "input_hashes": [
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    ],
+    "status": "candidate",
+    "mode": "foundation",
+    "created_at": "2026-08-15T00:00:00+00:00",
+    "trace_id": "foundation-profile-fixture",
+    "storage_locator": null
+  },
+  "payload": {
+    "schema_version": "v5.foundation-profile/v1",
+    "base_database_version": "fixture-db-v1",
+    "target_classes": ["FIXTURE_CUSTOMER"],
+    "target_counts": {"FIXTURE_CUSTOMER": 2},
+    "constraint_asset_version": "CA-V0.3.0",
+    "graph_version": "TRG-V1.0.0"
+  }
+}
