@@ -18,6 +18,8 @@
 - 任务 1 只生成 `CONSTRAINT-QUERY-REQUEST`，`target_asset_types` 仅取冻结枚举；`previous_request_refs` 仅取不可变三元组。
 - 任务 2 只消费 000 的 `CONSTRAINT-ASSET-PACKAGE`；没有命中时以 `NO_EAST_ASSET` 显式说明不可观察，不伪造表或字段。
 - 任务 3 仅接受完整的 170/180 审核结果（`OBSERVABLE_MAPPING_ERROR` 且 route=130），扩大范围调用 000；第 3 次未命中输出合规的 `blocked_manual` 新版本。
+- 审核包必须精确引用被审核的 observable 三元组；000 结果必须引用当前 request 三元组，并与其 run/qa/trace/attempt 一致。只有显式事实 ID + source_ref + 约束证据三者闭合的资产记录可提高覆盖率。
+- `east-observable-fact-manifest` 将输出三元组、直接输入、run/qa/trace、attempt/status 与 runtime 相对定位固化；拒绝越界定位。
 - 输出供 140/150 消费；不得生成 question/SQL、认定违法、写数据库、覆盖上游包或提交正式资产。
 
 ## 失败码

@@ -1,6 +1,6 @@
 {
   "asset_version": "CA-V0.3.0",
   "executed_queries": [],
-  "matched_records": [{"record_type": "single_field", "data": {"table_id": "EAST_D001", "field_id": "F001"}, "source_refs": [{"source_type": "constraint_asset", "source_id": "CA-V0.3.0"}], "hierarchy_refs": []}],
+  "matched_records": [{"record_type": "single_field", "data": {"table_id": "EAST_D001", "field_id": "F001", "penalty_fact_ids": ["fact-001"], "constraint_evidence_ref": "constraint-001"}, "source_refs": [{"source_type": "constraint_asset", "source_id": "CA-V0.3.0"}], "hierarchy_refs": []}],
   "constraint_summary": {"total_matched": 1, "asset_types_covered": ["single_field"]}, "unmatched_items": [], "query_trace": []
 }

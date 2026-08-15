@@ -6,4 +6,8 @@
 
 审核回退只接收 170 或 180 的完整审核包，且必须是 `OBSERVABLE_MAPPING_ERROR`、`decision=no`、`route_suggestion=130`。对每一次回退生成扩大范围的查询请求，引用前序请求三元组，并生成 supersedes/version/attempt 血缘。最多三次；第 3 次失败生成合法 `blocked_manual` 包并要求人工审核。
 
+审核包的 `reviewed_package_ref` 必须精确等于被审核可观察包三元组；000 结果的 request_id、run/qa/trace、attempt 和父引用必须精确绑定当前扩张请求。每一条事实映射必须包含该处罚事实 ID、000 返回记录的 source_ref 及约束证据；无关资产只能保留为 partial/unobservable。
+
+执行 EAS-49 脱敏运行验收时，在已交付的 130 checkout 中运行 `PYTHONPATH=src python3 -m east_v5.agents.east_130.probe --emit-transport`；仅在 Issue 回写其输出摘要的 artifact ref、哈希、拒绝/回退/140/150 结论和 task/run，绝不粘贴传输包正文。
+
 不得读写 CoreBank 原始数据、真实 SQLite、密钥、`.env`、模型原始响应或正式库；不得生成 SQL 或 question。把运行期产物放在受控 runtime 数据面，不写入 Git 控制面。
