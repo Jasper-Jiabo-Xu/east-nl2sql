@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "v5.validator-registry/v1",
+  "title": "EAS-17 validator registry",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "validators",
+    "rule_kind_index",
+    "coverage_categories",
+    "content_sha256"
+  ],
+  "properties": {
+    "schema_version": { "const": "v5.validator-registry/v1" },
+    "validators": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/validator" }
+    },
+    "rule_kind_index": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "items": { "type": "string", "minLength": 1 },
+        "minItems": 1,
+        "uniqueItems": true
+      }
+    },
+    "coverage_categories": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "items": { "type": "string", "minLength": 1 },
+        "minItems": 1,
+        "uniqueItems": true
+      }
+    },
+    "content_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+  },
+  "$defs": {
+    "validator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["validator_id", "layer", "asset_version", "rule_kinds"],
+      "properties": {
+        "validator_id": { "type": "string", "minLength": 1 },
+        "layer": { "enum": ["field", "table", "cross_table"] },
+        "asset_version": { "type": "string", "minLength": 1 },
+        "rule_kinds": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "minItems": 1,
+          "uniqueItems": true
+        }
+      }
+    }
+  }
+}
