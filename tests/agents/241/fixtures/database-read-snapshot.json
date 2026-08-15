@@ -1,0 +1,33 @@
+{
+  "envelope": {
+    "artifact_id": "eas31-snapshot",
+    "artifact_type": "database_read_snapshot",
+    "run_id": "eas31-fixture-run",
+    "qa_id": "QA-EAS31",
+    "version": 1,
+    "schema_version": "COMMON-ENVELOPE/v1",
+    "content_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+    "supersedes_ref": null,
+    "attempt_no": 1,
+    "producer_id": "EAS-19",
+    "parent_artifact_refs": [],
+    "input_hashes": [],
+    "status": "candidate",
+    "mode": "event_data",
+    "created_at": "2026-08-16T00:00:00+00:00",
+    "trace_id": "eas31-fixture-trace",
+    "storage_locator": null
+  },
+  "payload": {
+    "schema_version": "v5.database-read-snapshot/v1",
+    "snapshot_id": "eas31-snapshot",
+    "base_database_version": "fixture-db-v1",
+    "query_time": "2026-08-16T00:00:00+00:00",
+    "query_scope": "脱敏现有对象",
+    "executed_queries": ["SELECT * FROM FIXTURE_T002 WHERE 1=0"],
+    "object_state_records": [
+      {"record_keys": {"table_id": "FIXTURE_T002", "primary_key": "PK-1"}, "data": {"PK001": "脱敏主键"}}
+    ],
+    "snapshot_hash": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+  }
+}

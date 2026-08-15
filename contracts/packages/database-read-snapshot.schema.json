@@ -1,0 +1,59 @@
+{
+  "$id": "https://east.example/contracts/packages/database-read-snapshot/v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Database read snapshot (EAS-19 read-only interface output, consumed by 241)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["envelope", "payload"],
+  "properties": {
+    "envelope": {
+      "allOf": [
+        {"$ref": "https://east.example/contracts/common-envelope/v1"},
+        {
+          "type": "object",
+          "properties": {
+            "artifact_type": {"const": "database_read_snapshot"},
+            "producer_id": {"const": "EAS-19"}
+          }
+        }
+      ]
+    },
+    "payload": {"$ref": "#/$defs/snapshot_payload"}
+  },
+  "$defs": {
+    "record_keys": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["table_id", "primary_key"],
+      "properties": {
+        "table_id": {"type": "string", "minLength": 1},
+        "primary_key": {"type": "string", "minLength": 1},
+        "reference_keys": {"type": "array", "items": {"type": "string", "minLength": 1}}
+      }
+    },
+    "object_state_record": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["record_keys", "data"],
+      "properties": {
+        "record_keys": {"$ref": "#/$defs/record_keys"},
+        "data": {"type": "object", "additionalProperties": true}
+      }
+    },
+    "snapshot_payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "snapshot_id", "base_database_version", "query_time", "query_scope", "executed_queries", "object_state_records", "snapshot_hash"],
+      "properties": {
+        "schema_version": {"const": "v5.database-read-snapshot/v1"},
+        "snapshot_id": {"type": "string", "minLength": 1},
+        "base_database_version": {"type": "string", "minLength": 1},
+        "query_time": {"type": "string", "format": "date-time"},
+        "query_scope": {"type": "string", "minLength": 1},
+        "executed_queries": {"type": "array", "items": {"type": "string", "minLength": 1}},
+        "object_state_records": {"type": "array", "items": {"$ref": "#/$defs/object_state_record"}},
+        "snapshot_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    }
+  }
+}

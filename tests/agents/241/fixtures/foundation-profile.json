@@ -1,0 +1,29 @@
+{
+  "envelope": {
+    "artifact_id": "eas31-profile",
+    "artifact_type": "foundation_profile",
+    "run_id": "eas31-foundation-run",
+    "qa_id": null,
+    "version": 1,
+    "schema_version": "COMMON-ENVELOPE/v1",
+    "content_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+    "supersedes_ref": null,
+    "attempt_no": 1,
+    "producer_id": "210",
+    "parent_artifact_refs": [],
+    "input_hashes": [],
+    "status": "candidate",
+    "mode": "foundation",
+    "created_at": "2026-08-16T00:00:00+00:00",
+    "trace_id": "eas31-foundation-trace",
+    "storage_locator": null
+  },
+  "payload": {
+    "schema_version": "v5.foundation-profile/v1",
+    "base_database_version": "fixture-db-v1",
+    "target_classes": ["FIXTURE_CUSTOMER"],
+    "target_counts": {"FIXTURE_CUSTOMER": 1},
+    "constraint_asset_version": "CA-V0.3.0",
+    "graph_version": "TRG-V1.0.0"
+  }
+}

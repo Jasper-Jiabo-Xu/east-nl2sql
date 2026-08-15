@@ -1,0 +1,74 @@
+{
+  "$id": "https://east.example/contracts/packages/sql-regression-failed-feedback/v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SQL regression failed feedback (Agent 260 output, consumed by 241)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["envelope", "payload"],
+  "properties": {
+    "envelope": {
+      "allOf": [
+        {"$ref": "https://east.example/contracts/common-envelope/v1"},
+        {
+          "type": "object",
+          "properties": {
+            "artifact_type": {"const": "sql_regression_failed_feedback"},
+            "producer_id": {"const": "260"}
+          }
+        }
+      ]
+    },
+    "payload": {"$ref": "#/$defs/feedback_payload"}
+  },
+  "$defs": {
+    "artifact_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifact_id", "version", "content_hash"],
+      "properties": {
+        "artifact_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"},
+        "version": {"type": "integer", "minimum": 1},
+        "content_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    },
+    "sql_error_detail": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sql_text", "error_code", "error_message"],
+      "properties": {
+        "sql_text": {"type": "string"},
+        "error_code": {"type": "string", "minLength": 1},
+        "error_message": {"type": "string", "minLength": 1}
+      }
+    },
+    "failure_details": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["error_code", "error_stage", "error_location", "expected_values", "actual_values", "sql_error_detail", "regression_metrics"],
+      "properties": {
+        "error_code": {"enum": ["DATA_VALUE_ERROR", "ORM_PLAN_ERROR", "SQL_EXECUTION_ERROR", "FOUNDATION_REQUIRED", "MANUAL_REVIEW_REQUIRED"]},
+        "error_stage": {"enum": ["binding", "orm_execution", "sql_execution", "regression_gate", "foundation_integrity"]},
+        "error_location": {"type": "string", "minLength": 1},
+        "expected_values": {"type": "array", "items": {}},
+        "actual_values": {"type": "array", "items": {}},
+        "sql_error_detail": {"anyOf": [{"$ref": "#/$defs/sql_error_detail"}, {"type": "null"}]},
+        "regression_metrics": {"type": "object", "additionalProperties": true}
+      }
+    },
+    "feedback_payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "mode", "input_data_refs", "input_orm_ref", "sandbox_snapshot_id", "failure_details", "route_target", "retry_count"],
+      "properties": {
+        "schema_version": {"const": "v5.sql-regression-failed-feedback/v1"},
+        "mode": {"enum": ["event_data", "foundation"]},
+        "input_data_refs": {"type": "array", "items": {"$ref": "#/$defs/artifact_ref"}},
+        "input_orm_ref": {"anyOf": [{"$ref": "#/$defs/artifact_ref"}, {"type": "null"}]},
+        "sandbox_snapshot_id": {"type": "string", "minLength": 1},
+        "failure_details": {"$ref": "#/$defs/failure_details"},
+        "route_target": {"enum": ["241", "251", "210", "010", "110", "manual"]},
+        "retry_count": {"type": "integer", "minimum": 1, "maximum": 3}
+      }
+    }
+  }
+}

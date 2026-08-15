@@ -1,0 +1,41 @@
+{
+  "$id": "https://east.example/contracts/packages/bound-data-manifest/v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Bound data manifest (control-plane locator for 241 output)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["manifest_schema_version", "issue_key", "artifact_ref", "input_artifact_refs", "run_id", "qa_id", "trace_id", "attempt_no", "status", "runtime_locator"],
+  "properties": {
+    "manifest_schema_version": {"const": "bound-data-manifest/v1"},
+    "issue_key": {"type": "string", "minLength": 1},
+    "artifact_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifact_id", "version", "content_hash"],
+      "properties": {
+        "artifact_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"},
+        "version": {"type": "integer", "minimum": 1},
+        "content_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    },
+    "input_artifact_refs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["artifact_id", "version", "content_hash"],
+        "properties": {
+          "artifact_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"},
+          "version": {"type": "integer", "minimum": 1},
+          "content_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+        }
+      }
+    },
+    "run_id": {"type": "string", "minLength": 1},
+    "qa_id": {"type": ["string", "null"]},
+    "trace_id": {"type": "string", "minLength": 1},
+    "attempt_no": {"type": "integer", "minimum": 1, "maximum": 3},
+    "status": {"enum": ["candidate", "pending_validation", "validated", "pending_review", "approved", "rejected", "blocked_manual", "released"]},
+    "runtime_locator": {"type": "string", "minLength": 1}
+  }
+}

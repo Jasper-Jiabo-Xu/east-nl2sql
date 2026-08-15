@@ -1,0 +1,29 @@
+{
+  "envelope": {
+    "artifact_id": "eas31-structure-event",
+    "artifact_type": "structure_closure",
+    "run_id": "eas31-fixture-run",
+    "qa_id": "QA-EAS31",
+    "version": 1,
+    "schema_version": "COMMON-ENVELOPE/v1",
+    "content_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+    "supersedes_ref": null,
+    "attempt_no": 1,
+    "producer_id": "220",
+    "parent_artifact_refs": [],
+    "input_hashes": [],
+    "status": "candidate",
+    "mode": "event_data",
+    "created_at": "2026-08-16T00:00:00+00:00",
+    "trace_id": "eas31-fixture-trace",
+    "storage_locator": null
+  },
+  "payload": {
+    "schema_version": "v5.structure-closure/v1",
+    "constraint_asset_version": "CA-V0.3.0",
+    "graph_version": "TRG-V1.0.0",
+    "tables": ["FIXTURE_T001", "FIXTURE_T002"],
+    "fields": ["FIXTURE_T001.F001", "FIXTURE_T001.F002", "FIXTURE_T002.PK001"],
+    "references": [{"type": "cross_table", "data": {"from": "FIXTURE_T001.F001", "to": "FIXTURE_T002.PK001"}}]
+  }
+}
