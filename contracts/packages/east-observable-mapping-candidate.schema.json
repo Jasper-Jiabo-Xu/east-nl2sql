@@ -1,0 +1,17 @@
+{
+  "$id": "https://east.example/contracts/packages/east-observable-mapping-candidate/v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "EAST-OBSERVABLE-MAPPING-CANDIDATE",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["asset_package_ref", "candidates"],
+  "properties": {
+    "asset_package_ref": {"$ref": "#/$defs/ref"},
+    "candidates": {"type": "array", "items": {"$ref": "#/$defs/candidate"}}
+  },
+  "$defs": {
+    "ref": {"type": "object", "additionalProperties": false, "required": ["artifact_id", "version", "content_hash"], "properties": {"artifact_id": {"type": "string", "minLength": 1}, "version": {"type": "integer", "minimum": 1}, "content_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}},
+    "source_ref": {"type": "object", "additionalProperties": false, "required": ["source_type", "source_id"], "properties": {"source_type": {"type": "string", "minLength": 1}, "source_id": {"type": "string", "minLength": 1}}},
+    "candidate": {"type": "object", "additionalProperties": false, "required": ["penalty_fact_id", "asset_record_index", "source_ref", "proxy_expression"], "properties": {"penalty_fact_id": {"type": "string", "minLength": 1}, "asset_record_index": {"type": "integer", "minimum": 0}, "source_ref": {"$ref": "#/$defs/source_ref"}, "proxy_expression": {"type": "string", "minLength": 1}}}
+  }
+}

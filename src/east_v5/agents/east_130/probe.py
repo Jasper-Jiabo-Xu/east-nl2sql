@@ -33,8 +33,13 @@ def _penalty() -> dict[str, Any]:
 
 
 def _assets(request: dict[str, Any]) -> dict[str, Any]:
-    payload = {"request_id": request["payload"]["request_id"], "asset_version": "CA-V0.3.0", "executed_queries": [], "matched_records": [{"record_type": "single_field", "data": {"table_id": "EAST_D001", "field_id": "F001", "penalty_fact_ids": ["fact-001"], "constraint_evidence_ref": "constraint-eas49"}, "source_refs": [{"source_type": "constraint_asset", "source_id": "CA-V0.3.0"}], "hierarchy_refs": []}], "constraint_summary": {"total_matched": 1, "asset_types_covered": ["single_field"]}, "unmatched_items": [], "query_trace": []}
+    payload = {"request_id": request["payload"]["request_id"], "asset_version": "CA-V0.3.0", "executed_queries": [], "matched_records": [{"record_type": "single_field", "data": {"table_id": "EAST_D001", "field_id": "F001", "field_name": "脱敏字段", "data_type": "VARCHAR"}, "source_refs": [{"source_type": "constraint_asset", "source_id": "CA-V0.3.0"}], "hierarchy_refs": []}], "constraint_summary": {"total_matched": 1, "asset_types_covered": ["single_field"]}, "unmatched_items": [], "query_trace": []}
     return _wrap("constraint_asset_package", f"eas49-assets-{request['payload']['request_id']}", payload, producer="000", parents=[artifact_ref(request["envelope"])], attempt=request["envelope"]["attempt_no"])
+
+
+def _candidates(asset: dict[str, Any]) -> dict[str, Any]:
+    record = asset["payload"]["matched_records"][0]
+    return {"asset_package_ref": artifact_ref(asset["envelope"]), "candidates": [{"penalty_fact_id": "fact-001", "asset_record_index": 0, "source_ref": record["source_refs"][0], "proxy_expression": "以 EAST_D001.F001 筛查处罚事实 fact-001"}]}
 
 
 def _review(previous: dict[str, Any]) -> dict[str, Any]:
@@ -46,9 +51,10 @@ def run_sanitized_probe(repo_root: Path) -> dict[str, Any]:
     mapper = ObservableFactMapper(repo_root)
     penalty = _penalty()
     request = mapper.plan_constraint_query(penalty, run_id="eas49-sanitized-run", qa_id="QA-EAS49", created_at=FIXED_TIME)
-    first = mapper.build_observable_facts(penalty, _assets(request), run_id="eas49-sanitized-run", qa_id="QA-EAS49", created_at=FIXED_TIME)
+    first_assets = _assets(request)
+    first = mapper.build_observable_facts(penalty, first_assets, run_id="eas49-sanitized-run", qa_id="QA-EAS49", mapping_candidates=_candidates(first_assets), created_at=FIXED_TIME)
     mapper.validate_observable(first)
-    remapped = mapper.handle_review_feedback(penalty, _review(first), first, request, _assets, run_id="eas49-sanitized-run", qa_id="QA-EAS49", attempt_no=2, created_at=FIXED_TIME)["observable"]
+    remapped = mapper.handle_review_feedback(penalty, _review(first), first, request, _assets, run_id="eas49-sanitized-run", qa_id="QA-EAS49", attempt_no=2, candidate_builder=_candidates, created_at=FIXED_TIME)["observable"]
     mapper.validate_observable(remapped)
     corrupted = copy.deepcopy(penalty); corrupted["payload"]["source_facts"][0]["original_text"] = "篡改"
     try:

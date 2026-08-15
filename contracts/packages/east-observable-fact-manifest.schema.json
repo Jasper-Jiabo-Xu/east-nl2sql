@@ -3,9 +3,9 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "EAST-OBSERVABLE-FACT-MANIFEST",
   "type": "object", "additionalProperties": false,
-  "required": ["manifest_schema_version", "artifact_ref", "input_artifact_refs", "run_id", "qa_id", "trace_id", "attempt_no", "status", "runtime_locator"],
+  "required": ["manifest_schema_version", "issue_key", "artifact_ref", "input_artifact_refs", "run_id", "qa_id", "trace_id", "attempt_no", "status", "runtime_locator"],
   "properties": {
-    "manifest_schema_version": {"const": "east-observable-fact-manifest/v1"},
+    "manifest_schema_version": {"const": "east-observable-fact-manifest/v1"}, "issue_key": {"type": "string", "pattern": "^[A-Z][A-Z0-9_-]*-[0-9]+$"},
     "artifact_ref": {"$ref": "#/$defs/ref"}, "input_artifact_refs": {"type": "array", "items": {"$ref": "#/$defs/ref"}},
     "run_id": {"type": "string", "minLength": 1}, "qa_id": {"type": "string", "minLength": 1}, "trace_id": {"type": "string", "minLength": 1},
     "attempt_no": {"type": "integer", "minimum": 1, "maximum": 3}, "status": {"enum": ["candidate", "blocked_manual"]},

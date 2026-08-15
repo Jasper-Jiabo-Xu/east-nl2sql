@@ -24,6 +24,7 @@ TRANSPORT_KEYS = {"envelope", "payload"}
 ASSET_TYPES = ["data_element", "single_field", "within_table", "cross_table"]
 REVIEW_ARTIFACTS = {"deepseek_review_result", "glm_review_result"}
 MANIFEST_SCHEMA = "contracts/packages/east-observable-fact-manifest.schema.json"
+MAPPING_CANDIDATE_SCHEMA = "contracts/packages/east-observable-mapping-candidate.schema.json"
 
 
 def _fail(code: str) -> None:
@@ -130,23 +131,41 @@ class ObservableFactMapper:
         }
         self._validate_transport(package, artifact_type, schema_paths[artifact_type])
 
-    @staticmethod
-    def _record_matches_fact(record: dict[str, Any], fact_id: str) -> bool:
-        """Only an explicit fact-id plus source/constraint evidence is mappable."""
-        data = record.get("data")
-        if not isinstance(data, dict) or not record.get("source_refs"):
-            return False
-        fact_ids = data.get("penalty_fact_ids")
-        if fact_ids is None:
-            fact_ids = [data.get("penalty_fact_id")]
-        return (
-            isinstance(fact_ids, list)
-            and fact_id in fact_ids
-            and isinstance(data.get("constraint_evidence_ref"), str)
-            and bool(data["constraint_evidence_ref"])
-        )
+    def validate_mapping_candidates(self, candidates: dict[str, Any], assets: dict[str, Any], fact_ids: set[str]) -> dict[str, dict[str, Any]]:
+        """Validate 130's candidate layer against the *current* raw 000 package.
 
-    def _validate_manifest(self, manifest: dict[str, Any], observable: dict[str, Any]) -> None:
+        Agent 000 returns raw SQLite rows and source references only.  The LLM
+        may propose a mapping, but no proposal becomes a fact-to-asset mapping
+        until this method proves its package binding, stable row index, source
+        evidence, non-empty asset location, and one-to-one coverage.
+        """
+        _schema_validate(self.repo_root, MAPPING_CANDIDATE_SCHEMA, candidates, "EAST_OBSERVABLE_MAPPING_CANDIDATE")
+        _same_ref(candidates["asset_package_ref"], artifact_ref(assets["envelope"]), "CANDIDATE_ASSET_PACKAGE_MISMATCH")
+        records = assets["payload"]["matched_records"]
+        by_fact: dict[str, dict[str, Any]] = {}
+        claimed_records: set[int] = set()
+        for candidate in candidates["candidates"]:
+            fid = candidate["penalty_fact_id"]
+            if fid not in fact_ids:
+                _fail("CANDIDATE_FACT_UNKNOWN")
+            if fid in by_fact:
+                _fail("CANDIDATE_DUPLICATE_FACT")
+            index = candidate["asset_record_index"]
+            if index >= len(records):
+                _fail("CANDIDATE_RECORD_NOT_FOUND")
+            if index in claimed_records:
+                _fail("CANDIDATE_RECORD_CONFLICT")
+            record = records[index]
+            data = record.get("data")
+            if not isinstance(data, dict) or not str(data.get("table_id") or "").strip() or not str(data.get("field_id") or "").strip():
+                _fail("CANDIDATE_ASSET_LOCATION_EMPTY")
+            if candidate["source_ref"] not in record.get("source_refs", []):
+                _fail("CANDIDATE_EVIDENCE_NOT_IN_RECORD")
+            by_fact[fid] = candidate
+            claimed_records.add(index)
+        return by_fact
+
+    def _validate_manifest(self, manifest: dict[str, Any], observable: dict[str, Any], issue_key: str) -> None:
         _schema_validate(self.repo_root, MANIFEST_SCHEMA, manifest, "EAST_OBSERVABLE_FACT_MANIFEST")
         envelope = observable["envelope"]
         _same_ref(manifest["artifact_ref"], artifact_ref(envelope), "MANIFEST_ARTIFACT_REF_MISMATCH")
@@ -155,22 +174,25 @@ class ObservableFactMapper:
         for key in ("run_id", "qa_id", "trace_id", "attempt_no", "status"):
             if manifest[key] != envelope[key]:
                 _fail("MANIFEST_LINEAGE_MISMATCH")
+        if manifest["issue_key"] != issue_key:
+            _fail("MANIFEST_ISSUE_KEY_MISMATCH")
         locator = PurePosixPath(manifest["runtime_locator"])
-        if locator.is_absolute() or ".." in locator.parts:
+        expected = PurePosixPath("vnext") / "03_构建过程层" / "issues" / issue_key / envelope["run_id"] / str(envelope["attempt_no"]) / "manifest.json"
+        if locator.is_absolute() or ".." in locator.parts or locator != expected:
             _fail("MANIFEST_RUNTIME_BOUNDARY_VIOLATION")
 
-    def build_manifest(self, observable: dict[str, Any]) -> dict[str, Any]:
+    def build_manifest(self, observable: dict[str, Any], *, issue_key: str) -> dict[str, Any]:
         """Create a control-plane manifest instance without writing runtime data."""
         self.validate_observable(observable)
         envelope = observable["envelope"]
         manifest = {
-            "manifest_schema_version": "east-observable-fact-manifest/v1",
+            "manifest_schema_version": "east-observable-fact-manifest/v1", "issue_key": issue_key,
             "artifact_ref": artifact_ref(envelope), "input_artifact_refs": envelope["parent_artifact_refs"],
             "run_id": envelope["run_id"], "qa_id": envelope["qa_id"], "trace_id": envelope["trace_id"],
             "attempt_no": envelope["attempt_no"], "status": envelope["status"],
-            "runtime_locator": f"vnext/03_构建过程层/issues/EAS-22/{envelope['run_id']}/{envelope['attempt_no']}/manifest.json",
+            "runtime_locator": f"vnext/03_构建过程层/issues/{issue_key}/{envelope['run_id']}/{envelope['attempt_no']}/manifest.json",
         }
-        self._validate_manifest(manifest, observable)
+        self._validate_manifest(manifest, observable, issue_key)
         return manifest
 
     def _validate_remap_output(self, output: dict[str, Any], previous: dict[str, Any], assets: dict[str, Any], attempt_no: int) -> None:
@@ -211,37 +233,40 @@ class ObservableFactMapper:
                           trace_id=penalty["envelope"]["trace_id"], created_at=created_at)
 
     @staticmethod
-    def _asset_location(record: dict[str, Any]) -> tuple[str, str, str]:
+    def _asset_location(record: dict[str, Any]) -> tuple[str, str]:
         data = record.get("data", {})
-        table_id = str(data.get("table_id") or "EAST_ASSET_UNKNOWN")
-        field_id = str(data.get("field_id") or "ASSET_FIELD_UNKNOWN")
-        source = (record.get("source_refs") or [{"source_id": "CA-V0.3.0"}])[0].get("source_id", "CA-V0.3.0")
-        return table_id, field_id, str(source)
+        return str(data.get("table_id") or "").strip(), str(data.get("field_id") or "").strip()
 
     def build_observable_facts(
         self, penalty: dict[str, Any], assets: dict[str, Any], *, run_id: str, qa_id: str,
         version: int = 1, attempt_no: int = 1, supersedes_ref: dict[str, Any] | None = None,
-        status: str = "candidate", created_at: str | None = None,
+        status: str = "candidate", mapping_candidates: dict[str, Any] | None = None, created_at: str | None = None,
     ) -> dict[str, Any]:
         """Task 2: map only returned assets; emit explicit, consumable unknowns."""
         self.validate_penalty(penalty)
         self.validate_assets(assets)
         records = assets["payload"]["matched_records"]
+        fact_ids = {fact["penalty_fact_id"] for fact in penalty["payload"]["source_facts"]}
+        candidates = mapping_candidates or {"asset_package_ref": artifact_ref(assets["envelope"]), "candidates": []}
+        by_fact = self.validate_mapping_candidates(candidates, assets, fact_ids)
         observable: list[dict[str, Any]] = []
         unresolved: list[dict[str, Any]] = []
         for fact in penalty["payload"]["source_facts"]:
             fid = fact["penalty_fact_id"]
-            record = next((item for item in records if self._record_matches_fact(item, fid)), None)
-            if record is not None:
-                table_id, field_id, source = self._asset_location(record)
-                evidence = record["data"]["constraint_evidence_ref"]
+            candidate = by_fact.get(fid)
+            if candidate is not None:
+                index = candidate["asset_record_index"]
+                record = records[index]
+                table_id, field_id = self._asset_location(record)
                 direct = record.get("record_type") in {"data_element", "single_field"}
                 observation = "direct" if direct else "indirect"
-                proxy = f"以 {table_id}.{field_id} 筛查与处罚事实 {fid} 相关记录"
-                matrix = {"penalty_fact_id": fid, "proxy_expression": proxy, "table_field_path": f"{table_id}.{field_id}", "asset_evidence_ref": f"{source}:{evidence}"}
+                proxy = candidate["proxy_expression"]
+                evidence = candidate["source_ref"]
+                evidence_ref = f"{evidence['source_type']}:{evidence['source_id']}#record-{index}"
+                matrix = {"penalty_fact_id": fid, "proxy_expression": proxy, "table_field_path": f"{table_id}.{field_id}", "asset_evidence_ref": evidence_ref}
                 unobservable_parts: list[str] = []
                 related = [{"table_id": table_id, "field_id": field_id, "purpose": "可观察代理字段"}]
-                refs = [f"{source}:{evidence}"]
+                refs = [evidence_ref]
             else:
                 # Sentinels are deliberately non-empty: they say no EAST asset was
                 # found, rather than masquerading as an actual table/field mapping.
@@ -249,7 +274,7 @@ class ObservableFactMapper:
                 proxy = f"处罚事实 {fid} 当前无冻结EAST资产可表达，转人工审核"
                 matrix = {"penalty_fact_id": fid, "proxy_expression": proxy, "table_field_path": "NO_EAST_ASSET.NO_EAST_FIELD", "asset_evidence_ref": "000:unmatched"}
                 unobservable_parts, related, refs = [fact["original_text"]], [], ["000:unmatched"]
-                unresolved.append({"item": fid, "reason": "000未命中可观察资产", "needs_human_review": True})
+                unresolved.append({"item": fid, "reason": "130候选层未提供经本次000资产包验证的映射", "needs_human_review": True})
             observable.append({
                 "observable_fact_id": f"observable-{fid}", "penalty_fact_refs": [fid], "topic": "监管处罚风险筛查",
                 "main_object": fact["structured_fact"]["subject"], "query_grain": "一条EAST业务记录或聚合事件",
@@ -275,7 +300,9 @@ class ObservableFactMapper:
     def handle_review_feedback(
         self, penalty: dict[str, Any], review: dict[str, Any], previous_observable: dict[str, Any],
         previous_request: dict[str, Any], query_000: Callable[[dict[str, Any]], dict[str, Any]], *,
-        run_id: str, qa_id: str, attempt_no: int, created_at: str | None = None,
+        run_id: str, qa_id: str, attempt_no: int,
+        candidate_builder: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
+        created_at: str | None = None,
     ) -> dict[str, dict[str, Any]]:
         """Task 3: consume 170/180, expand 000 lookup, then supersede or block."""
         self.validate_penalty(penalty); self.validate_review(review)
@@ -314,11 +341,13 @@ class ObservableFactMapper:
             _fail("ASSET_REQUEST_PARENT_MISSING")
         no_match = not assets["payload"]["matched_records"]
         terminal = attempt_no == 3 and no_match
+        mapping_candidates = candidate_builder(assets) if candidate_builder is not None else None
         observable = self.build_observable_facts(
             penalty, assets, run_id=run_id, qa_id=qa_id,
             version=previous_observable["envelope"]["version"] + 1, attempt_no=attempt_no,
             supersedes_ref=artifact_ref(previous_observable["envelope"]),
-            status="blocked_manual" if terminal else "candidate", created_at=created_at,
+            status="blocked_manual" if terminal else "candidate", mapping_candidates=mapping_candidates,
+            created_at=created_at,
         )
         self._validate_remap_output(observable, previous_observable, assets, attempt_no)
         return {"request": request, "assets": assets, "observable": observable}

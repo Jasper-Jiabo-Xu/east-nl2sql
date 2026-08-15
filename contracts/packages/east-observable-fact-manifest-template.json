@@ -1,8 +1,8 @@
 {
-  "manifest_schema_version": "east-observable-fact-manifest/v1",
+  "manifest_schema_version": "east-observable-fact-manifest/v1", "issue_key": "<issue_key>",
   "artifact_ref": {"artifact_id": "<artifact_id>", "version": 1, "content_hash": "<sha256>"},
   "input_artifact_refs": [],
   "run_id": "<run_id>", "qa_id": "<qa_id>", "trace_id": "<trace_id>",
   "attempt_no": 1, "status": "candidate",
-  "runtime_locator": "vnext/03_构建过程层/issues/EAS-22/<run_id>/1/manifest.json"
+  "runtime_locator": "vnext/03_构建过程层/issues/<issue_key>/<run_id>/<attempt_no>/manifest.json"
 }
