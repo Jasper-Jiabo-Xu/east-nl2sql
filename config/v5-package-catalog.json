@@ -18,6 +18,7 @@
     {"id": "penalty_fact_package", "producer": "120", "consumers": ["130", "140", "150", "170", "180"]},
     {"id": "constraint_query_request", "producer": "130", "consumers": ["000"], "description": "约束资产查询请求（130生产）"},
     {"id": "constraint_query_request_220", "producer": "220", "consumers": ["000"], "description": "约束资产查询请求（220生产）"},
-    {"id": "constraint_asset_package", "producer": "000", "consumers": ["130", "220"], "description": "约束资产查询结果包"}
+    {"id": "constraint_asset_package", "producer": "000", "consumers": ["130", "220"], "description": "约束资产查询结果包"},
+    {"id": "east_observable_fact_package", "producer": "130", "consumers": ["140", "150"], "description": "EAST可观察事实包（130生产）"}
   ]
 }
