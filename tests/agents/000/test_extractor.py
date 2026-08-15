@@ -14,10 +14,9 @@ import hashlib
 import json
 import sqlite3
 import tempfile
+import unittest
 from pathlib import Path
 from unittest.mock import patch
-
-import pytest
 
 from east_v5.agents.east_000.safety_gate import (
     check_sql_safety,
@@ -50,7 +49,7 @@ from east_v5.governance import ContractError
 
 
 # ============================================================================
-# Fixtures
+# Helpers
 # ============================================================================
 
 REPO_ROOT = Path(__file__).resolve().parents[3]  # tests/agents/000/ -> repo root
@@ -72,9 +71,9 @@ def _make_request(**overrides) -> dict:
     return base
 
 
-def _make_sqlite_fixture(tmp_path: Path) -> Path:
+def _make_sqlite_fixture(tmp_dir: Path) -> Path:
     """Create a minimal CA-V0.3.0 SQLite fixture with required tables/views."""
-    db_path = tmp_path / "constraint_assets.sqlite"
+    db_path = tmp_dir / "constraint_assets.sqlite"
     conn = sqlite3.connect(str(db_path))
     cur = conn.cursor()
 
@@ -108,121 +107,121 @@ def _make_sqlite_fixture(tmp_path: Path) -> Path:
 # Safety Gate Tests
 # ============================================================================
 
-class TestSafetyGatePass:
+class TestSafetyGatePass(unittest.TestCase):
     """Valid queries that should pass the safety gate."""
 
     def test_simple_select_with_limit(self):
         result = check_sql_safety("SELECT * FROM field_master LIMIT ?", 100)
-        assert result.result == SafetyResult.PASS
+        self.assertEqual(result.result, SafetyResult.PASS)
 
     def test_select_with_where_and_limit(self):
         result = check_sql_safety(
             "SELECT * FROM field_master WHERE table_id = ? LIMIT ?", 100
         )
-        assert result.result == SafetyResult.PASS
+        self.assertEqual(result.result, SafetyResult.PASS)
 
     def test_cte_select(self):
         result = check_sql_safety(
             "WITH cte AS (SELECT * FROM field_master LIMIT ?) SELECT * FROM cte LIMIT ?",
             100,
         )
-        assert result.result == SafetyResult.PASS
+        self.assertEqual(result.result, SafetyResult.PASS)
 
     def test_select_from_view(self):
         result = check_sql_safety(
             "SELECT * FROM intra_table_constraints LIMIT ?", 100
         )
-        assert result.result == SafetyResult.PASS
+        self.assertEqual(result.result, SafetyResult.PASS)
 
     def test_select_from_cross_table_view(self):
         result = check_sql_safety(
             "SELECT * FROM cross_table_constraints WHERE table_id = ? LIMIT ?", 100
         )
-        assert result.result == SafetyResult.PASS
+        self.assertEqual(result.result, SafetyResult.PASS)
 
     def test_join_authorized_tables(self):
         result = check_sql_safety(
             "SELECT f.* FROM field_master f JOIN multifield_constraint_field mcf ON f.field_id = mcf.field_id LIMIT ?",
             100,
         )
-        assert result.result == SafetyResult.PASS
+        self.assertEqual(result.result, SafetyResult.PASS)
 
 
-class TestSafetyGateReject:
+class TestSafetyGateReject(unittest.TestCase):
     """Invalid queries that should be rejected."""
 
     def test_reject_insert(self):
         result = check_sql_safety("INSERT INTO field_master VALUES (?, ?, ?, ?)")
-        assert result.result == SafetyResult.FAIL
-        assert any("WRITE_OP" in r for r in result.rejected_reasons)
+        self.assertEqual(result.result, SafetyResult.FAIL)
+        self.assertTrue(any("WRITE_OP" in r for r in result.rejected_reasons))
 
     def test_reject_update(self):
         result = check_sql_safety("UPDATE field_master SET field_name = ?")
-        assert result.result == SafetyResult.FAIL
-        assert any("WRITE_OP" in r for r in result.rejected_reasons)
+        self.assertEqual(result.result, SafetyResult.FAIL)
+        self.assertTrue(any("WRITE_OP" in r for r in result.rejected_reasons))
 
     def test_reject_delete(self):
         result = check_sql_safety("DELETE FROM field_master")
-        assert result.result == SafetyResult.FAIL
-        assert any("WRITE_OP" in r for r in result.rejected_reasons)
+        self.assertEqual(result.result, SafetyResult.FAIL)
+        self.assertTrue(any("WRITE_OP" in r for r in result.rejected_reasons))
 
     def test_reject_drop(self):
         result = check_sql_safety("DROP TABLE field_master")
-        assert result.result == SafetyResult.FAIL
-        assert any("WRITE_OP" in r for r in result.rejected_reasons)
+        self.assertEqual(result.result, SafetyResult.FAIL)
+        self.assertTrue(any("WRITE_OP" in r for r in result.rejected_reasons))
 
     def test_reject_multi_statement(self):
         result = check_sql_safety(
             "SELECT * FROM field_master LIMIT ?; SELECT * FROM evidence LIMIT ?"
         )
-        assert result.result == SafetyResult.FAIL
-        assert any("MULTI_STATEMENT" in r for r in result.rejected_reasons)
+        self.assertEqual(result.result, SafetyResult.FAIL)
+        self.assertTrue(any("MULTI_STATEMENT" in r for r in result.rejected_reasons))
 
     def test_reject_unauthorized_table(self):
         result = check_sql_safety("SELECT * FROM unknown_table LIMIT ?")
-        assert result.result == SafetyResult.FAIL
-        assert any("UNAUTHORIZED_OBJECT" in r for r in result.rejected_reasons)
+        self.assertEqual(result.result, SafetyResult.FAIL)
+        self.assertTrue(any("UNAUTHORIZED_OBJECT" in r for r in result.rejected_reasons))
 
     def test_reject_system_table(self):
         result = check_sql_safety("SELECT * FROM sqlite_master LIMIT ?")
-        assert result.result == SafetyResult.FAIL
-        assert any("SYSTEM_TABLE" in r for r in result.rejected_reasons)
+        self.assertEqual(result.result, SafetyResult.FAIL)
+        self.assertTrue(any("SYSTEM_TABLE" in r for r in result.rejected_reasons))
 
     def test_reject_no_limit(self):
         result = check_sql_safety("SELECT * FROM field_master")
-        assert result.result == SafetyResult.FAIL
-        assert any("NO_LIMIT" in r for r in result.rejected_reasons)
+        self.assertEqual(result.result, SafetyResult.FAIL)
+        self.assertTrue(any("NO_LIMIT" in r for r in result.rejected_reasons))
 
     def test_reject_injection_union(self):
         result = check_sql_safety(
             "SELECT * FROM field_master UNION ALL SELECT * FROM evidence LIMIT ?"
         )
-        assert result.result == SafetyResult.FAIL
-        assert any("INJECTION" in r for r in result.rejected_reasons)
+        self.assertEqual(result.result, SafetyResult.FAIL)
+        self.assertTrue(any("INJECTION" in r for r in result.rejected_reasons))
 
     def test_reject_injection_comment(self):
         result = check_sql_safety("SELECT * FROM field_master -- drop everything LIMIT ?")
-        assert result.result == SafetyResult.FAIL
-        assert any("INJECTION" in r for r in result.rejected_reasons)
+        self.assertEqual(result.result, SafetyResult.FAIL)
+        self.assertTrue(any("INJECTION" in r for r in result.rejected_reasons))
 
     def test_reject_inline_value(self):
         result = check_sql_safety(
             "SELECT * FROM field_master WHERE table_id = 'EAST_D001' LIMIT ?"
         )
-        assert result.result == SafetyResult.FAIL
-        assert any("UNPARAMETERIZED" in r for r in result.rejected_reasons)
+        self.assertEqual(result.result, SafetyResult.FAIL)
+        self.assertTrue(any("UNPARAMETERIZED" in r for r in result.rejected_reasons))
 
     def test_reject_pragma(self):
         result = check_sql_safety("PRAGMA table_info(field_master)")
-        assert result.result == SafetyResult.FAIL
-        assert any("WRITE_OP" in r for r in result.rejected_reasons)
+        self.assertEqual(result.result, SafetyResult.FAIL)
+        self.assertTrue(any("WRITE_OP" in r for r in result.rejected_reasons))
 
 
 # ============================================================================
 # Request Validation Tests
 # ============================================================================
 
-class TestRequestValidation:
+class TestRequestValidation(unittest.TestCase):
     """Tests for CONSTRAINT-QUERY-REQUEST validation."""
 
     def test_valid_request_130(self):
@@ -235,27 +234,27 @@ class TestRequestValidation:
 
     def test_invalid_caller_agent_id(self):
         req = _make_request(caller_agent_id="999")
-        with pytest.raises(ContractError, match="INVALID_CALLER_AGENT_ID"):
+        with self.assertRaisesRegex(ContractError, "INVALID_CALLER_AGENT_ID"):
             validate_request(req)
 
     def test_invalid_caller_stage(self):
         req = _make_request(caller_stage="invalid_stage")
-        with pytest.raises(ContractError, match="INVALID_CALLER_STAGE"):
+        with self.assertRaisesRegex(ContractError, "INVALID_CALLER_STAGE"):
             validate_request(req)
 
     def test_invalid_query_purpose(self):
         req = _make_request(query_purpose="invalid_purpose")
-        with pytest.raises(ContractError, match="INVALID_QUERY_PURPOSE"):
+        with self.assertRaisesRegex(ContractError, "INVALID_QUERY_PURPOSE"):
             validate_request(req)
 
     def test_max_rows_zero(self):
         req = _make_request(max_rows=0)
-        with pytest.raises(ContractError, match="MAX_ROWS_EXCEEDED"):
+        with self.assertRaisesRegex(ContractError, "MAX_ROWS_EXCEEDED"):
             validate_request(req)
 
     def test_max_rows_too_large(self):
         req = _make_request(max_rows=10001)
-        with pytest.raises(ContractError, match="MAX_ROWS_EXCEEDED"):
+        with self.assertRaisesRegex(ContractError, "MAX_ROWS_EXCEEDED"):
             validate_request(req)
 
 
@@ -263,7 +262,7 @@ class TestRequestValidation:
 # Query Planning Tests
 # ============================================================================
 
-class TestQueryPlanning:
+class TestQueryPlanning(unittest.TestCase):
     """Tests for query plan generation."""
 
     def test_single_field_constraint_lookup(self):
@@ -273,10 +272,10 @@ class TestQueryPlanning:
             table_scope=["EAST_D001"],
         )
         plans = plan_queries(req)
-        assert len(plans) > 0
+        self.assertGreater(len(plans), 0)
         for p in plans:
-            assert "LIMIT ?" in p["sql"]
-            assert "?" in p["sql"]  # parameterized
+            self.assertIn("LIMIT ?", p["sql"])
+            self.assertIn("?", p["sql"])  # parameterized
 
     def test_field_explanation_with_field_scope(self):
         req = _make_request(
@@ -285,9 +284,9 @@ class TestQueryPlanning:
             field_scope=["EAST_D001.field_001"],
         )
         plans = plan_queries(req)
-        assert len(plans) > 0
+        self.assertGreater(len(plans), 0)
         # single_field maps to field_master + views; at least one plan uses field_master
-        assert any("field_master" in p["sql"] for p in plans)
+        self.assertTrue(any("field_master" in p["sql"] for p in plans))
 
     def test_table_explanation_with_table_scope(self):
         req = _make_request(
@@ -296,7 +295,7 @@ class TestQueryPlanning:
             table_scope=["EAST_D001"],
         )
         plans = plan_queries(req)
-        assert len(plans) > 0
+        self.assertGreater(len(plans), 0)
 
     def test_cross_table_type(self):
         req = _make_request(
@@ -304,105 +303,113 @@ class TestQueryPlanning:
             table_scope=["EAST_D001"],
         )
         plans = plan_queries(req)
-        assert len(plans) > 0
+        self.assertGreater(len(plans), 0)
         for p in plans:
-            assert "cross_table_constraints" in p["sql"]
+            self.assertIn("cross_table_constraints", p["sql"])
 
     def test_empty_asset_type(self):
         req = _make_request(target_asset_types=["hierarchy_reference"])
         plans = plan_queries(req)
-        assert len(plans) == 0  # hierarchy_reference maps to TRG, not SQLite
+        self.assertEqual(len(plans), 0)  # hierarchy_reference maps to TRG, not SQLite
 
 
 # ============================================================================
 # Query Executor Tests
 # ============================================================================
 
-class TestQueryExecutor:
+class TestQueryExecutor(unittest.TestCase):
     """Tests for read-only query execution."""
 
-    def test_execute_simple_query(self, tmp_path):
-        db_path = _make_sqlite_fixture(tmp_path)
-        result = execute_query(
-            db_path,
-            "SELECT * FROM field_master WHERE table_id = ? LIMIT ?",
-            ("EAST_D001", 100),
-        )
-        assert result.row_count == 2
-        assert result.elapsed_ms >= 0
-        assert result.exception is None
+    def test_execute_simple_query(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = _make_sqlite_fixture(Path(tmp_dir))
+            result = execute_query(
+                db_path,
+                "SELECT * FROM field_master WHERE table_id = ? LIMIT ?",
+                ("EAST_D001", 100),
+            )
+            self.assertEqual(result.row_count, 2)
+            self.assertGreaterEqual(result.elapsed_ms, 0)
+            self.assertIsNone(result.exception)
 
-    def test_execute_safe_query_pass(self, tmp_path):
-        db_path = _make_sqlite_fixture(tmp_path)
-        result, record, trace = execute_safe_query(
-            db_path,
-            "SELECT * FROM field_master WHERE table_id = ? LIMIT ?",
-            ("EAST_D001", 100),
-        )
-        assert record.safety_check_result == "pass"
-        assert result.row_count == 2
+    def test_execute_safe_query_pass(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = _make_sqlite_fixture(Path(tmp_dir))
+            result, record, trace = execute_safe_query(
+                db_path,
+                "SELECT * FROM field_master WHERE table_id = ? LIMIT ?",
+                ("EAST_D001", 100),
+            )
+            self.assertEqual(record.safety_check_result, "pass")
+            self.assertEqual(result.row_count, 2)
 
-    def test_execute_safe_query_fail(self, tmp_path):
-        db_path = _make_sqlite_fixture(tmp_path)
-        result, record, trace = execute_safe_query(
-            db_path,
-            "INSERT INTO field_master VALUES (?, ?, ?, ?)",
-            ("x", "y", "z", "w"),
-        )
-        assert record.safety_check_result == "fail"
-        assert result.row_count == 0
+    def test_execute_safe_query_fail(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = _make_sqlite_fixture(Path(tmp_dir))
+            result, record, trace = execute_safe_query(
+                db_path,
+                "INSERT INTO field_master VALUES (?, ?, ?, ?)",
+                ("x", "y", "z", "w"),
+            )
+            self.assertEqual(record.safety_check_result, "fail")
+            self.assertEqual(result.row_count, 0)
 
-    def test_asset_hash_verification_pass(self, tmp_path):
-        db_path = _make_sqlite_fixture(tmp_path)
-        expected = compute_file_sha256(db_path)
-        verify_asset_hash(db_path, expected)  # Should not raise
+    def test_asset_hash_verification_pass(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = _make_sqlite_fixture(Path(tmp_dir))
+            expected = compute_file_sha256(db_path)
+            verify_asset_hash(db_path, expected)  # Should not raise
 
-    def test_asset_hash_verification_fail(self, tmp_path):
-        db_path = _make_sqlite_fixture(tmp_path)
-        with pytest.raises(ContractError, match="ASSET_HASH_MISMATCH"):
-            verify_asset_hash(db_path, "0" * 64)
+    def test_asset_hash_verification_fail(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = _make_sqlite_fixture(Path(tmp_dir))
+            with self.assertRaisesRegex(ContractError, "ASSET_HASH_MISMATCH"):
+                verify_asset_hash(db_path, "0" * 64)
 
 
 # ============================================================================
 # Full Pipeline Tests
 # ============================================================================
 
-class TestFullPipeline:
+class TestFullPipeline(unittest.TestCase):
     """Tests for the complete retrieval pipeline."""
 
-    def test_successful_retrieval(self, tmp_path):
-        db_path = _make_sqlite_fixture(tmp_path)
-        req = _make_request(
-            target_asset_types=["single_field"],
-            table_scope=["EAST_D001"],
-        )
-        result = execute_retrieval(req, db_path, REPO_ROOT)
-        assert result["request_id"] == "REQ-001"
-        assert result["asset_version"] == "CA-V0.3.0"
-        assert len(result["executed_queries"]) > 0
-        assert result["constraint_summary"]["total_matched"] > 0
+    def test_successful_retrieval(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = _make_sqlite_fixture(Path(tmp_dir))
+            req = _make_request(
+                target_asset_types=["single_field"],
+                table_scope=["EAST_D001"],
+            )
+            result = execute_retrieval(req, db_path, REPO_ROOT)
+            self.assertEqual(result["request_id"], "REQ-001")
+            self.assertEqual(result["asset_version"], "CA-V0.3.0")
+            self.assertGreater(len(result["executed_queries"]), 0)
+            self.assertGreater(result["constraint_summary"]["total_matched"], 0)
 
-    def test_no_candidates_returns_empty(self, tmp_path):
-        db_path = _make_sqlite_fixture(tmp_path)
-        req = _make_request(target_asset_types=["hierarchy_reference"])
-        result = execute_retrieval(req, db_path, REPO_ROOT)
-        assert result["matched_records"] == []
+    def test_no_candidates_returns_empty(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = _make_sqlite_fixture(Path(tmp_dir))
+            req = _make_request(target_asset_types=["hierarchy_reference"])
+            result = execute_retrieval(req, db_path, REPO_ROOT)
+            self.assertEqual(result["matched_records"], [])
 
-    def test_safety_rejection_records_unmatched(self, tmp_path):
+    def test_safety_rejection_records_unmatched(self):
         """Test that safety gate rejections are recorded as unmatched items."""
-        db_path = _make_sqlite_fixture(tmp_path)
-        req = _make_request(target_asset_types=["single_field"], table_scope=["EAST_D001"])
-        result = execute_retrieval(req, db_path, REPO_ROOT)
-        # All queries in normal path should pass
-        for eq in result["executed_queries"]:
-            assert eq["safety_check_result"] == "pass"
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = _make_sqlite_fixture(Path(tmp_dir))
+            req = _make_request(target_asset_types=["single_field"], table_scope=["EAST_D001"])
+            result = execute_retrieval(req, db_path, REPO_ROOT)
+            # All queries in normal path should pass
+            for eq in result["executed_queries"]:
+                self.assertEqual(eq["safety_check_result"], "pass")
 
 
 # ============================================================================
 # Schema Validation Tests
 # ============================================================================
 
-class TestSchemaValidation:
+class TestSchemaValidation(unittest.TestCase):
     """Tests for JSON Schema validation of request and result packages."""
 
     def test_valid_request_schema(self):
@@ -411,55 +418,60 @@ class TestSchemaValidation:
 
     def test_invalid_request_missing_required(self):
         req = {"request_id": "REQ-001"}  # Missing many required fields
-        with pytest.raises(ContractError, match="SCHEMA_VALIDATION_FAILED"):
+        with self.assertRaisesRegex(ContractError, "SCHEMA_VALIDATION_FAILED"):
             validate_request_schema(REPO_ROOT, req)
 
-    def test_valid_result_package(self, tmp_path):
-        db_path = _make_sqlite_fixture(tmp_path)
-        req = _make_request(table_scope=["EAST_D001"])
-        result = execute_retrieval(req, db_path, REPO_ROOT)
-        validate_result_schema(REPO_ROOT, result)  # Should not raise
+    def test_valid_result_package(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = _make_sqlite_fixture(Path(tmp_dir))
+            req = _make_request(table_scope=["EAST_D001"])
+            result = execute_retrieval(req, db_path, REPO_ROOT)
+            validate_result_schema(REPO_ROOT, result)  # Should not raise
 
 
 # ============================================================================
 # Edge Case Tests
 # ============================================================================
 
-class TestEdgeCases:
+class TestEdgeCases(unittest.TestCase):
     """Tests for boundary and error conditions."""
 
     def test_empty_result(self):
         req = _make_request()
         result = _empty_result(req, "UNMATCHED_QUERY")
-        assert result["constraint_summary"]["total_matched"] == 0
-        assert len(result["unmatched_items"]) == 1
+        self.assertEqual(result["constraint_summary"]["total_matched"], 0)
+        self.assertEqual(len(result["unmatched_items"]), 1)
 
     def test_infer_record_type_field_master(self):
-        assert _infer_record_type("SELECT * FROM field_master LIMIT ?") == "single_field"
+        self.assertEqual(_infer_record_type("SELECT * FROM field_master LIMIT ?"), "single_field")
 
     def test_infer_record_type_cross_table(self):
-        assert _infer_record_type("SELECT * FROM cross_table_constraints LIMIT ?") == "cross_table"
+        self.assertEqual(_infer_record_type("SELECT * FROM cross_table_constraints LIMIT ?"), "cross_table")
 
     def test_infer_record_type_intra_table(self):
-        assert _infer_record_type("SELECT * FROM intra_table_constraints LIMIT ?") == "within_table"
+        self.assertEqual(_infer_record_type("SELECT * FROM intra_table_constraints LIMIT ?"), "within_table")
 
     def test_infer_record_type_evidence(self):
-        assert _infer_record_type("SELECT * FROM evidence LIMIT ?") == "object_detail_state"
+        self.assertEqual(_infer_record_type("SELECT * FROM evidence LIMIT ?"), "object_detail_state")
 
     def test_authorized_objects_not_empty(self):
-        assert len(ALL_AUTHORIZED_OBJECTS) > 0
+        self.assertGreater(len(ALL_AUTHORIZED_OBJECTS), 0)
 
     def test_ca_tables_subset_of_authorized(self):
-        assert CA_V030_TABLES.issubset(ALL_AUTHORIZED_OBJECTS)
+        self.assertTrue(CA_V030_TABLES.issubset(ALL_AUTHORIZED_OBJECTS))
 
     def test_ca_views_subset_of_authorized(self):
-        assert CA_V030_VIEWS.issubset(ALL_AUTHORIZED_OBJECTS)
+        self.assertTrue(CA_V030_VIEWS.issubset(ALL_AUTHORIZED_OBJECTS))
 
     def test_max_limit_value(self):
-        assert MAX_LIMIT == 10000
+        self.assertEqual(MAX_LIMIT, 10000)
 
     def test_independent_ods_not_in_authorized(self):
         """Ensure ODS tables are NOT in the authorized object list."""
         ods_names = {"ods_regulatory_event", "ods_penalty_record", "ods_organizational"}
         for ods in ods_names:
-            assert ods not in ALL_AUTHORIZED_OBJECTS
+            self.assertNotIn(ods, ALL_AUTHORIZED_OBJECTS)
+
+
+if __name__ == "__main__":
+    unittest.main()
