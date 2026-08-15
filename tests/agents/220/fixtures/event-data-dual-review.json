@@ -1,0 +1,99 @@
+{
+  "event": {
+    "envelope": {
+      "artifact_id": "eas29-reviewed-question",
+      "artifact_type": "reviewed_question_sql",
+      "run_id": "eas29-fixture-run",
+      "qa_id": "QA-EAS29-FIXTURE-001",
+      "version": 1,
+      "schema_version": "COMMON-ENVELOPE/v1",
+      "content_hash": "21ffc0a7d8b10ac671fce6be31edd23fd21c53b01745e4dd50b2eb658c1dca88",
+      "supersedes_ref": null,
+      "attempt_no": 1,
+      "producer_id": "210",
+      "parent_artifact_refs": [],
+      "input_hashes": [],
+      "status": "candidate",
+      "mode": "event_data",
+      "created_at": "2026-08-16T00:00:00+00:00",
+      "trace_id": "eas29-fixture-trace",
+      "storage_locator": null
+    },
+    "payload": {
+      "qa_id": "QA-EAS29-FIXTURE-001",
+      "candidate_ref": {"artifact_id": "candidate-1", "version": 1, "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+      "query_spec_ref": {"artifact_id": "query-spec-1", "version": 1, "content_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
+      "clear_question": "Find the relationship for the sanitized fixture field.",
+      "sql_gold": "SELECT * FROM FIXTURE_T001 WHERE F001 = ?",
+      "sql_explanation": "Parameterised fixture SQL only.",
+      "approved_business_events": [{"event": "fixture_event"}],
+      "specification_mapping": [{"field": "FIXTURE_T001.F001"}],
+      "evidence_refs": [],
+      "precheck_report_ref": {"artifact_id": "precheck-1", "version": 1, "content_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"},
+      "deepseek_review_ref": {"artifact_id": "review-170", "version": 1, "content_hash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"},
+      "glm_review_ref": {"artifact_id": "review-180", "version": 1, "content_hash": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"},
+      "package_hash": "018a66ad41dfc8f208e0ca7ac2629449f65383ab55f3ddc4972864b9f20775ce",
+      "approved_at": "2026-08-16T00:00:00+00:00"
+    }
+  },
+  "first_result": {
+    "envelope": {
+      "artifact_id": "000-event-r1",
+      "artifact_type": "constraint_asset_package",
+      "run_id": "eas29-fixture-run",
+      "qa_id": "QA-EAS29-FIXTURE-001",
+      "version": 1,
+      "schema_version": "COMMON-ENVELOPE/v1",
+      "content_hash": "60cef3a782f5ddd869cb3a5e8824ef1c3b0faa3b3f727fc4e1e1196c82fcf331",
+      "supersedes_ref": null,
+      "attempt_no": 1,
+      "producer_id": "000",
+      "parent_artifact_refs": [{"artifact_id": "220-event-r1", "version": 1, "content_hash": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"}],
+      "input_hashes": ["ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"],
+      "status": "candidate",
+      "mode": "event_data",
+      "created_at": "2026-08-16T00:00:00+00:00",
+      "trace_id": "eas29-fixture-trace",
+      "storage_locator": null
+    },
+    "payload": {
+      "request_id": "220-event-r1",
+      "asset_version": "CA-V0.3.0",
+      "executed_queries": [],
+      "matched_records": [{"record_type": "single_field", "data": {"table_id": "FIXTURE_T001", "field_id": "F001"}, "source_refs": [{"source_type": "constraint_asset", "source_id": "CA-V0.3.0"}], "hierarchy_refs": []}],
+      "constraint_summary": {"total_matched": 1, "asset_types_covered": ["single_field"]},
+      "unmatched_items": [],
+      "query_trace": []
+    }
+  },
+  "second_result": {
+    "envelope": {
+      "artifact_id": "000-event-r2",
+      "artifact_type": "constraint_asset_package",
+      "run_id": "eas29-fixture-run",
+      "qa_id": "QA-EAS29-FIXTURE-001",
+      "version": 1,
+      "schema_version": "COMMON-ENVELOPE/v1",
+      "content_hash": "6af05936b0fa8d5f303f003a89bd403adbead3a0a4da2daef23ce26122811eb9",
+      "supersedes_ref": null,
+      "attempt_no": 1,
+      "producer_id": "000",
+      "parent_artifact_refs": [{"artifact_id": "000-event-r1", "version": 1, "content_hash": "60cef3a782f5ddd869cb3a5e8824ef1c3b0faa3b3f727fc4e1e1196c82fcf331"}],
+      "input_hashes": ["60cef3a782f5ddd869cb3a5e8824ef1c3b0faa3b3f727fc4e1e1196c82fcf331"],
+      "status": "candidate",
+      "mode": "event_data",
+      "created_at": "2026-08-16T00:00:00+00:00",
+      "trace_id": "eas29-fixture-trace",
+      "storage_locator": null
+    },
+    "payload": {
+      "request_id": "220-event-r2",
+      "asset_version": "CA-V0.3.0",
+      "executed_queries": [],
+      "matched_records": [{"record_type": "cross_table", "data": {"from": "FIXTURE_T001.F001", "to": "FIXTURE_T002.PK001"}, "source_refs": [{"source_type": "constraint_asset", "source_id": "CA-V0.3.0"}], "hierarchy_refs": []}],
+      "constraint_summary": {"total_matched": 1, "asset_types_covered": ["cross_table"]},
+      "unmatched_items": [],
+      "query_trace": []
+    }
+  }
+}
