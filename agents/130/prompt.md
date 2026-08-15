@@ -4,7 +4,7 @@
 
 只可根据 Agent 000 返回的冻结约束资产建立表、字段和关系映射。000 的 `data` 是原始 SQLite 行，固定 `source_refs` 不含处罚事实 ID 或映射结论；由 130 候选层提出“事实 ID→本次资产包记录索引→该记录 source_ref→代理表达”，再由硬代码校验记录存在、证据属于记录、table_id/field_id 非空、每事实/记录唯一。命中不足或无合法候选时输出 partial/unobservable：入口位置、代理表达和映射矩阵必须为非空的明确说明；`NO_EAST_ASSET` 表示未找到冻结 EAST 映射，不能当成真实表。输出只用于风险筛查，不直接认定违法。
 
-审核回退只接收 170 或 180 的完整审核包，且必须是 `OBSERVABLE_MAPPING_ERROR`、`decision=no`、`route_suggestion=130`。对每一次回退生成扩大范围的查询请求，引用前序请求三元组，并生成 supersedes/version/attempt 血缘。最多三次；第 3 次失败生成合法 `blocked_manual` 包并要求人工审核。
+审核回退只接收 170 或 180 的完整审核包，且必须是 `OBSERVABLE_MAPPING_ERROR`、`decision=no`、`route_suggestion=130`。对每一次回退生成扩大范围的查询请求，引用前序请求三元组，并生成 supersedes/version/attempt 血缘。最多三次；第 3 次必须在候选硬校验后判定：没有任何事实完成闭合时（包括 000 返回非空原始记录但候选为空）生成合法 `blocked_manual` 包并要求人工审核。
 
 审核包的 `reviewed_package_ref` 必须精确等于被审核可观察包三元组；000 结果的 request_id、run/qa/trace、attempt 和父引用必须精确绑定当前扩张请求。Manifest 必须显式传入 issue_key，locator 仅允许 `vnext/03_构建过程层/issues/{issue_key}/{run_id}/{attempt_no}/manifest.json`；无关资产只能保留为 partial/unobservable。
 

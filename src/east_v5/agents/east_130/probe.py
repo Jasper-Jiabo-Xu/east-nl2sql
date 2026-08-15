@@ -42,9 +42,28 @@ def _candidates(asset: dict[str, Any]) -> dict[str, Any]:
     return {"asset_package_ref": artifact_ref(asset["envelope"]), "candidates": [{"penalty_fact_id": "fact-001", "asset_record_index": 0, "source_ref": record["source_refs"][0], "proxy_expression": "以 EAST_D001.F001 筛查处罚事实 fact-001"}]}
 
 
-def _review(previous: dict[str, Any]) -> dict[str, Any]:
-    payload = {"reviewed_package_ref": artifact_ref(previous["envelope"]), "semantic_review_report": {"reviewer_id": "170", "decision": "no", "error_types": ["OBSERVABLE_MAPPING_ERROR"], "error_details": [{"reason": "脱敏回退验证"}], "evidence_refs": [], "route_suggestion": "130"}}
-    return _wrap("deepseek_review_result", "eas49-review-170", payload, producer="170")
+def _review(previous: dict[str, Any], kind: str) -> dict[str, Any]:
+    reviewer = "170" if kind == "deepseek_review_result" else "180"
+    payload = {"reviewed_package_ref": artifact_ref(previous["envelope"]), "semantic_review_report": {"reviewer_id": reviewer, "decision": "no", "error_types": ["OBSERVABLE_MAPPING_ERROR"], "error_details": [{"reason": "脱敏回退验证"}], "evidence_refs": [], "route_suggestion": "130"}}
+    return _wrap(kind, f"eas49-review-{reviewer}", payload, producer=reviewer)
+
+
+def _no_candidates(asset: dict[str, Any]) -> dict[str, Any]:
+    return {"asset_package_ref": artifact_ref(asset["envelope"]), "candidates": []}
+
+
+def _consume_140_stub(package: dict[str, Any]) -> str:
+    fact = package["payload"]["observable_facts"][0]
+    if not fact["entry_table"] or not fact["mapping_matrix"]:
+        raise ContractError("140_CONSUMPTION_REJECTED")
+    return fact["mapping_matrix"][0]["table_field_path"]
+
+
+def _consume_150_stub(package: dict[str, Any]) -> str:
+    fact = package["payload"]["observable_facts"][0]
+    if "不直接认定" not in fact["risk_screening_boundary"]:
+        raise ContractError("150_BOUNDARY_REJECTED")
+    return fact["observability_type"]
 
 
 def run_sanitized_probe(repo_root: Path) -> dict[str, Any]:
@@ -54,8 +73,20 @@ def run_sanitized_probe(repo_root: Path) -> dict[str, Any]:
     first_assets = _assets(request)
     first = mapper.build_observable_facts(penalty, first_assets, run_id="eas49-sanitized-run", qa_id="QA-EAS49", mapping_candidates=_candidates(first_assets), created_at=FIXED_TIME)
     mapper.validate_observable(first)
-    remapped = mapper.handle_review_feedback(penalty, _review(first), first, request, _assets, run_id="eas49-sanitized-run", qa_id="QA-EAS49", attempt_no=2, candidate_builder=_candidates, created_at=FIXED_TIME)["observable"]
+    review_170 = mapper.handle_review_feedback(
+        penalty, _review(first, "deepseek_review_result"), first, request, _assets,
+        run_id="eas49-sanitized-run", qa_id="QA-EAS49", attempt_no=2,
+        candidate_builder=_candidates, created_at=FIXED_TIME,
+    )
+    remapped = review_170["observable"]
     mapper.validate_observable(remapped)
+    review_180 = mapper.handle_review_feedback(
+        penalty, _review(remapped, "glm_review_result"), remapped, review_170["request"], _assets,
+        run_id="eas49-sanitized-run", qa_id="QA-EAS49", attempt_no=3,
+        candidate_builder=_no_candidates, created_at=FIXED_TIME,
+    )
+    blocked = review_180["observable"]
+    mapper.validate_observable(blocked)
     corrupted = copy.deepcopy(penalty); corrupted["payload"]["source_facts"][0]["original_text"] = "篡改"
     try:
         mapper.validate_penalty(corrupted)
@@ -65,10 +96,19 @@ def run_sanitized_probe(repo_root: Path) -> dict[str, Any]:
         bad_hash_rejection = False
     if not bad_hash_rejection:
         raise ContractError("SANITIZED_PROBE_BAD_HASH_NOT_REJECTED")
-    facts = remapped["payload"]["observable_facts"]
-    if not facts[0]["entry_table"] or "不直接认定" not in facts[0]["risk_screening_boundary"]:
-        raise ContractError("SANITIZED_PROBE_DOWNSTREAM_REJECTED")
-    return {"transport": remapped, "summary": {"artifact_ref": artifact_ref(remapped["envelope"]), "content_hash": remapped["envelope"]["content_hash"], "bad_hash_rejected": True, "review_170_remap": True, "stub_140_consumed": bool(facts[0]["entry_table"]), "stub_150_consumed": True}}
+    consumer_140 = _consume_140_stub(remapped)
+    consumer_150 = _consume_150_stub(remapped)
+    review_170_executed = (
+        review_170["observable"]["envelope"]["attempt_no"] == 2
+        and review_170["observable"]["envelope"]["status"] == "candidate"
+        and review_170["assets"]["payload"]["request_id"] == review_170["request"]["payload"]["request_id"]
+    )
+    review_180_executed = (
+        review_180["observable"]["envelope"]["attempt_no"] == 3
+        and review_180["assets"]["payload"]["request_id"] == review_180["request"]["payload"]["request_id"]
+    )
+    blocked_nonempty_assets = bool(review_180["assets"]["payload"]["matched_records"]) and blocked["envelope"]["status"] == "blocked_manual"
+    return {"transport": blocked, "summary": {"artifact_ref": artifact_ref(blocked["envelope"]), "content_hash": blocked["envelope"]["content_hash"], "bad_hash_rejected": bad_hash_rejection, "review_170_executed": review_170_executed, "review_180_executed": review_180_executed, "attempt3_nonempty_assets_blocked": blocked_nonempty_assets, "stub_140_consumed": consumer_140 == "EAST_D001.F001", "stub_150_consumed": consumer_150 == "direct"}}
 
 
 def main() -> None:

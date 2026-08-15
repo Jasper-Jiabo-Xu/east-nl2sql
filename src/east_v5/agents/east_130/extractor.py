@@ -339,9 +339,15 @@ class ObservableFactMapper:
             _fail("ASSET_REQUEST_ID_MISMATCH")
         if artifact_ref(request["envelope"]) not in asset_envelope["parent_artifact_refs"]:
             _fail("ASSET_REQUEST_PARENT_MISSING")
-        no_match = not assets["payload"]["matched_records"]
-        terminal = attempt_no == 3 and no_match
         mapping_candidates = candidate_builder(assets) if candidate_builder is not None else None
+        candidate_input = mapping_candidates or {"asset_package_ref": artifact_ref(assets["envelope"]), "candidates": []}
+        validated_candidates = self.validate_mapping_candidates(
+            candidate_input, assets,
+            {fact["penalty_fact_id"] for fact in penalty["payload"]["source_facts"]},
+        )
+        # The third review is terminal after, not before, the candidate gate:
+        # raw 000 rows alone do not prove that any penalty fact is observable.
+        terminal = attempt_no == 3 and not validated_candidates
         observable = self.build_observable_facts(
             penalty, assets, run_id=run_id, qa_id=qa_id,
             version=previous_observable["envelope"]["version"] + 1, attempt_no=attempt_no,

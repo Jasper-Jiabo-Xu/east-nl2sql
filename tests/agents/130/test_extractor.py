@@ -126,6 +126,22 @@ class TestAgent130Contracts(unittest.TestCase):
         outcome = self.mapper.handle_review_feedback(self.penalty, review(prior2), prior2, request2, lambda req: assets(request=req, matched=False), run_id="run-130", qa_id="QA-130", attempt_no=3, created_at=FIXED_TIME)
         self.assertEqual(outcome["observable"]["envelope"]["status"], "blocked_manual")
 
+    def test_third_nonempty_assets_without_valid_candidate_is_blocked_manual(self) -> None:
+        request2 = self.mapper.plan_constraint_query(self.penalty, run_id="run-130", qa_id="QA-130", attempt_no=2, created_at=FIXED_TIME)
+        prior2 = self.observable()
+        prior2["envelope"]["attempt_no"] = 2; prior2["envelope"]["version"] = 2
+        prior2["envelope"]["supersedes_ref"] = {"artifact_id": "old", "version": 1, "content_hash": "b" * 64}
+        prior2["envelope"]["content_hash"] = content_hash(prior2["envelope"], prior2["payload"])
+        outcome = self.mapper.handle_review_feedback(
+            self.penalty, review(prior2), prior2, request2, lambda req: assets(request=req),
+            run_id="run-130", qa_id="QA-130", attempt_no=3,
+            candidate_builder=lambda asset: {"asset_package_ref": artifact_ref(asset["envelope"]), "candidates": []},
+            created_at=FIXED_TIME,
+        )
+        self.assertTrue(outcome["assets"]["payload"]["matched_records"])
+        self.assertEqual(outcome["observable"]["envelope"]["status"], "blocked_manual")
+        self.assertEqual(outcome["observable"]["payload"]["coverage_status"], "blocked")
+
     def test_rejects_review_route_request_result_parent_and_attempt_drift(self) -> None:
         request = self.mapper.plan_constraint_query(self.penalty, run_id="run-130", qa_id="QA-130", created_at=FIXED_TIME)
         previous = self.observable()
@@ -166,7 +182,8 @@ class TestAgent130Contracts(unittest.TestCase):
     def test_sanitized_runtime_probe(self) -> None:
         result = run_sanitized_probe(ROOT)
         self.mapper.validate_observable(result["transport"])
-        self.assertTrue(all(result["summary"][key] for key in ("bad_hash_rejected", "review_170_remap", "stub_140_consumed", "stub_150_consumed")))
+        self.assertEqual(result["transport"]["envelope"]["status"], "blocked_manual")
+        self.assertTrue(all(result["summary"][key] for key in ("bad_hash_rejected", "review_170_executed", "review_180_executed", "attempt3_nonempty_assets_blocked", "stub_140_consumed", "stub_150_consumed")))
 
 
 def consume_140(package: dict) -> str:
