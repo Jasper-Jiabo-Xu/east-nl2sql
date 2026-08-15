@@ -1,0 +1,25 @@
+{
+  "$id": "https://east.example/contracts/validators/orm/frozen-orm/v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "EAS-18 frozen_orm package",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["envelope", "payload"],
+  "properties": {
+    "envelope": {"type": "object"},
+    "payload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema_version", "code_sha256", "validator_version", "rule_version", "rule_hash", "validation_evidence", "verdict", "failures"],
+      "properties": {
+        "schema_version": {"const": "v5.frozen-orm/v1"},
+        "code_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "validator_version": {"const": "v5.orm-validator/v1"},
+        "rule_version": {"const": "v5.orm-rules/v1"},
+        "rule_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "validation_evidence": {"type": "object"},
+        "verdict": {"const": "PASS"},
+        "failures": {"type": "array", "maxItems": 0}
+      }
+    }
+  }
+}
