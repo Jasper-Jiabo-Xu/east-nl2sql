@@ -1,0 +1,145 @@
+{
+  "$id": "https://east.example/contracts/packages/constraint-query-request/v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CONSTRAINT-QUERY-REQUEST",
+  "description": "约束资产查询请求包，由130或220生产，000消费。包含明确的查询范围、目的和所需证据。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "request_id",
+    "caller_agent_id",
+    "caller_stage",
+    "query_purpose",
+    "natural_language_intent",
+    "target_asset_types",
+    "max_rows"
+  ],
+  "properties": {
+    "request_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+      "description": "查询请求标识；单次查询唯一编号"
+    },
+    "caller_agent_id": {
+      "type": "string",
+      "enum": [
+        "130",
+        "220"
+      ],
+      "description": "调用方编号；130或220，后续允许扩展其他Agent"
+    },
+    "caller_stage": {
+      "type": "string",
+      "enum": [
+        "observable_fact",
+        "structure_closure",
+        "foundation_closure",
+        "other"
+      ],
+      "description": "调用阶段"
+    },
+    "query_purpose": {
+      "type": "string",
+      "enum": [
+        "constraint_lookup",
+        "field_explanation",
+        "table_explanation",
+        "relationship_lookup",
+        "closure_expansion",
+        "hierarchy_lookup"
+      ],
+      "description": "查询目的"
+    },
+    "natural_language_intent": {
+      "type": "string",
+      "minLength": 1,
+      "description": "自然语言查询意图；调用方明确说明需要查什么及原因"
+    },
+    "target_asset_types": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "data_element",
+          "single_field",
+          "within_table",
+          "cross_table",
+          "object_detail_state",
+          "hierarchy_reference"
+        ]
+      },
+      "minItems": 1,
+      "description": "目标资产类型列表"
+    },
+    "table_scope": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": "表范围；EAST标准表ID列表"
+    },
+    "field_scope": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": "字段范围；EAST标准表ID.字段ID列表"
+    },
+    "relationship_scope": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": "关系范围；需要查询的表内、跨表或层次关系"
+    },
+    "required_output_fields": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": "需要返回的项目；调用方期望字段列表"
+    },
+    "previous_request_refs": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/artifact_ref"
+      },
+      "description": "前序查询引用；保存被引用产物的artifact_id、version、content_hash"
+    },
+    "max_rows": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 10000,
+      "description": "最大返回行数；正整数"
+    }
+  },
+  "$defs": {
+    "artifact_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "artifact_id",
+        "version",
+        "content_hash"
+      ],
+      "properties": {
+        "artifact_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "content_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    }
+  }
+}
