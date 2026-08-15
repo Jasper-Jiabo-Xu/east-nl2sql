@@ -1,0 +1,5 @@
+{
+  "source_facts": [{"penalty_fact_id": "fact-001", "fact_type": "behavior", "structured_fact": {"subject": "脱敏机构", "predicate": "行为", "object": "脱敏事实", "qualifier": null, "value": null}, "original_text": "脱敏事实", "source_span_refs": [], "must_preserve_in_question": "yes"}],
+  "external_evidence": {"penalty_intent": {"description": "脱敏意图", "evidence_refs": []}, "regulatory_rules": [], "business_meaning": {"description": "脱敏业务含义", "evidence_refs": []}, "penalty_background": {"description": "脱敏背景", "evidence_refs": []}},
+  "evidence_conflicts": [], "uncertainties": [], "penalty_fact_package_schema_version": "penalty-fact-v1"
+}
