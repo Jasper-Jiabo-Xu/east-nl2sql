@@ -1,0 +1,148 @@
+{
+  "$id": "https://east.example/contracts/packages/bound-data-package/v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Bound data package (Agent 241 output, consumed by 242)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["envelope", "payload"],
+  "properties": {
+    "envelope": {
+      "allOf": [
+        {"$ref": "https://east.example/contracts/common-envelope/v1"},
+        {
+          "type": "object",
+          "properties": {
+            "artifact_type": {"const": "bound_data"},
+            "producer_id": {"const": "241"},
+            "mode": {"enum": ["event_data", "foundation"]}
+          }
+        }
+      ]
+    },
+    "payload": {"$ref": "#/$defs/bound_data_payload"}
+  },
+  "$defs": {
+    "artifact_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifact_id", "version", "content_hash"],
+      "properties": {
+        "artifact_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"},
+        "version": {"type": "integer", "minimum": 1},
+        "content_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    },
+    "field_value": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["field_id", "value", "standard_type", "is_null"],
+      "properties": {
+        "field_id": {"type": "string", "minLength": 1},
+        "value": {},
+        "standard_type": {"enum": ["STRING", "INTEGER", "NUMBER", "DECIMAL", "BOOLEAN", "DATE", "DATETIME", "CODE"]},
+        "is_null": {"type": "boolean"}
+      }
+    },
+    "provenance_entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_type", "source_ref"],
+      "properties": {
+        "source_type": {"enum": ["structure_closure_constraint", "distribution", "database_record", "hierarchy_asset", "foundation_profile"]},
+        "source_ref": {"type": "string", "minLength": 1}
+      }
+    },
+    "existing_record_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["table_id", "record_key"],
+      "properties": {
+        "table_id": {"type": "string", "minLength": 1},
+        "record_key": {"type": "string", "minLength": 1}
+      }
+    },
+    "temporary_record_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["record_id"],
+      "properties": {
+        "record_id": {"type": "string", "minLength": 1}
+      }
+    },
+    "constraint_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["constraint_id", "scope"],
+      "properties": {
+        "constraint_id": {"type": "string", "minLength": 1},
+        "scope": {"enum": ["field", "within_table", "cross_table"]}
+      }
+    },
+    "record": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["record_id", "table_id", "field_values", "existing_record_refs", "temporary_record_refs", "value_provenance", "case_role", "target_condition_refs", "constraint_refs"],
+      "properties": {
+        "record_id": {"type": "string", "minLength": 1},
+        "table_id": {"type": "string", "minLength": 1},
+        "field_values": {"type": "array", "items": {"$ref": "#/$defs/field_value"}},
+        "existing_record_refs": {"type": "array", "items": {"$ref": "#/$defs/existing_record_ref"}},
+        "temporary_record_refs": {"type": "array", "items": {"$ref": "#/$defs/temporary_record_ref"}},
+        "value_provenance": {"type": "array", "items": {"$ref": "#/$defs/provenance_entry"}},
+        "case_role": {"enum": ["positive", "hard_negative", "background", "foundation"]},
+        "target_condition_refs": {"type": "array", "items": {"type": "string"}},
+        "constraint_refs": {"type": "array", "items": {"$ref": "#/$defs/constraint_ref"}}
+      }
+    },
+    "record_link": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_record_id", "target_record_id", "relation_type", "source_field_id", "target_field_id", "constraint_refs"],
+      "properties": {
+        "source_record_id": {"type": "string", "minLength": 1},
+        "target_record_id": {"type": "string", "minLength": 1},
+        "relation_type": {"type": "string", "minLength": 1},
+        "source_field_id": {"type": ["string", "null"]},
+        "target_field_id": {"type": ["string", "null"]},
+        "constraint_refs": {"type": "array", "items": {"$ref": "#/$defs/constraint_ref"}}
+      }
+    },
+    "group_summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["table_record_counts", "positive_count", "hard_negative_count", "background_count", "foundation_count", "object_count"],
+      "properties": {
+        "table_record_counts": {"type": "object", "additionalProperties": {"type": "integer", "minimum": 1}},
+        "positive_count": {"type": "integer", "minimum": 0},
+        "hard_negative_count": {"type": "integer", "minimum": 0},
+        "background_count": {"type": "integer", "minimum": 0},
+        "foundation_count": {"type": "integer", "minimum": 0},
+        "object_count": {"type": "integer", "minimum": 0}
+      }
+    },
+    "data_group": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["data_group_id", "records", "record_links", "group_summary"],
+      "properties": {
+        "data_group_id": {"type": "string", "minLength": 1},
+        "records": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/record"}},
+        "record_links": {"type": "array", "items": {"$ref": "#/$defs/record_link"}},
+        "group_summary": {"$ref": "#/$defs/group_summary"}
+      }
+    },
+    "bound_data_payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "data_package_id", "structure_closure_ref", "operation_closure_ref", "database_snapshot_ref", "data_groups"],
+      "properties": {
+        "schema_version": {"const": "v5.bound-data/v1"},
+        "data_package_id": {"type": "string", "minLength": 1},
+        "structure_closure_ref": {"$ref": "#/$defs/artifact_ref"},
+        "operation_closure_ref": {"anyOf": [{"$ref": "#/$defs/artifact_ref"}, {"type": "null"}]},
+        "database_snapshot_ref": {"anyOf": [{"$ref": "#/$defs/artifact_ref"}, {"type": "null"}]},
+        "data_groups": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/data_group"}}
+      }
+    }
+  }
+}

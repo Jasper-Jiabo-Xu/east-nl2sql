@@ -1,0 +1,27 @@
+{
+  "envelope": {
+    "artifact_id": "eas31-operation",
+    "artifact_type": "operation_closure",
+    "run_id": "eas31-fixture-run",
+    "qa_id": "QA-EAS31",
+    "version": 1,
+    "schema_version": "COMMON-ENVELOPE/v1",
+    "content_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+    "supersedes_ref": null,
+    "attempt_no": 1,
+    "producer_id": "230",
+    "parent_artifact_refs": [],
+    "input_hashes": [],
+    "status": "candidate",
+    "mode": "event_data",
+    "created_at": "2026-08-16T00:00:00+00:00",
+    "trace_id": "eas31-fixture-trace",
+    "storage_locator": null
+  },
+  "payload": {
+    "schema_version": "v5.operation-closure/v1",
+    "mode": "event",
+    "operations": [{"op": "insert", "table": "FIXTURE_T001"}],
+    "consumers": ["241", "251"]
+  }
+}
