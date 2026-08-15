@@ -5,6 +5,38 @@
   "required": ["schema_version", "packages"],
   "properties": {
     "schema_version": {"const": "v5.package-catalog/v1"},
-    "packages": {"type": "array", "minItems": 10}
+    "packages": {
+      "type": "array",
+      "minItems": 10,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "producer", "consumers"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^[a-z][a-z0-9_]{1,63}$"},
+          "producer": {"type": "string", "minLength": 1},
+          "consumers": {"type": "array", "items": {"type": "string", "minLength": 1}},
+          "modes": {"type": "array", "minItems": 1, "items": {"enum": ["event", "foundation"]}},
+          "description": {"type": "string", "minLength": 1},
+          "payload_schema": {"type": "string", "minLength": 1},
+          "package_schema": {"type": "string", "minLength": 1}
+        },
+        "allOf": [
+          {
+            "if": {"properties": {"id": {"const": "foundation_profile"}}},
+            "then": {
+              "required": ["modes", "payload_schema", "package_schema"],
+              "properties": {
+                "producer": {"const": "210"},
+                "consumers": {"const": ["220", "241"]},
+                "modes": {"const": ["foundation"]},
+                "payload_schema": {"const": "v5.foundation-profile/v1"},
+                "package_schema": {"const": "contracts/packages/foundation-profile-package.schema.json"}
+              }
+            }
+          }
+        ]
+      }
+    }
   }
 }

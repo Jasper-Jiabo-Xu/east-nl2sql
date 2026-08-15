@@ -11,6 +11,7 @@
     {"id": "database_copy_regression", "producer": "260", "consumers": ["210"]},
     {"id": "release_candidate", "producer": "210", "consumers": ["010"]},
     {"id": "release_receipt", "producer": "010", "consumers": []},
+    {"id": "foundation_profile", "producer": "210", "consumers": ["220", "241"], "modes": ["foundation"], "payload_schema": "v5.foundation-profile/v1", "package_schema": "contracts/packages/foundation-profile-package.schema.json"},
     {"id": "constraint_asset_ref", "producer": "EAS-16", "consumers": ["220", "241", "251"]},
     {"id": "typed_reference_graph_ref", "producer": "EAS-16", "consumers": ["220", "241", "251"]},
     {"id": "database_snapshot_ref", "producer": "EAS-19", "consumers": ["260"]},
