@@ -1,0 +1,37 @@
+{
+  "envelope": {
+    "artifact_id": "eas29-other-reviewed-question",
+    "artifact_type": "reviewed_question_sql",
+    "run_id": "eas29-other-run",
+    "qa_id": "QA-EAS29-FIXTURE-002",
+    "version": 1,
+    "schema_version": "COMMON-ENVELOPE/v1",
+    "content_hash": "bbe4064cd8f4310c40b2f0bcaec3c78cef00a5b234aa4d24b16d770e34c76420",
+    "supersedes_ref": null,
+    "attempt_no": 1,
+    "producer_id": "210",
+    "parent_artifact_refs": [],
+    "input_hashes": [],
+    "status": "candidate",
+    "mode": "event_data",
+    "created_at": "2026-08-16T00:00:00+00:00",
+    "trace_id": "eas29-other-trace",
+    "storage_locator": null
+  },
+  "payload": {
+    "qa_id": "QA-EAS29-FIXTURE-002",
+    "candidate_ref": {"artifact_id": "candidate-2", "version": 1, "content_hash": "1111111111111111111111111111111111111111111111111111111111111111"},
+    "query_spec_ref": {"artifact_id": "query-spec-2", "version": 1, "content_hash": "2222222222222222222222222222222222222222222222222222222222222222"},
+    "clear_question": "Find the customer relationship for a sanitized order.",
+    "sql_gold": "SELECT ORDER_ID FROM FIXTURE_ORDER JOIN FIXTURE_CUSTOMER ON FIXTURE_ORDER.CUSTOMER_ID = FIXTURE_CUSTOMER.CUSTOMER_ID WHERE ORDER_ID = ?",
+    "sql_explanation": "Parameterised second fixture SQL only.",
+    "approved_business_events": [{"event": "other_fixture_event", "relationship": "FIXTURE_ORDER.CUSTOMER_ID->FIXTURE_CUSTOMER.CUSTOMER_ID"}],
+    "specification_mapping": [{"field": "FIXTURE_ORDER.ORDER_ID"}, {"field": "FIXTURE_ORDER.CUSTOMER_ID"}],
+    "evidence_refs": [],
+    "precheck_report_ref": {"artifact_id": "precheck-2", "version": 1, "content_hash": "3333333333333333333333333333333333333333333333333333333333333333"},
+    "deepseek_review_ref": {"artifact_id": "review-172", "version": 1, "content_hash": "4444444444444444444444444444444444444444444444444444444444444444"},
+    "glm_review_ref": {"artifact_id": "review-182", "version": 1, "content_hash": "5555555555555555555555555555555555555555555555555555555555555555"},
+    "package_hash": "3a4e5fa377724244721dcc29c4958f53ef212e24b84836d914581426ecd6ad1e",
+    "approved_at": "2026-08-16T00:00:00+00:00"
+  }
+}

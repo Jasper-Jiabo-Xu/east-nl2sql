@@ -1,0 +1,24 @@
+{
+  "$id": "https://east.example/contracts/packages/structure-closure-package/v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Structure closure package",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["envelope", "payload"],
+  "properties": {
+    "envelope": {"$ref": "https://east.example/contracts/common-envelope/v1"},
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "constraint_asset_version", "graph_version", "tables", "fields", "references"],
+      "properties": {
+        "schema_version": {"const": "v5.structure-closure/v1"},
+        "constraint_asset_version": {"const": "CA-V0.3.0"},
+        "graph_version": {"const": "TRG-V1.0.0"},
+        "tables": {"type": "array"},
+        "fields": {"type": "array"},
+        "references": {"type": "array"}
+      }
+    }
+  }
+}
