@@ -1,0 +1,255 @@
+{
+  "$id": "https://east.example/contracts/packages/constraint-asset-package/v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CONSTRAINT-ASSET-PACKAGE",
+  "description": "约束资产查询结果包，由000生产，请求中的caller_agent_id消费。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "request_id",
+    "asset_version",
+    "executed_queries",
+    "matched_records",
+    "constraint_summary",
+    "unmatched_items",
+    "query_trace"
+  ],
+  "properties": {
+    "request_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+      "description": "原查询请求标识；对应约束资产查询请求"
+    },
+    "asset_version": {
+      "type": "string",
+      "enum": [
+        "CA-V0.3.0",
+        "TRG-V1.0.0"
+      ],
+      "description": "约束资产版本；SQLite资产发布版本"
+    },
+    "executed_queries": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/executed_query"
+      },
+      "description": "已执行查询列表"
+    },
+    "matched_records": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/matched_record"
+      },
+      "description": "命中记录；按资产类型返回原始结构化记录"
+    },
+    "constraint_summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "total_matched",
+        "asset_types_covered"
+      ],
+      "properties": {
+        "total_matched": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "asset_types_covered": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "description": "约束摘要；面向调用Agent的压缩摘要"
+    },
+    "unmatched_items": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/unmatched_item"
+      },
+      "description": "未命中项；查询目标及未命中原因"
+    },
+    "query_trace": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/trace_entry"
+      },
+      "description": "查询执行轨迹"
+    }
+  },
+  "$defs": {
+    "executed_query": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sql",
+        "safety_check_result"
+      ],
+      "properties": {
+        "sql": {
+          "type": "string",
+          "minLength": 1
+        },
+        "query_parameters": {
+          "type": "array",
+          "items": {
+            "type": [
+              "string",
+              "integer",
+              "number",
+              "null"
+            ]
+          }
+        },
+        "safety_check_result": {
+          "type": "string",
+          "enum": [
+            "pass",
+            "fail"
+          ]
+        }
+      }
+    },
+    "matched_record": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "record_type",
+        "data"
+      ],
+      "properties": {
+        "record_type": {
+          "type": "string",
+          "enum": [
+            "data_element",
+            "single_field",
+            "within_table",
+            "cross_table",
+            "object_detail_state",
+            "hierarchy_reference"
+          ]
+        },
+        "data": {
+          "type": "object"
+        },
+        "source_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/source_ref"
+          }
+        },
+        "hierarchy_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/hierarchy_ref"
+          }
+        }
+      }
+    },
+    "source_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_type",
+        "source_id"
+      ],
+      "properties": {
+        "source_type": {
+          "type": "string",
+          "enum": [
+            "east_material",
+            "model",
+            "qna",
+            "review",
+            "constraint_asset"
+          ]
+        },
+        "source_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_detail": {
+          "type": "string"
+        }
+      }
+    },
+    "hierarchy_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "hierarchy_type",
+        "node_id"
+      ],
+      "properties": {
+        "hierarchy_type": {
+          "type": "string",
+          "enum": [
+            "org_tree",
+            "subject_tree",
+            "table_tree",
+            "field_tree"
+          ]
+        },
+        "node_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "path": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "unmatched_item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "target",
+        "reason"
+      ],
+      "properties": {
+        "target": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "trace_entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "round",
+        "sql",
+        "elapsed_ms",
+        "row_count"
+      ],
+      "properties": {
+        "round": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "sql": {
+          "type": "string"
+        },
+        "elapsed_ms": {
+          "type": "number",
+          "minimum": 0
+        },
+        "row_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "exception": {
+          "type": ["string", "null"]
+        }
+      }
+    }
+  }
+}
