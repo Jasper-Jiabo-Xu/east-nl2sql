@@ -1,0 +1,152 @@
+{
+  "$id": "https://east.example/contracts/packages/question-sql-pending-precheck-package/v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "QUESTION-SQL-PENDING-PRECHECK-PAYLOAD",
+  "description": "Payload schema for candidate SQL with precheck metadata produced by 150, consumed by 160. Contains the SQL statement derived from query specification, awaiting precheck validation.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "pending_precheck_id",
+    "query_specification_package_ref",
+    "candidate_sql",
+    "sql_parameters",
+    "precheck_expectations",
+    "query_goal",
+    "entry_table",
+    "allowed_tables_ref",
+    "question_sql_pending_precheck_package_schema_version"
+  ],
+  "properties": {
+    "pending_precheck_id": {
+      "type": "string",
+      "pattern": "^ppre-[0-9]{3}$",
+      "description": "待预检标识；稳定编号"
+    },
+    "query_specification_package_ref": {
+      "$ref": "#/$defs/artifact_ref",
+      "description": "查询规格包引用；固定保存被引用产物的artifact_id、version、content_hash"
+    },
+    "candidate_sql": {
+      "type": "string",
+      "minLength": 1,
+      "description": "候选SQL语句；由150基于查询规格推导，待160预检"
+    },
+    "sql_parameters": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/sql_parameter"
+      },
+      "description": "SQL参数；参数化查询的占位参数列表"
+    },
+    "precheck_expectations": {
+      "$ref": "#/$defs/precheck_expectations",
+      "description": "预检期望；期望160验证的检查项和通过标准"
+    },
+    "query_goal": {
+      "type": "string",
+      "minLength": 1,
+      "description": "查询目标；从查询规格继承"
+    },
+    "entry_table": {
+      "type": "string",
+      "minLength": 1,
+      "description": "入口表；从查询规格继承"
+    },
+    "allowed_tables_ref": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "minItems": 1,
+      "description": "允许表列表；从查询规格sql_schema_scope继承，供160快速核验"
+    },
+    "question_sql_pending_precheck_package_schema_version": {
+      "const": "question-sql-pending-precheck-v1",
+      "description": "包协议版本"
+    }
+  },
+  "$defs": {
+    "artifact_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifact_id", "version", "content_hash"],
+      "properties": {
+        "artifact_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "content_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "sql_parameter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["param_name", "param_type"],
+      "properties": {
+        "param_name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "参数名"
+        },
+        "param_type": {
+          "type": "string",
+          "enum": ["string", "integer", "number", "date", "boolean"],
+          "description": "参数类型"
+        },
+        "param_value": {
+          "description": "参数值；脱敏或空缺时不填"
+        }
+      }
+    },
+    "precheck_expectations": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["expected_checks"],
+      "properties": {
+        "expected_checks": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/expected_check"
+          },
+          "description": "期望预检项列表"
+        },
+        "max_result_rows_hint": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "最大结果行数提示；从查询规格join_expansion_limit继承"
+        }
+      }
+    },
+    "expected_check": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["check_id", "check_type", "description"],
+      "properties": {
+        "check_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "检查项标识"
+        },
+        "check_type": {
+          "type": "string",
+          "enum": ["syntax", "scope", "parameter_type", "result_row_limit", "safety_gate"],
+          "description": "检查类型"
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "description": "检查描述"
+        }
+      }
+    }
+  }
+}
