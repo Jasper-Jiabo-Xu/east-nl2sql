@@ -82,6 +82,11 @@ def _validate_event_input(package: dict[str, Any]) -> tuple[dict[str, Any], dict
     return envelope, payload
 
 
+def validate_reviewed_question_sql(package: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Public, strict consumer validation for the frozen 220 dual-review output."""
+    return _validate_event_input(package)
+
+
 def _walk_values(value: Any) -> Iterable[Any]:
     if isinstance(value, dict):
         for nested in value.values():

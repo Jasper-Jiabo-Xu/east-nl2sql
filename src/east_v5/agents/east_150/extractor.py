@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from importlib import import_module
 import re
 import sqlite3
 from dataclasses import dataclass
@@ -11,8 +12,10 @@ from typing import Any
 from jsonschema import Draft202012Validator, ValidationError
 from referencing import Registry, Resource
 
-from east_v5.artifacts import artifact_ref, content_hash, validate_envelope
+from east_v5.artifacts import ArtifactRegistry, artifact_ref, content_hash, validate_envelope
 from east_v5.governance import ContractError, load_json
+
+validate_reviewed_question_sql = import_module("east_v5.agents.220.closure").validate_reviewed_question_sql
 
 SCHEMAS = {
     "query_specification_package": "contracts/packages/query-specification-package.schema.json",
@@ -35,64 +38,93 @@ def _fail(code: str) -> None:
     raise ContractError(code)
 
 
-_ROUTE_CONTEXT_TOKEN = object()
+_ROUTE_CAPABILITY_TOKEN = object()
+
+
+_ERROR_CHANGE_MAP = {
+    "QUESTION_SQL_ERROR": frozenset({"sql_gold", "specification_mapping"}),
+    "BUSINESS_EVENT_ERROR": frozenset({"business_event_candidates"}),
+    "QUESTION_FACT_OMISSION": frozenset({"clear_question", "specification_mapping", "evidence_refs"}),
+}
+_LOCATION_CHANGE_MAP = {
+    "sql": frozenset({"sql_gold", "specification_mapping"}),
+    "sql_gold": frozenset({"sql_gold", "specification_mapping"}),
+    "clear_question": frozenset({"clear_question", "specification_mapping"}),
+    "sql_explanation": frozenset({"sql_explanation"}),
+    "business_event_candidates": frozenset({"business_event_candidates"}),
+    "specification_mapping": frozenset({"specification_mapping"}),
+    "evidence_refs": frozenset({"evidence_refs"}),
+    "fact": frozenset({"clear_question", "specification_mapping", "evidence_refs"}),
+}
 
 
 @dataclass(frozen=True)
-class TrustedRouteContext:
-    """Route evidence resolved from the immutable runtime artifact registry.
+class TrustedRouteCapability:
+    """Sealed 110 route authority, derived only from registered 170/180 output.
 
-    Parent-reference names alone are untrusted caller data.  The runtime must
-    resolve the relevant 010/110 envelopes from its registry first, then pass
-    this context to 150.  Each feedback package is checked against those exact
-    immutable references and its common lineage fields.
+    A 220 ``reviewed_question_sql`` package is proof of a separately completed
+    dual review, not a routing token.  This capability binds one or both real
+    170/180 packages from ``ArtifactRegistry`` and is the only object that can
+    authorize their feedback through 110.
     """
 
     _token: object
-    stage_110_ref: dict[str, Any]
-    stage_110_lineage: tuple[str, str, str]
-    stage_010_ref: dict[str, Any] | None = None
-    stage_010_lineage: tuple[str, str, str] | None = None
+    review_refs: tuple[dict[str, Any], ...]
+    lineage: tuple[str, str, str]
 
     @classmethod
     def from_registry(
-        cls, registry: Any, *, stage_110_ref: dict[str, Any], stage_010_ref: dict[str, Any] | None = None,
-    ) -> "TrustedRouteContext":
-        """Resolve route artifacts from ``ArtifactRegistry`` (or equivalent)."""
-        def resolve(reference: dict[str, Any], producer: str) -> tuple[dict[str, Any], tuple[str, str, str]]:
+        cls, registry: ArtifactRegistry, *, review_refs: list[dict[str, Any]],
+    ) -> "TrustedRouteCapability":
+        """Mint a route capability from registered 170/180 review packages only."""
+        if not isinstance(registry, ArtifactRegistry) or not review_refs or len(review_refs) > 2:
+            _fail("TRUSTED_ROUTE_CAPABILITY_INVALID")
+        resolved: list[tuple[dict[str, Any], str, tuple[str, str, str]]] = []
+        for reference in review_refs:
             try:
                 package = registry.resolve(reference)
                 envelope, payload = package["envelope"], package["payload"]
                 validate_envelope(Path(registry.repo_root), envelope, payload)
             except Exception as exc:
-                raise ContractError("TRUSTED_ROUTE_CONTEXT_INVALID") from exc
-            if envelope["producer_id"] != producer or artifact_ref(envelope) != reference:
-                _fail("TRUSTED_ROUTE_CONTEXT_INVALID")
-            return artifact_ref(envelope), (envelope["run_id"], envelope["qa_id"], envelope["trace_id"])
+                raise ContractError("TRUSTED_ROUTE_CAPABILITY_INVALID") from exc
+            kind = envelope["artifact_type"]
+            producer = "170" if kind == "deepseek_review_result" else "180" if kind == "glm_review_result" else None
+            if producer is None or envelope["producer_id"] != producer or artifact_ref(envelope) != reference:
+                _fail("TRUSTED_ROUTE_CAPABILITY_INVALID")
+            try:
+                Draft202012Validator(load_json(Path(registry.repo_root) / SCHEMAS[kind])).validate(payload)
+            except ValidationError as exc:
+                raise ContractError("TRUSTED_ROUTE_CAPABILITY_INVALID") from exc
+            resolved.append((artifact_ref(envelope), producer, (envelope["run_id"], envelope["qa_id"], envelope["trace_id"])))
+        if len({producer for _, producer, _ in resolved}) != len(resolved):
+            _fail("TRUSTED_ROUTE_CAPABILITY_INVALID")
+        lineages = {lineage for _, _, lineage in resolved}
+        if len(lineages) != 1:
+            _fail("TRUSTED_ROUTE_CAPABILITY_INVALID")
+        return cls(_ROUTE_CAPABILITY_TOKEN, tuple(reference for reference, _, _ in resolved), next(iter(lineages)))
 
-        trusted_110, lineage_110 = resolve(stage_110_ref, "210")
-        try:
-            reviewed = registry.resolve(trusted_110)
-        except Exception as exc:
-            raise ContractError("TRUSTED_ROUTE_CONTEXT_INVALID") from exc
-        if reviewed["envelope"]["artifact_type"] != "reviewed_question_sql":
-            _fail("TRUSTED_ROUTE_CONTEXT_INVALID")
-        if stage_010_ref is None:
-            return cls(_ROUTE_CONTEXT_TOKEN, trusted_110, lineage_110)
-        trusted_010, lineage_010 = resolve(stage_010_ref, "010")
-        if lineage_010 != lineage_110:
-            _fail("TRUSTED_ROUTE_CONTEXT_INVALID")
-        return cls(_ROUTE_CONTEXT_TOKEN, trusted_110, lineage_110, trusted_010, lineage_010)
-
-    def authorize(self, feedback_envelope: dict[str, Any], *, requires_010: bool) -> None:
-        if self._token is not _ROUTE_CONTEXT_TOKEN:
-            _fail("TRUSTED_ROUTE_CONTEXT_INVALID")
+    def authorize(self, feedback_envelope: dict[str, Any]) -> None:
+        if self._token is not _ROUTE_CAPABILITY_TOKEN:
+            _fail("TRUSTED_ROUTE_CAPABILITY_INVALID")
         lineage = (feedback_envelope["run_id"], feedback_envelope["qa_id"], feedback_envelope["trace_id"])
         refs = feedback_envelope["parent_artifact_refs"]
-        if lineage != self.stage_110_lineage or self.stage_110_ref not in refs:
-            _fail("TRUSTED_ROUTE_CONTEXT_REJECTED")
-        if requires_010 and (self.stage_010_ref is None or self.stage_010_lineage != lineage or self.stage_010_ref not in refs):
-            _fail("TRUSTED_ROUTE_CONTEXT_REJECTED")
+        if lineage != self.lineage or any(reference not in refs for reference in self.review_refs):
+            _fail("TRUSTED_ROUTE_CAPABILITY_REJECTED")
+
+    def validate_reviewed_lineage(self, package: dict[str, Any]) -> None:
+        try:
+            envelope, payload = validate_reviewed_question_sql(package)
+        except ContractError as exc:
+            raise ContractError("REVIEWED_PREVIOUS_LINEAGE_REJECTED") from exc
+        lineage = (envelope["run_id"], envelope["qa_id"], envelope["trace_id"])
+        if lineage != self.lineage:
+            _fail("REVIEWED_PREVIOUS_LINEAGE_REJECTED")
+        expected = {reference["artifact_id"]: reference for reference in self.review_refs}
+        required = {payload["deepseek_review_ref"]["artifact_id"], payload["glm_review_ref"]["artifact_id"]}
+        if len(self.review_refs) != 2 or set(expected) != required:
+            _fail("REVIEWED_PREVIOUS_LINEAGE_REJECTED")
+        if payload["deepseek_review_ref"] not in self.review_refs or payload["glm_review_ref"] not in self.review_refs:
+            _fail("REVIEWED_PREVIOUS_LINEAGE_REJECTED")
 
 
 class PendingPrecheckBuilder:
@@ -146,6 +178,10 @@ class PendingPrecheckBuilder:
         # are allowed only when they name a frozen table/field (or a local alias).
         quoted = re.findall(r'"([A-Za-z_][A-Za-z0-9_]*)"|`([A-Za-z_][A-Za-z0-9_]*)`|\[([A-Za-z_][A-Za-z0-9_]*)\]', statement)
         known = set(allowed) | {field for fields in allowed.values() for field in fields}
+        # Local aliases are syntactic bindings, not schema fields.  Admit only
+        # aliases declared by this statement, including quoted table/CTE/output aliases.
+        known.update(re.findall(r'\bAS\s+["`\[]?([A-Za-z_][A-Za-z0-9_]*)', statement, re.I))
+        known.update(re.findall(r'\b(?:FROM|JOIN)\s+["`\[]?[A-Za-z_][A-Za-z0-9_]*["`\]]?\s+(?:AS\s+)?["`\[]?([A-Za-z_][A-Za-z0-9_]*)', statement, re.I))
         if any(next(name for name in item if name) not in known for item in quoted):
             _fail("SQL_QUOTED_IDENTIFIER_OUT_OF_SCOPE")
         # SQLite's own compiler is the scope parser.  The in-memory schema has
@@ -202,7 +238,7 @@ class PendingPrecheckBuilder:
         clear_question: str | None = None, sql_explanation: dict[str, str] | None = None,
         business_event_candidates: list[dict[str, Any]] | None = None, specification_mapping: list[dict[str, str]] | None = None, version: int = 1, attempt_no: int = 1,
         supersedes_ref: dict[str, Any] | None = None, parents: list[dict[str, Any]] | None = None,
-        status: str = "candidate", created_at: str | None = None,
+        status: str = "candidate", created_at: str | None = None, evidence_refs: list[str] | None = None,
     ) -> dict[str, Any]:
         self.validate_query_spec(query_spec)
         spec_envelope, spec = query_spec["envelope"], query_spec["payload"]
@@ -217,6 +253,21 @@ class PendingPrecheckBuilder:
             _fail("GENERATED_FIELDS_REQUIRED")
         question = clear_question
         mapping = self._mapping(specification_mapping, question, sql_gold)
+        required_evidence = [
+            f"penalty:{spec['penalty_fact_package_ref']['artifact_id']}",
+            f"observable:{spec['observable_fact_package_ref']['artifact_id']}",
+            *spec["must_preserve_fact_refs"],
+            *[item["evidence_ref"] for item in spec["filters_and_evidence"] if item.get("evidence_ref")],
+        ]
+        baseline_evidence = list(dict.fromkeys(required_evidence))
+        if evidence_refs is None:
+            accepted_evidence = baseline_evidence
+        else:
+            if not isinstance(evidence_refs, list) or any(not isinstance(item, str) or not item for item in evidence_refs):
+                _fail("EVIDENCE_REFS_INVALID")
+            accepted_evidence = list(dict.fromkeys(evidence_refs))
+            if not set(baseline_evidence).issubset(accepted_evidence):
+                _fail("EVIDENCE_REFERENCE_LOSS")
         payload = {
             "candidate_id": f"150-{run_id}-{qa_id}", "query_spec_ref": artifact_ref(spec_envelope),
             "penalty_fact_package_ref": spec["penalty_fact_package_ref"],
@@ -225,7 +276,7 @@ class PendingPrecheckBuilder:
             "sql_explanation": sql_explanation,
             "business_event_candidates": business_event_candidates,
             "specification_mapping": mapping,
-            "evidence_refs": list(dict.fromkeys([f"penalty:{spec['penalty_fact_package_ref']['artifact_id']}", f"observable:{spec['observable_fact_package_ref']['artifact_id']}", *spec["must_preserve_fact_refs"], *[item["evidence_ref"] for item in spec["filters_and_evidence"] if item.get("evidence_ref")]])),
+            "evidence_refs": accepted_evidence,
             "sql_dialect": "sqlite",
         }
         parent_refs = list(parents or [artifact_ref(spec_envelope)])
@@ -240,11 +291,41 @@ class PendingPrecheckBuilder:
         self.validate_pending_precheck(package)
         return package
 
-    def _retry(self, query_spec: dict[str, Any], feedback: dict[str, Any], previous: dict[str, Any], *, run_id: str, qa_id: str, attempt_no: int, sql_gold: str, created_at: str | None, allow_reviewed: bool = False, **candidate: Any) -> dict[str, Any]:
-        if allow_reviewed and previous.get("envelope", {}).get("artifact_type") == "reviewed_question_sql":
-            validate_envelope(self.repo_root, previous["envelope"], previous["payload"])
-            if previous["envelope"]["producer_id"] != "210":
-                _fail("REVIEWED_PREVIOUS_PRODUCER_REJECTED")
+    @staticmethod
+    def _location_required_changes(locations: list[str]) -> set[str]:
+        required: set[str] = set()
+        for location in locations:
+            normalized = location.strip().lower()
+            if normalized.startswith("payload."):
+                normalized = normalized.split(".", 1)[1]
+            normalized = normalized.split("[", 1)[0].split(".", 1)[0]
+            target = _LOCATION_CHANGE_MAP.get(normalized)
+            if target is None:
+                _fail("REQUIRED_CHANGE_LOCATION_UNKNOWN")
+            required.update(target)
+        return required
+
+    @classmethod
+    def _required_change_map(cls, feedback: dict[str, Any]) -> set[str]:
+        kind = feedback["envelope"]["artifact_type"]
+        if kind == "precheck_failed_feedback":
+            return cls._location_required_changes([
+                location for item in feedback["payload"]["failed_items"] for location in item["error_locations"]
+            ])
+        if kind in {"deepseek_review_result", "glm_review_result"}:
+            required: set[str] = set()
+            for error in feedback["payload"]["semantic_review_report"]["error_types"]:
+                required.update(_ERROR_CHANGE_MAP.get(error, ()))
+            return required
+        if kind == "sql_regression_failed_feedback":
+            return cls._location_required_changes([feedback["payload"]["failure_details"]["error_location"]])
+        _fail("ROUTE_SOURCE_REJECTED")
+
+    def _retry(self, query_spec: dict[str, Any], feedback: dict[str, Any], previous: dict[str, Any], *, run_id: str, qa_id: str, attempt_no: int, sql_gold: str, created_at: str | None, route_capability: TrustedRouteCapability | None = None, **candidate: Any) -> dict[str, Any]:
+        if previous.get("envelope", {}).get("artifact_type") == "reviewed_question_sql":
+            if route_capability is None:
+                _fail("TRUSTED_ROUTE_CAPABILITY_REQUIRED")
+            route_capability.validate_reviewed_lineage(previous)
         else:
             self.validate_pending_precheck(previous)
         previous_envelope = previous["envelope"]
@@ -262,9 +343,9 @@ class PendingPrecheckBuilder:
         try:
             repaired = self.build_pending_precheck(query_spec, **kwargs)
             prior_payload = previous["payload"]
-            material_fields = ("clear_question", "sql_explanation", "business_event_candidates", "specification_mapping")
-            if any(repaired["payload"][field] == prior_payload.get(field) for field in material_fields):
-                _fail("SEMANTIC_REPAIR_INCOMPLETE")
+            required_fields = self._required_change_map(feedback)
+            if any(repaired["payload"].get(field) == prior_payload.get(field) for field in required_fields):
+                _fail("REQUIRED_CHANGE_MISSING")
             return repaired
         except ContractError:
             if attempt_no != 3:
@@ -292,7 +373,7 @@ class PendingPrecheckBuilder:
             raise ContractError("REGRESSION_SCHEMA_REJECTED") from exc
 
     def handle_routed_feedback(
-        self, query_spec: dict[str, Any], feedback: dict[str, Any], previous: dict[str, Any], *, route_context: TrustedRouteContext | None, **kwargs: Any,
+        self, query_spec: dict[str, Any], feedback: dict[str, Any], previous: dict[str, Any], *, route_capability: TrustedRouteCapability | None, **kwargs: Any,
     ) -> dict[str, Any]:
         artifact_type = feedback.get("envelope", {}).get("artifact_type")
         if artifact_type in {"deepseek_review_result", "glm_review_result"}:
@@ -301,9 +382,9 @@ class PendingPrecheckBuilder:
             expected_producer = "170" if artifact_type == "deepseek_review_result" else "180"
             if feedback["envelope"]["producer_id"] != expected_producer or report["reviewer_id"] != expected_producer:
                 _fail("REVIEW_PRODUCER_REJECTED")
-            if route_context is None:
-                _fail("TRUSTED_ROUTE_CONTEXT_REQUIRED")
-            route_context.authorize(feedback["envelope"], requires_010=False)
+            if route_capability is None:
+                _fail("TRUSTED_ROUTE_CAPABILITY_REQUIRED")
+            route_capability.authorize(feedback["envelope"])
             if report["decision"] != "no" or report["route_suggestion"] != "150" or not REVIEW_ERRORS.intersection(report["error_types"]):
                 _fail("REVIEW_ROUTE_REJECTED")
             if feedback["payload"]["reviewed_package_ref"] != artifact_ref(previous["envelope"]):
@@ -315,13 +396,12 @@ class PendingPrecheckBuilder:
             if feedback["envelope"]["producer_id"] != "260":
                 _fail("REGRESSION_ROUTE_REJECTED")
             self._validate_regression_package(feedback)
-            if route_context is None:
-                _fail("TRUSTED_ROUTE_CONTEXT_REQUIRED")
-            route_context.authorize(feedback["envelope"], requires_010=True)
+            if route_capability is None:
+                _fail("TRUSTED_ROUTE_CAPABILITY_REQUIRED")
+            route_capability.authorize(feedback["envelope"])
             if feedback["payload"]["failure_details"]["error_code"] != "SQL_EXECUTION_ERROR" or feedback["payload"]["route_target"] != "110":
                 _fail("REGRESSION_ROUTE_REJECTED")
-            if previous.get("envelope", {}).get("artifact_type") != "reviewed_question_sql" or previous["envelope"].get("producer_id") != "210":
-                _fail("REGRESSION_PREVIOUS_REVIEW_REQUIRED")
+            route_capability.validate_reviewed_lineage(previous)
         else:
             _fail("ROUTE_SOURCE_REJECTED")
-        return self._retry(query_spec, feedback, previous, allow_reviewed=artifact_type == "sql_regression_failed_feedback", **kwargs)
+        return self._retry(query_spec, feedback, previous, route_capability=route_capability, **kwargs)

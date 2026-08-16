@@ -2,13 +2,16 @@
 from __future__ import annotations
 
 import json
+import copy
+import hashlib
+import tempfile
 from pathlib import Path
 from typing import Any
 
 from jsonschema import Draft202012Validator, ValidationError
 
-from east_v5.agents.east_150.extractor import MAPPED_SPEC_ITEMS, PendingPrecheckBuilder, TrustedRouteContext
-from east_v5.artifacts import artifact_ref, content_hash
+from east_v5.agents.east_150.extractor import MAPPED_SPEC_ITEMS, PendingPrecheckBuilder, TrustedRouteCapability
+from east_v5.artifacts import ArtifactRegistry, artifact_ref, content_hash
 from east_v5.governance import ContractError, load_json
 
 TIME = "2026-08-16T00:00:00+00:00"
@@ -73,17 +76,6 @@ def _regression(*, parents: list[dict[str, Any]] | None = None) -> dict[str, Any
     return _wrap("sql_regression_failed_feedback", "regression024", payload, "260", mode="event_data", parents=parents)
 
 
-class _RouteRegistry:
-    """Probe-only stand-in for the runtime registry resolver."""
-
-    def __init__(self, root: Path, *packages: dict[str, Any]):
-        self.repo_root = root
-        self._packages = {tuple(artifact_ref(package["envelope"]).values()): package for package in packages}
-
-    def resolve(self, reference: dict[str, Any]) -> dict[str, Any]:
-        return self._packages[tuple(reference.values())]
-
-
 def consume_160_stub(root: Path, package: dict[str, Any]) -> str:
     """Independent downstream consumer: payload schema plus frozen-field gate."""
     try:
@@ -106,32 +98,51 @@ def _is_rejected(action: Any) -> bool:
     return False
 
 
+def _reviewed_fixture(first: dict[str, Any], query: dict[str, Any], route_170: dict[str, Any], route_180: dict[str, Any]) -> dict[str, Any]:
+    root = Path(__file__).resolve().parents[4]
+    fixture = json.loads((root / "tests/agents/220/fixtures/event-data-dual-review.json").read_text(encoding="utf-8"))
+    payload = copy.deepcopy(fixture["payload"])
+    payload.update({"qa_id": "QA-EAS24", "candidate_ref": artifact_ref(first["envelope"]), "query_spec_ref": artifact_ref(query["envelope"]),
+                    "precheck_report_ref": {"artifact_id": "precheck-eas24", "version": 1, "content_hash": "c" * 64},
+                    "deepseek_review_ref": artifact_ref(route_170["envelope"]), "glm_review_ref": artifact_ref(route_180["envelope"])})
+    payload["package_hash"] = hashlib.sha256(json.dumps({key: value for key, value in payload.items() if key != "package_hash"}, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    return _wrap("reviewed_question_sql", "reviewed-eas24", payload, "210", mode="event_data")
+
+
 def run_sanitized_probe(root: Path) -> dict[str, Any]:
     builder, query = PendingPrecheckBuilder(root), _spec()
-    route_110 = _wrap("reviewed_question_sql", "opaque-approval-eas24", {}, "210")
-    route_010 = _wrap("release_receipt", "opaque-release-eas24", {}, "010")
-    context_110 = TrustedRouteContext.from_registry(_RouteRegistry(root, route_110), stage_110_ref=artifact_ref(route_110["envelope"]))
-    context_260 = TrustedRouteContext.from_registry(_RouteRegistry(root, route_110, route_010), stage_110_ref=artifact_ref(route_110["envelope"]), stage_010_ref=artifact_ref(route_010["envelope"]))
     first = builder.build_pending_precheck(query, run_id="eas24-probe", qa_id="QA-EAS24", created_at=TIME, **_candidate("SELECT T1.F1 FROM T1"))
-    consumed = consume_160_stub(root, first)
-    rejection_matrix = {
-        label: _is_rejected(lambda sql=sql: builder.build_pending_precheck(query, run_id="eas24-probe", qa_id="QA-EAS24", created_at=TIME, **_candidate(sql)))
-        for label, sql in {"write": "DELETE FROM T1", "alias": "SELECT t.F9 FROM T1 AS t", "unqualified": "SELECT F9 FROM T1", "cte_scope": "WITH x AS (SELECT T1.F1 AS X1 FROM T1) SELECT x.F1 FROM x"}.items()
-    }
-    second = builder.handle_precheck_feedback(query, _precheck(first, "feedback024-2", 1), first, run_id="eas24-probe", qa_id="QA-EAS24", attempt_no=2, created_at=TIME, **_candidate("SELECT T1.F2 FROM T1", "-修复"))
-    third = builder.handle_precheck_feedback(query, _precheck(second, "feedback024-3", 2), second, run_id="eas24-probe", qa_id="QA-EAS24", attempt_no=3, created_at=TIME, **_candidate("SELECT F9 FROM T1", "-人工"))
-    reviewed = _wrap("reviewed_question_sql", "reviewed-eas24", first["payload"], "210")
-    review_result = builder.handle_routed_feedback(query, _review(first, parents=[artifact_ref(route_110["envelope"])]), first, route_context=context_110, run_id="eas24-probe", qa_id="QA-EAS24", attempt_no=2, created_at=TIME, **_candidate("SELECT T1.F2 FROM T1", "-170"))
-    glm_review = _review(first, parents=[artifact_ref(route_110["envelope"])])
-    glm_review["envelope"]["artifact_type"] = "glm_review_result"; glm_review["envelope"]["producer_id"] = "180"; glm_review["payload"]["semantic_review_report"]["reviewer_id"] = "180"; glm_review["envelope"]["content_hash"] = content_hash(glm_review["envelope"], glm_review["payload"])
-    glm_result = builder.handle_routed_feedback(query, glm_review, first, route_context=context_110, run_id="eas24-probe", qa_id="QA-EAS24", attempt_no=2, created_at=TIME, **_candidate("SELECT T1.F2 FROM T1", "-180"))
-    regression_result = builder.handle_routed_feedback(query, _regression(parents=[artifact_ref(route_010["envelope"]), artifact_ref(route_110["envelope"])]), reviewed, route_context=context_260, run_id="eas24-probe", qa_id="QA-EAS24", attempt_no=2, created_at=TIME, **_candidate("SELECT T1.F2 FROM T1", "-260"))
-    route_rejections = {"170_forged_prefix": _is_rejected(lambda: builder.handle_routed_feedback(query, _review(first, parents=[_ref("110")]), first, route_context=context_110, run_id="eas24-probe", qa_id="QA-EAS24", attempt_no=2, created_at=TIME, **_candidate("SELECT T1.F2 FROM T1"))), "260_missing_010": _is_rejected(lambda: builder.handle_routed_feedback(query, _regression(parents=[artifact_ref(route_110["envelope"])]), reviewed, route_context=context_260, run_id="eas24-probe", qa_id="QA-EAS24", attempt_no=2, created_at=TIME, **_candidate("SELECT T1.F2 FROM T1"))), "260_candidate_previous": _is_rejected(lambda: builder.handle_routed_feedback(query, _regression(parents=[artifact_ref(route_010["envelope"]), artifact_ref(route_110["envelope"])]), first, route_context=context_260, run_id="eas24-probe", qa_id="QA-EAS24", attempt_no=2, created_at=TIME, **_candidate("SELECT T1.F2 FROM T1")))}
-    review_170_bad = _review(first, parents=[artifact_ref(route_110["envelope"])]); review_170_bad["payload"]["semantic_review_report"]["error_types"] = []; review_170_bad["envelope"]["content_hash"] = content_hash(review_170_bad["envelope"], review_170_bad["payload"])
-    review_180_bad = _review(first, parents=[artifact_ref(route_110["envelope"])]); review_180_bad["envelope"]["artifact_type"] = "glm_review_result"; review_180_bad["envelope"]["producer_id"] = "180"; review_180_bad["payload"]["semantic_review_report"]["reviewer_id"] = "180"; review_180_bad["payload"]["semantic_review_report"]["error_types"] = []; review_180_bad["envelope"]["content_hash"] = content_hash(review_180_bad["envelope"], review_180_bad["payload"])
-    regression_bad = _regression(parents=[artifact_ref(route_010["envelope"]), artifact_ref(route_110["envelope"])]); regression_bad["payload"]["failure_details"]["error_code"] = "DATA_VALUE_ERROR"; regression_bad["envelope"]["content_hash"] = content_hash(regression_bad["envelope"], regression_bad["payload"])
-    difference_rejections = {"170": _is_rejected(lambda: builder.handle_routed_feedback(query, review_170_bad, first, route_context=context_110, run_id="eas24-probe", qa_id="QA-EAS24", attempt_no=2, created_at=TIME, **_candidate("SELECT T1.F2 FROM T1"))), "180": _is_rejected(lambda: builder.handle_routed_feedback(query, review_180_bad, first, route_context=context_110, run_id="eas24-probe", qa_id="QA-EAS24", attempt_no=2, created_at=TIME, **_candidate("SELECT T1.F2 FROM T1"))), "260": _is_rejected(lambda: builder.handle_routed_feedback(query, regression_bad, reviewed, route_context=context_260, run_id="eas24-probe", qa_id="QA-EAS24", attempt_no=2, created_at=TIME, **_candidate("SELECT T1.F2 FROM T1")))}
-    return {"summary": {"candidate_valid": second["envelope"]["status"] == "candidate", "stub_160_consumed": consumed == first["payload"]["candidate_id"], "third_attempt_blocked_manual": third["envelope"]["status"] == "blocked_manual", "transport_routes": {"170": review_result["envelope"]["attempt_no"] == 2, "180": glm_result["envelope"]["attempt_no"] == 2, "260": regression_result["envelope"]["attempt_no"] == 2}, "reject_matrix": rejection_matrix, "route_reject_matrix": route_rejections, "difference_reject_matrix": difference_rejections, "candidate_hash": second["envelope"]["content_hash"]}}
+    route_170 = _review(first); route_170["envelope"]["artifact_id"] = "route170-eas24"; route_170["envelope"]["content_hash"] = content_hash(route_170["envelope"], route_170["payload"])
+    route_180 = _review(first); route_180["envelope"]["artifact_id"] = "route180-eas24"; route_180["envelope"]["artifact_type"] = "glm_review_result"; route_180["envelope"]["producer_id"] = "180"; route_180["payload"]["semantic_review_report"]["reviewer_id"] = "180"; route_180["envelope"]["content_hash"] = content_hash(route_180["envelope"], route_180["payload"])
+    with tempfile.TemporaryDirectory() as temp:
+        base = Path(temp)
+        registry = ArtifactRegistry(root, {"repo_root": str(base / "repo"), "runtime_root": str(base / "runtime"), "reference_root": str(base / "reference"), "reference_read_only": True}, "EAS-24", "probe-route", 1)
+        registry.register(route_170["envelope"], route_170["payload"]); registry.register(route_180["envelope"], route_180["payload"])
+        capability_170 = TrustedRouteCapability.from_registry(registry, review_refs=[artifact_ref(route_170["envelope"])])
+        capability_180 = TrustedRouteCapability.from_registry(registry, review_refs=[artifact_ref(route_180["envelope"])])
+        capability_dual = TrustedRouteCapability.from_registry(registry, review_refs=[artifact_ref(route_170["envelope"]), artifact_ref(route_180["envelope"])])
+        consumed = consume_160_stub(root, first)
+        rejection_matrix = {
+            label: _is_rejected(lambda sql=sql: builder.build_pending_precheck(query, run_id="eas24-probe", qa_id="QA-EAS24", created_at=TIME, **_candidate(sql)))
+            for label, sql in {"write": "DELETE FROM T1", "alias": "SELECT t.F9 FROM T1 AS t", "unqualified": "SELECT F9 FROM T1", "cte_scope": "WITH x AS (SELECT T1.F1 AS X1 FROM T1) SELECT x.F1 FROM x"}.items()
+        }
+        second = builder.handle_precheck_feedback(query, _precheck(first, "feedback024-2", 1), first, run_id="eas24-probe", qa_id="QA-EAS24", attempt_no=2, created_at=TIME, **_candidate("SELECT T1.F2 FROM T1", "-修复"))
+        third = builder.handle_precheck_feedback(query, _precheck(second, "feedback024-3", 2), second, run_id="eas24-probe", qa_id="QA-EAS24", attempt_no=3, created_at=TIME, **_candidate("SELECT F9 FROM T1", "-人工"))
+        reviewed = _reviewed_fixture(first, query, route_170, route_180)
+        review_170 = _review(first, parents=[artifact_ref(route_170["envelope"])])
+        review_result = builder.handle_routed_feedback(query, review_170, first, route_capability=capability_170, run_id="eas24-probe", qa_id="QA-EAS24", attempt_no=2, created_at=TIME, **_candidate("SELECT T1.F2 FROM T1", "-170"))
+        glm_review = _review(first, parents=[artifact_ref(route_180["envelope"])])
+        glm_review["envelope"]["artifact_type"] = "glm_review_result"; glm_review["envelope"]["producer_id"] = "180"; glm_review["payload"]["semantic_review_report"]["reviewer_id"] = "180"; glm_review["envelope"]["content_hash"] = content_hash(glm_review["envelope"], glm_review["payload"])
+        glm_result = builder.handle_routed_feedback(query, glm_review, first, route_capability=capability_180, run_id="eas24-probe", qa_id="QA-EAS24", attempt_no=2, created_at=TIME, **_candidate("SELECT T1.F2 FROM T1", "-180"))
+        regression = _regression(parents=[artifact_ref(route_170["envelope"]), artifact_ref(route_180["envelope"])])
+        regression_result = builder.handle_routed_feedback(query, regression, reviewed, route_capability=capability_dual, run_id="eas24-probe", qa_id="QA-EAS24", attempt_no=2, created_at=TIME, **_candidate("SELECT T1.F2 FROM T1", "-260"))
+        route_rejections = {"170_forged_prefix": _is_rejected(lambda: builder.handle_routed_feedback(query, _review(first, parents=[_ref("110")]), first, route_capability=capability_170, run_id="eas24-probe", qa_id="QA-EAS24", attempt_no=2, created_at=TIME, **_candidate("SELECT T1.F2 FROM T1"))), "260_missing_dual": _is_rejected(lambda: builder.handle_routed_feedback(query, _regression(parents=[artifact_ref(route_170["envelope"])]), reviewed, route_capability=capability_dual, run_id="eas24-probe", qa_id="QA-EAS24", attempt_no=2, created_at=TIME, **_candidate("SELECT T1.F2 FROM T1"))), "260_candidate_previous": _is_rejected(lambda: builder.handle_routed_feedback(query, regression, first, route_capability=capability_dual, run_id="eas24-probe", qa_id="QA-EAS24", attempt_no=2, created_at=TIME, **_candidate("SELECT T1.F2 FROM T1")))}
+        required_change_rejections = {"160_sql_unchanged": _is_rejected(lambda: builder.handle_precheck_feedback(query, _precheck(first, "unchanged", 1), first, run_id="eas24-probe", qa_id="QA-EAS24", attempt_no=2, created_at=TIME, **_candidate("SELECT T1.F1 FROM T1"))), "170_sql_unchanged": _is_rejected(lambda: builder.handle_routed_feedback(query, review_170, first, route_capability=capability_170, run_id="eas24-probe", qa_id="QA-EAS24", attempt_no=2, created_at=TIME, **_candidate("SELECT T1.F1 FROM T1")))}
+        review_170_bad = _review(first, parents=[artifact_ref(route_170["envelope"])]); review_170_bad["payload"]["semantic_review_report"]["error_types"] = []; review_170_bad["envelope"]["content_hash"] = content_hash(review_170_bad["envelope"], review_170_bad["payload"])
+        review_180_bad = _review(first, parents=[artifact_ref(route_180["envelope"])]); review_180_bad["envelope"]["artifact_type"] = "glm_review_result"; review_180_bad["envelope"]["producer_id"] = "180"; review_180_bad["payload"]["semantic_review_report"]["reviewer_id"] = "180"; review_180_bad["payload"]["semantic_review_report"]["error_types"] = []; review_180_bad["envelope"]["content_hash"] = content_hash(review_180_bad["envelope"], review_180_bad["payload"])
+        regression_bad = copy.deepcopy(regression); regression_bad["payload"]["failure_details"]["error_code"] = "DATA_VALUE_ERROR"; regression_bad["envelope"]["content_hash"] = content_hash(regression_bad["envelope"], regression_bad["payload"])
+        difference_rejections = {"170": _is_rejected(lambda: builder.handle_routed_feedback(query, review_170_bad, first, route_capability=capability_170, run_id="eas24-probe", qa_id="QA-EAS24", attempt_no=2, created_at=TIME, **_candidate("SELECT T1.F2 FROM T1"))), "180": _is_rejected(lambda: builder.handle_routed_feedback(query, review_180_bad, first, route_capability=capability_180, run_id="eas24-probe", qa_id="QA-EAS24", attempt_no=2, created_at=TIME, **_candidate("SELECT T1.F2 FROM T1"))), "260": _is_rejected(lambda: builder.handle_routed_feedback(query, regression_bad, reviewed, route_capability=capability_dual, run_id="eas24-probe", qa_id="QA-EAS24", attempt_no=2, created_at=TIME, **_candidate("SELECT T1.F2 FROM T1")))}
+    return {"summary": {"candidate_valid": second["envelope"]["status"] == "candidate", "stub_160_consumed": consumed == first["payload"]["candidate_id"], "third_attempt_blocked_manual": third["envelope"]["status"] == "blocked_manual", "transport_routes": {"170": review_result["envelope"]["attempt_no"] == 2, "180": glm_result["envelope"]["attempt_no"] == 2, "260": regression_result["envelope"]["attempt_no"] == 2}, "reject_matrix": rejection_matrix, "route_reject_matrix": route_rejections, "required_change_reject_matrix": required_change_rejections, "difference_reject_matrix": difference_rejections, "candidate_hash": second["envelope"]["content_hash"]}}
 
 
 if __name__ == "__main__":
