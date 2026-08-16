@@ -24,6 +24,7 @@ SCHEMAS = {
     "deepseek_review_result": "contracts/packages/deepseek-review-result.schema.json",
     "glm_review_result": "contracts/packages/glm-review-result.schema.json",
     "sql_regression_failed_feedback": "contracts/packages/sql-regression-failed-feedback.schema.json",
+    "sql_regression_route_record": "contracts/packages/sql-regression-route-record.schema.json",
 }
 REVIEW_ERRORS = {"QUESTION_SQL_ERROR", "BUSINESS_EVENT_ERROR", "QUESTION_FACT_OMISSION"}
 MAPPED_SPEC_ITEMS = (
@@ -71,23 +72,23 @@ class TrustedRouteCapability:
     @classmethod
     def from_registry(
         cls, registry: ArtifactRegistry, *, review_refs: list[dict[str, Any]] | None = None,
-        release_candidate_ref: dict[str, Any] | None = None, release_receipt_ref: dict[str, Any] | None = None,
+        route_record_ref: dict[str, Any] | None = None,
     ) -> "TrustedRouteCapability":
         """Mint an authority from the immutable registry, never a resolver shim.
 
-        Review feedback uses registered 170/180 evidence.  Regression feedback
-        uses a distinct, registered ``210 release_candidate → 010 receipt``
-        chain; it is deliberately not a dual-review approval token.
+        Review feedback uses registered 170/180 evidence. Regression feedback
+        consumes only a registered 110 ``sql_regression_route_record`` bound to
+        that exact 260 feedback; release artifacts are not route authority.
         """
         if not isinstance(registry, ArtifactRegistry):
             _fail("TRUSTED_ROUTE_CAPABILITY_INVALID")
         if review_refs is not None:
-            if release_candidate_ref is not None or release_receipt_ref is not None or not review_refs or len(review_refs) > 2:
+            if route_record_ref is not None or not review_refs or len(review_refs) > 2:
                 _fail("TRUSTED_ROUTE_CAPABILITY_INVALID")
             return cls._from_review_registry(registry, review_refs)
-        if release_candidate_ref is None or release_receipt_ref is None:
+        if route_record_ref is None:
             _fail("TRUSTED_ROUTE_CAPABILITY_INVALID")
-        return cls._from_release_registry(registry, release_candidate_ref, release_receipt_ref)
+        return cls._from_route_record_registry(registry, route_record_ref)
 
     @classmethod
     def _from_review_registry(cls, registry: ArtifactRegistry, review_refs: list[dict[str, Any]]) -> "TrustedRouteCapability":
@@ -116,37 +117,41 @@ class TrustedRouteCapability:
         return cls(_ROUTE_CAPABILITY_TOKEN, registry, "review_feedback", tuple(reference for reference, _, _ in resolved), next(iter(lineages)))
 
     @classmethod
-    def _from_release_registry(
-        cls, registry: ArtifactRegistry, release_candidate_ref: dict[str, Any], release_receipt_ref: dict[str, Any],
+    def _from_route_record_registry(
+        cls, registry: ArtifactRegistry, route_record_ref: dict[str, Any],
     ) -> "TrustedRouteCapability":
         try:
-            candidate = registry.resolve(release_candidate_ref)
-            receipt = registry.resolve(release_receipt_ref)
-            candidate_envelope, receipt_envelope = candidate["envelope"], receipt["envelope"]
-            validate_envelope(Path(registry.repo_root), candidate_envelope, candidate["payload"])
-            validate_envelope(Path(registry.repo_root), receipt_envelope, receipt["payload"])
-            Draft202012Validator(load_json(Path(registry.repo_root) / "contracts/v5-runtime-packages.schema.json")["$defs"]["release_receipt"]).validate(receipt["payload"])
+            record = registry.resolve(route_record_ref)
+            record_envelope, record_payload = record["envelope"], record["payload"]
+            validate_envelope(Path(registry.repo_root), record_envelope, record_payload)
+            Draft202012Validator(load_json(Path(registry.repo_root) / SCHEMAS["sql_regression_route_record"])).validate(record_payload)
+            feedback = registry.resolve(record_payload["source_feedback_ref"])
+            feedback_envelope, feedback_payload = feedback["envelope"], feedback["payload"]
+            validate_envelope(Path(registry.repo_root), feedback_envelope, feedback_payload)
         except Exception as exc:
             raise ContractError("TRUSTED_ROUTE_CAPABILITY_INVALID") from exc
-        if (candidate_envelope["artifact_type"], candidate_envelope["producer_id"]) != ("release_candidate", "210"):
+        if (record_envelope["artifact_type"], record_envelope["producer_id"]) != ("sql_regression_route_record", "110"):
             _fail("TRUSTED_ROUTE_CAPABILITY_INVALID")
-        if (receipt_envelope["artifact_type"], receipt_envelope["producer_id"]) != ("release_receipt", "010"):
+        if (feedback_envelope["artifact_type"], feedback_envelope["producer_id"]) != ("sql_regression_failed_feedback", "260"):
             _fail("TRUSTED_ROUTE_CAPABILITY_INVALID")
-        candidate_ref, receipt_ref = artifact_ref(candidate_envelope), artifact_ref(receipt_envelope)
-        lineage = (candidate_envelope["run_id"], candidate_envelope["qa_id"], candidate_envelope["trace_id"])
-        if artifact_ref(candidate_envelope) != release_candidate_ref or artifact_ref(receipt_envelope) != release_receipt_ref or candidate_ref not in receipt_envelope["parent_artifact_refs"]:
+        record_ref, feedback_ref = artifact_ref(record_envelope), artifact_ref(feedback_envelope)
+        lineage = (feedback_envelope["run_id"], feedback_envelope["qa_id"], feedback_envelope["trace_id"])
+        if record_ref != route_record_ref or feedback_ref != record_payload["source_feedback_ref"]:
             _fail("TRUSTED_ROUTE_CAPABILITY_INVALID")
-        if lineage != (receipt_envelope["run_id"], receipt_envelope["qa_id"], receipt_envelope["trace_id"]):
+        if lineage != (record_envelope["run_id"], record_envelope["qa_id"], record_envelope["trace_id"]):
             _fail("TRUSTED_ROUTE_CAPABILITY_INVALID")
-        return cls(_ROUTE_CAPABILITY_TOKEN, registry, "regression_feedback", (candidate_ref, receipt_ref), lineage)
+        return cls(_ROUTE_CAPABILITY_TOKEN, registry, "regression_feedback", (record_ref, feedback_ref), lineage)
 
     def authorize(self, feedback_envelope: dict[str, Any]) -> None:
         if self._token is not _ROUTE_CAPABILITY_TOKEN:
             _fail("TRUSTED_ROUTE_CAPABILITY_INVALID")
         lineage = (feedback_envelope["run_id"], feedback_envelope["qa_id"], feedback_envelope["trace_id"])
         refs = feedback_envelope["parent_artifact_refs"]
-        required = self.refs if self.capability_kind == "review_feedback" else (self.refs[1],)
-        if lineage != self.lineage or any(reference not in refs for reference in required):
+        if self.capability_kind == "review_feedback":
+            valid = all(reference in refs for reference in self.refs)
+        else:
+            valid = artifact_ref(feedback_envelope) == self.refs[1]
+        if lineage != self.lineage or not valid:
             _fail("TRUSTED_ROUTE_CAPABILITY_REJECTED")
 
     def resolve_reviewed_lineage(self, package: dict[str, Any]) -> dict[str, Any]:
