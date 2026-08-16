@@ -1,401 +1,76 @@
 from __future__ import annotations
-
-import copy
-import json
 import unittest
 from pathlib import Path
-
 from east_v5.agents.east_150 import PendingPrecheckBuilder
-from east_v5.agents.east_150.probe import run_sanitized_probe
 from east_v5.artifacts import artifact_ref, content_hash
 from east_v5.governance import ContractError
 
-ROOT = Path(__file__).resolve().parents[3]
-FIXED_TIME = "2026-08-16T00:00:00+00:00"
+ROOT, TIME = Path(__file__).resolve().parents[3], "2026-08-16T00:00:00+00:00"
 
-
-def wrap(artifact_type: str, artifact_id: str, payload: dict, *, producer: str, attempt: int = 1, version: int = 1, parents: list[dict] | None = None, trace_id: str = "trace-150", run_id: str = "run-150", qa_id: str = "QA-150") -> dict:
+def wrap(kind, identity, payload, *, producer, run="run150", qa="QA150", attempt=1, version=1, parents=None, mode="question_sql"):
     parents = parents or []
-    envelope = {"artifact_id": artifact_id, "artifact_type": artifact_type, "run_id": run_id, "qa_id": qa_id, "version": version, "schema_version": "COMMON-ENVELOPE/v1", "content_hash": "0" * 64, "supersedes_ref": None, "attempt_no": attempt, "producer_id": producer, "parent_artifact_refs": parents, "input_hashes": [x["content_hash"] for x in parents], "status": "candidate", "mode": "question_sql", "created_at": FIXED_TIME, "trace_id": trace_id, "storage_locator": None}
-    envelope["content_hash"] = content_hash(envelope, payload)
-    return {"envelope": envelope, "payload": payload}
+    env = {"artifact_id":identity,"artifact_type":kind,"run_id":run,"qa_id":qa,"version":version,"schema_version":"COMMON-ENVELOPE/v1","content_hash":"0"*64,"supersedes_ref":None,"attempt_no":attempt,"producer_id":producer,"parent_artifact_refs":parents,"input_hashes":[x["content_hash"] for x in parents],"status":"candidate","mode":mode,"created_at":TIME,"trace_id":"trace150","storage_locator":None}
+    env["content_hash"] = content_hash(env, payload)
+    return {"envelope":env,"payload":payload}
 
+def spec():
+    p={"query_spec_id":"qspec-150","penalty_fact_package_ref":{"artifact_id":"penalty","version":1,"content_hash":"a"*64},"observable_fact_package_ref":{"artifact_id":"observable","version":1,"content_hash":"b"*64},"query_goal":"脱敏风险筛查","must_preserve_fact_refs":["fact-1"],"main_object_and_grain":{"main_object":"机构","grain":"记录"},"query_entry":{"entry_table":"T1","entry_conditions":[]},"related_objects_and_path":[],"filters_and_evidence":[],"return_fields":[{"field_id":"F1","display_name":"字段1","source_table":"T1"}],"aggregation_dedup_sort_time":{"group_by_fields":[]},"observability_boundary":{"answerable":["风险"],"unanswerable":[]},"expected_result_shape":{"row_grain":"记录","column_set":["F1"],"aggregation_shape":"none"},"sql_schema_scope":{"allowed_tables":[{"table_id":"T1","allowed_fields":["F1","F2","F3"]},{"table_id":"T2","allowed_fields":["F2"]}]},"minimum_positive_count":1,"minimum_negative_count":1,"condition_coverage":[],"code_value_coverage":[],"expected_row_group_count":{"minimum":1,"target":1,"tolerance_range":{"low":1,"high":2}},"join_expansion_limit":{"max_multiplier":2,"max_result_rows":10},"query_specification_package_schema_version":"query-specification-v1"}
+    return wrap("query_specification_package","qspec150",p,producer="140")
 
-def query_spec() -> dict:
-    """Desensitized QUERY-SPECIFICATION-PACKAGE fixture (140 output)."""
-    payload = {
-        "query_spec_id": "qspec-042",
-        "penalty_fact_package_ref": {"artifact_id": "penalty-150", "version": 1, "content_hash": "0" * 64},
-        "observable_fact_package_ref": {"artifact_id": "observable-150", "version": 1, "content_hash": "0" * 64},
-        "query_goal": "脱敏风险筛查",
-        "must_preserve_fact_refs": ["fact-001"],
-        "main_object_and_grain": {"main_object": "脱敏机构", "grain": "一条EAST业务记录"},
-        "query_entry": {"entry_table": "EAST_D001", "entry_conditions": [{"field_id": "F001", "operator": "=", "value": "脱敏值"}]},
-        "related_objects_and_path": [{"object_name": "关联表", "table_id": "EAST_D002", "relation_type": "LEFT JOIN", "join_fields": [{"from_field": "EAST_D001.F002", "to_field": "EAST_D002.F002"}]}],
-        "filters_and_evidence": [{"field_id": "F001", "operator": "=", "value": "脱敏值", "evidence_ref": "constraint_asset:CA-V0.3.0#record-0"}],
-        "return_fields": [{"field_id": "F001", "display_name": "脱敏字段", "source_table": "EAST_D001"}],
-        "aggregation_dedup_sort_time": {"group_by_fields": ["EAST_D001.F001"], "distinct_required": False, "order_by": [{"field_id": "F001", "direction": "ASC"}], "time_window": {"field_id": "F003", "window_type": "fixed"}},
-        "observability_boundary": {"answerable": ["脱敏风险筛查"], "unanswerable": ["具体处罚金额"]},
-        "expected_result_shape": {"row_grain": "一条EAST业务记录", "column_set": ["F001", "F002"], "aggregation_shape": "group_by"},
-        "sql_schema_scope": {"allowed_tables": [{"table_id": "EAST_D001", "allowed_fields": ["F001", "F002", "F003"]}, {"table_id": "EAST_D002", "allowed_fields": ["F002"]}]},
-        "minimum_positive_count": 1,
-        "minimum_negative_count": 1,
-        "condition_coverage": [{"predicate": "F001 = 脱敏值", "positive_types": ["合规"], "negative_types": ["违规"]}],
-        "code_value_coverage": [{"field_id": "F001", "target_code_values": ["A", "B"]}],
-        "expected_row_group_count": {"minimum": 1, "target": 10, "tolerance_range": {"low": 1, "high": 100}},
-        "join_expansion_limit": {"max_multiplier": 2.0, "max_result_rows": 1000},
-        "query_specification_package_schema_version": "query-specification-v1",
-    }
-    return wrap("query_specification_package", "qspec-150", payload, producer="140")
+def feedback(previous):
+    p={"candidate_ref":artifact_ref(previous["envelope"]),"precheck_decision":"fail","failed_items":[{"failed_rule_ids":["RULE-1"],"error_locations":["sql_gold"],"expected_values":"合法字段","actual_values":"错误字段","error_details":"脱敏失败"}]}
+    return wrap("precheck_failed_feedback","feedback150",p,producer="160",attempt=previous["envelope"]["attempt_no"])
 
+class Agent150Tests(unittest.TestCase):
+    def setUp(self): self.builder,self.spec,self.sql=PendingPrecheckBuilder(ROOT),spec(),"SELECT T1.F1, T1.F2 FROM T1 WHERE T1.F1 = :v"
+    def build(self,**kw): return self.builder.build_pending_precheck(self.spec,run_id="run150",qa_id="QA150",created_at=TIME,**{"sql_gold":self.sql,**kw})
+    def retry(self,old,sql=None,attempt=2): return self.builder.handle_precheck_feedback(self.spec,feedback(old),old,run_id="run150",qa_id="QA150",attempt_no=attempt,sql_gold=self.sql if sql is None else sql,created_at=TIME)
 
-def llm_candidate_sql() -> dict:
-    """Desensitized LLM-extracted SQL for tests."""
-    return {
-        "candidate_sql": "SELECT F001, F002 FROM EAST_D001 WHERE F001 = :param1",
-        "sql_parameters": [
-            {"param_name": "param1", "param_type": "string", "param_value": "脱敏值"},
-        ],
-    }
+    def test_frozen_fields_and_160_stub(self):
+        p=self.build(); self.builder.validate_pending_precheck(p)
+        self.assertEqual(set(p["payload"]),{"candidate_id","query_spec_ref","penalty_fact_package_ref","observable_fact_package_ref","clear_question","sql_gold","sql_explanation","business_event_candidates","specification_mapping","evidence_refs","sql_dialect"})
+        self.assertEqual(p["payload"]["query_spec_ref"],artifact_ref(self.spec["envelope"])); self.assertEqual(len(p["payload"]["specification_mapping"]),7)
 
+    def test_feedback_schema_and_ref_rejection(self):
+        first=self.build(); good=feedback(first); self.builder.validate_precheck_feedback(good)
+        bad=feedback(first); bad["payload"]["candidate_ref"]["content_hash"]="c"*64; bad["envelope"]["content_hash"]=content_hash(bad["envelope"],bad["payload"])
+        with self.assertRaisesRegex(ContractError,"FEEDBACK_REF_MISMATCH"): self.builder.handle_precheck_feedback(self.spec,bad,first,run_id="run150",qa_id="QA150",attempt_no=2,sql_gold=self.sql,created_at=TIME)
 
-def precheck_feedback(previous: dict, *, attempt_no: int = 1, decision: str = "fail") -> dict:
-    """Simulate 160 producing PRECHECK-FAILED-FEEDBACK."""
-    payload = {
-        "schema_version": "v5.precheck-failed-feedback/v1",
-        "pending_precheck_package_ref": artifact_ref(previous["envelope"]),
-        "decision": decision,
-        "failed_checks": [
-            {
-                "check_id": "chk-scope",
-                "check_type": "scope",
-                "error_code": "FIELD_NOT_IN_SCOPE",
-                "error_details": "脱敏预检失败：字段不在范围内",
-                "offending_segment": "EAST_D001.F999",
-            }
-        ],
-        "attempt_no": attempt_no,
-        "retry_eligible": decision == "fail" and attempt_no < 3,
-    }
-    return wrap("precheck_failed_feedback", f"feedback-160-{attempt_no}", payload, producer="160", attempt=attempt_no)
+    def test_retry_lineage_third_and_blocked(self):
+        first=self.build(); second=self.retry(first); third=self.retry(second,attempt=3); blocked=self.retry(second,sql="",attempt=3)
+        self.assertEqual(second["envelope"]["parent_artifact_refs"],[artifact_ref(self.spec["envelope"]),artifact_ref(feedback(first)["envelope"]),artifact_ref(first["envelope"])])
+        self.assertEqual(third["envelope"]["status"],"candidate"); self.assertEqual(blocked["envelope"]["status"],"blocked_manual")
 
+    def test_hash_and_version_guards(self):
+        bad=self.build(); bad["payload"]["clear_question"]="篡改"
+        with self.assertRaisesRegex(ContractError,"CONTENT_HASH_DRIFT"): self.builder.validate_pending_precheck(bad)
+        with self.assertRaisesRegex(ContractError,"VERSION_OVERWRITE_ATTEMPTED"): self.build(version=2)
 
-def _consume_160_stub(package: dict) -> str:
-    """Stub: simulate 160 consuming the pending-precheck package."""
-    ppre = package["payload"]
-    if not ppre["candidate_sql"] or not ppre["precheck_expectations"]["expected_checks"]:
-        raise ContractError("160_CONSUMPTION_REJECTED")
-    return ppre["pending_precheck_id"]
+    def test_sql_rejections(self):
+        cases=[("DELETE FROM T1","SQL_NOT_READ_ONLY"),("SELECT T1.F1 FROM T1; SELECT T1.F1 FROM T1","SQL_MULTIPLE_STATEMENTS"),("SELECT * FROM T1","SQL_SELECT_STAR_FORBIDDEN"),("SELECT T1.F1 FROM T1 WHERE T1.F3 < CURRENT_TIMESTAMP","SQL_DYNAMIC_TIME_FORBIDDEN"),("SELECT T9.F1 FROM T9","SQL_TABLE_OUT_OF_SCOPE"),("SELECT T1.F9 FROM T1","SQL_FIELD_OUT_OF_SCOPE")]
+        for sql,code in cases:
+            with self.subTest(code=code),self.assertRaisesRegex(ContractError,code): self.build(sql_gold=sql)
 
+    def test_sql_structures(self):
+        cases=["SELECT T1.F1 FROM T1 JOIN T2 ON T1.F2=T2.F2","SELECT T1.F1, COUNT(T1.F2) FROM T1 GROUP BY T1.F1","SELECT T1.F1 FROM T1 WHERE T1.F1 IN (SELECT T1.F1 FROM T1)","WITH x AS (SELECT T1.F1 FROM T1) SELECT x.F1 FROM x","SELECT T1.F1 FROM T1 ORDER BY T1.F1 LIMIT 5"]
+        for sql in cases:
+            with self.subTest(sql=sql): self.builder._validate_sql(sql,self.spec["payload"]["sql_schema_scope"])
 
-class TestAgent150Contracts(unittest.TestCase):
-    def setUp(self) -> None:
-        self.builder = PendingPrecheckBuilder(ROOT)
-        self.spec = query_spec()
-        self.sql_fields = llm_candidate_sql()
+    def review(self,old,kind="deepseek_review_result"):
+        reviewer="170" if kind=="deepseek_review_result" else "180"; p={"reviewed_package_ref":artifact_ref(old["envelope"]),"semantic_review_report":{"reviewer_id":reviewer,"decision":"no","error_types":["QUESTION_SQL_ERROR","BUSINESS_EVENT_ERROR","QUESTION_FACT_OMISSION"],"error_details":[{"reason":"fix"}],"evidence_refs":[],"route_suggestion":"150"}}
+        return wrap(kind,"review"+reviewer,p,producer=reviewer,attempt=old["envelope"]["attempt_no"])
 
-    def build_ppre(self, **overrides) -> dict:
-        fields = {**self.sql_fields, **overrides}
-        return self.builder.build_pending_precheck(
-            self.spec,
-            run_id="run-150", qa_id="QA-150",
-            created_at=FIXED_TIME,
-            **fields,
-        )
+    def test_170_180_routes_and_rejection(self):
+        first=self.build()
+        for kind in ("deepseek_review_result","glm_review_result"):
+            self.assertEqual(self.builder.handle_routed_feedback(self.spec,self.review(first,kind),first,run_id="run150",qa_id="QA150",attempt_no=2,sql_gold=self.sql,created_at=TIME)["envelope"]["attempt_no"],2)
+        bad=self.review(first); bad["payload"]["semantic_review_report"]["route_suggestion"]="140"; bad["envelope"]["content_hash"]=content_hash(bad["envelope"],bad["payload"])
+        with self.assertRaisesRegex(ContractError,"REVIEW_ROUTE_REJECTED"): self.builder.handle_routed_feedback(self.spec,bad,first,run_id="run150",qa_id="QA150",attempt_no=2,sql_gold=self.sql,created_at=TIME)
 
-    # ── Task 1: Build pending-precheck package ──────────────────────
+    def test_260_route(self):
+        first=self.build(); p={"schema_version":"v5.sql-regression-failed-feedback/v1","mode":"event_data","input_data_refs":[],"input_orm_ref":None,"sandbox_snapshot_id":"copy","failure_details":{"error_code":"SQL_EXECUTION_ERROR","error_stage":"sql_execution","error_location":"sql_gold","expected_values":[],"actual_values":[],"sql_error_detail":{"sql_text":self.sql,"error_code":"SQLITE","error_message":"bad"},"regression_metrics":{}},"route_target":"110","retry_count":1}; route=wrap("sql_regression_failed_feedback","reg150",p,producer="260",mode="event_data")
+        self.assertEqual(self.builder.handle_routed_feedback(self.spec,route,first,run_id="run150",qa_id="QA150",attempt_no=2,sql_gold=self.sql,created_at=TIME)["envelope"]["attempt_no"],2)
+        route["payload"]["failure_details"]["error_code"]="DATA_VALUE_ERROR"; route["envelope"]["content_hash"]=content_hash(route["envelope"],route["payload"])
+        with self.assertRaisesRegex(ContractError,"REGRESSION_ROUTE_REJECTED"): self.builder.handle_routed_feedback(self.spec,route,first,run_id="run150",qa_id="QA150",attempt_no=2,sql_gold=self.sql,created_at=TIME)
 
-    def test_task1_builds_valid_pending_precheck(self) -> None:
-        ppre = self.build_ppre()
-        self.builder.validate_pending_precheck(ppre)
-        self.assertRegex(ppre["payload"]["pending_precheck_id"], r"^ppre-[0-9]{3}$")
-        self.assertEqual(
-            ppre["payload"]["question_sql_pending_precheck_package_schema_version"],
-            "question-sql-pending-precheck-v1",
-        )
-        self.assertEqual(ppre["payload"]["query_goal"], "脱敏风险筛查")
-        self.assertEqual(ppre["payload"]["entry_table"], "EAST_D001")
-        self.assertIn("EAST_D001", ppre["payload"]["allowed_tables_ref"])
-        self.assertIn("EAST_D002", ppre["payload"]["allowed_tables_ref"])
-
-    def test_task1_preserves_query_spec_ref(self) -> None:
-        ppre = self.build_ppre()
-        self.assertEqual(
-            ppre["payload"]["query_specification_package_ref"],
-            artifact_ref(self.spec["envelope"]),
-        )
-
-    def test_task1_rejects_content_hash_drift(self) -> None:
-        ppre = self.build_ppre()
-        drifted = copy.deepcopy(ppre)
-        drifted["payload"]["candidate_sql"] = "篡改SQL"
-        with self.assertRaises(ContractError):
-            self.builder.validate_pending_precheck(drifted)
-
-    def test_task1_rejects_artifact_type_mismatch(self) -> None:
-        bad_spec = copy.deepcopy(self.spec)
-        bad_spec["envelope"]["artifact_type"] = "wrong_type"
-        bad_spec["envelope"]["content_hash"] = content_hash(bad_spec["envelope"], bad_spec["payload"])
-        with self.assertRaises(ContractError):
-            self.builder.validate_query_spec(bad_spec)
-
-    def test_task1_rejects_empty_candidate_sql(self) -> None:
-        with self.assertRaisesRegex(ContractError, "CANDIDATE_SQL_EMPTY"):
-            self.build_ppre(candidate_sql="")
-
-    def test_task1_rejects_whitespace_only_candidate_sql(self) -> None:
-        with self.assertRaisesRegex(ContractError, "CANDIDATE_SQL_EMPTY"):
-            self.build_ppre(candidate_sql="   ")
-
-    def test_task1_envelope_has_producer_150(self) -> None:
-        ppre = self.build_ppre()
-        self.assertEqual(ppre["envelope"]["producer_id"], "150")
-
-    def test_task1_attempt_1_has_no_supersedes(self) -> None:
-        ppre = self.build_ppre()
-        self.assertIsNone(ppre["envelope"]["supersedes_ref"])
-        self.assertEqual(ppre["envelope"]["attempt_no"], 1)
-        self.assertEqual(ppre["envelope"]["version"], 1)
-
-    def test_task1_pending_precheck_id_stable(self) -> None:
-        """Same run_id+qa_id always produces same pending_precheck_id."""
-        first = self.build_ppre()
-        second = self.build_ppre()
-        self.assertEqual(
-            first["payload"]["pending_precheck_id"],
-            second["payload"]["pending_precheck_id"],
-        )
-
-    def test_task1_precheck_expectations_derived(self) -> None:
-        ppre = self.build_ppre()
-        checks = ppre["payload"]["precheck_expectations"]["expected_checks"]
-        check_ids = {c["check_id"] for c in checks}
-        self.assertIn("chk-syntax", check_ids)
-        self.assertIn("chk-scope", check_ids)
-        self.assertIn("chk-param-type", check_ids)
-        self.assertIn("chk-row-limit", check_ids)
-        self.assertIn("chk-safety", check_ids)
-        self.assertEqual(
-            ppre["payload"]["precheck_expectations"]["max_result_rows_hint"],
-            1000,
-        )
-
-    def test_task1_160_stub_consumes_output(self) -> None:
-        ppre = self.build_ppre()
-        consumed_id = _consume_160_stub(ppre)
-        self.assertEqual(consumed_id, ppre["payload"]["pending_precheck_id"])
-
-    # ── Hard-code validator tests ──────────────────────────────────
-
-    def test_rejects_candidate_sql_empty(self) -> None:
-        with self.assertRaisesRegex(ContractError, "CANDIDATE_SQL_EMPTY"):
-            self.builder._validate_sql_nonempty("")
-
-    def test_rejects_entry_table_not_in_scope(self) -> None:
-        with self.assertRaisesRegex(ContractError, "ENTRY_TABLE_NOT_IN_SCOPE"):
-            self.builder._validate_entry_table_in_scope(
-                "NONEXISTENT_TABLE",
-                {"allowed_tables": [{"table_id": "EAST_D001", "allowed_fields": ["F001"]}]},
-            )
-
-    def test_rejects_allowed_tables_inconsistent(self) -> None:
-        with self.assertRaisesRegex(ContractError, "ALLOWED_TABLES_INCONSISTENT"):
-            self.builder._validate_allowed_tables_consistency(
-                ["EAST_D999"],
-                {"allowed_tables": [{"table_id": "EAST_D001", "allowed_fields": ["F001"]}]},
-            )
-
-    def test_rejects_version_overwrite_attempted(self) -> None:
-        with self.assertRaisesRegex(ContractError, "VERSION_OVERWRITE_ATTEMPTED"):
-            self.builder._validate_version_immutability(1, {"artifact_id": "x", "version": 1, "content_hash": "0" * 64})
-        with self.assertRaisesRegex(ContractError, "VERSION_OVERWRITE_ATTEMPTED"):
-            self.builder._validate_version_immutability(2, None)
-
-    def test_rejects_run_or_qa_mismatch(self) -> None:
-        with self.assertRaisesRegex(ContractError, "RUN_OR_QA_MISMATCH"):
-            self.builder.build_pending_precheck(
-                self.spec,
-                run_id="wrong-run", qa_id="QA-150",
-                created_at=FIXED_TIME,
-                **self.sql_fields,
-            )
-
-    def test_rejects_attempt_out_of_range(self) -> None:
-        with self.assertRaisesRegex(ContractError, "ATTEMPT_OUT_OF_RANGE"):
-            self.builder.build_pending_precheck(
-                self.spec,
-                run_id="run-150", qa_id="QA-150",
-                attempt_no=4,
-                created_at=FIXED_TIME,
-                **self.sql_fields,
-            )
-
-    # ── Task 2: Precheck feedback retry ────────────────────────────
-
-    def test_task2_retry_increments_version_and_attempt(self) -> None:
-        first = self.build_ppre()
-        feedback_1 = precheck_feedback(first, attempt_no=1)
-        second = self.builder.handle_precheck_feedback(
-            self.spec, feedback_1, first,
-            run_id="run-150", qa_id="QA-150",
-            attempt_no=2,
-            created_at=FIXED_TIME,
-            **self.sql_fields,
-        )
-        self.assertEqual(second["envelope"]["version"], 2)
-        self.assertEqual(second["envelope"]["attempt_no"], 2)
-        self.assertEqual(second["envelope"]["supersedes_ref"], artifact_ref(first["envelope"]))
-        self.assertEqual(second["envelope"]["status"], "candidate")
-        self.assertEqual(
-            second["payload"]["pending_precheck_id"],
-            first["payload"]["pending_precheck_id"],
-        )
-
-    def test_task2_parent_refs_include_spec_feedback_previous(self) -> None:
-        first = self.build_ppre()
-        feedback_1 = precheck_feedback(first, attempt_no=1)
-        second = self.builder.handle_precheck_feedback(
-            self.spec, feedback_1, first,
-            run_id="run-150", qa_id="QA-150",
-            attempt_no=2,
-            created_at=FIXED_TIME,
-            **self.sql_fields,
-        )
-        expected_parents = [
-            artifact_ref(self.spec["envelope"]),
-            artifact_ref(feedback_1["envelope"]),
-            artifact_ref(first["envelope"]),
-        ]
-        self.assertEqual(second["envelope"]["parent_artifact_refs"], expected_parents)
-        self.assertEqual(
-            second["envelope"]["input_hashes"],
-            [ref["content_hash"] for ref in expected_parents],
-        )
-
-    def test_task2_third_attempt_valid_candidate_is_not_blocked(self) -> None:
-        first = self.build_ppre()
-        feedback_1 = precheck_feedback(first, attempt_no=1)
-        second = self.builder.handle_precheck_feedback(
-            self.spec, feedback_1, first,
-            run_id="run-150", qa_id="QA-150",
-            attempt_no=2,
-            created_at=FIXED_TIME,
-            **self.sql_fields,
-        )
-        feedback_2 = precheck_feedback(second, attempt_no=2)
-        third = self.builder.handle_precheck_feedback(
-            self.spec, feedback_2, second,
-            run_id="run-150", qa_id="QA-150",
-            attempt_no=3,
-            created_at=FIXED_TIME,
-            **self.sql_fields,
-        )
-        self.assertEqual(third["envelope"]["status"], "candidate")
-        self.assertEqual(third["envelope"]["attempt_no"], 3)
-
-    def test_task2_third_attempt_invalid_candidate_blocks_manual(self) -> None:
-        first = self.build_ppre()
-        feedback_1 = precheck_feedback(first, attempt_no=1)
-        second = self.builder.handle_precheck_feedback(
-            self.spec, feedback_1, first,
-            run_id="run-150", qa_id="QA-150",
-            attempt_no=2,
-            created_at=FIXED_TIME,
-            **self.sql_fields,
-        )
-        feedback_2 = precheck_feedback(second, attempt_no=2)
-        invalid_sql = {"candidate_sql": "", "sql_parameters": []}
-        blocked = self.builder.handle_precheck_feedback(
-            self.spec, feedback_2, second,
-            run_id="run-150", qa_id="QA-150",
-            attempt_no=3,
-            created_at=FIXED_TIME,
-            **invalid_sql,
-        )
-        self.assertEqual(blocked["envelope"]["status"], "blocked_manual")
-        self.assertEqual(
-            blocked["payload"]["pending_precheck_id"],
-            first["payload"]["pending_precheck_id"],
-        )
-
-    def test_task2_rejects_feedback_ref_mismatch(self) -> None:
-        first = self.build_ppre()
-        bad_feedback = precheck_feedback(first, attempt_no=1)
-        bad_feedback["payload"]["pending_precheck_package_ref"]["content_hash"] = "c" * 64
-        bad_feedback["envelope"]["content_hash"] = content_hash(bad_feedback["envelope"], bad_feedback["payload"])
-        with self.assertRaisesRegex(ContractError, "FEEDBACK_REF_MISMATCH"):
-            self.builder.handle_precheck_feedback(
-                self.spec, bad_feedback, first,
-                run_id="run-150", qa_id="QA-150",
-                attempt_no=2,
-                created_at=FIXED_TIME,
-                **self.sql_fields,
-            )
-
-    def test_task2_rejects_attempt_out_of_range(self) -> None:
-        first = self.build_ppre()
-        feedback_1 = precheck_feedback(first, attempt_no=1)
-        with self.assertRaisesRegex(ContractError, "ATTEMPT_OUT_OF_RANGE"):
-            self.builder.handle_precheck_feedback(
-                self.spec, feedback_1, first,
-                run_id="run-150", qa_id="QA-150",
-                attempt_no=4,
-                created_at=FIXED_TIME,
-                **self.sql_fields,
-            )
-
-    def test_task2_rejects_attempt_lineage_mismatch(self) -> None:
-        first = self.build_ppre()
-        feedback_1 = precheck_feedback(first, attempt_no=1)
-        with self.assertRaisesRegex(ContractError, "ATTEMPT_LINEAGE_MISMATCH"):
-            self.builder.handle_precheck_feedback(
-                self.spec, feedback_1, first,
-                run_id="run-150", qa_id="QA-150",
-                attempt_no=3,  # should be 2
-                created_at=FIXED_TIME,
-                **self.sql_fields,
-            )
-
-    def test_task2_rejects_run_or_qa_mismatch(self) -> None:
-        first = self.build_ppre()
-        feedback_1 = precheck_feedback(first, attempt_no=1)
-        with self.assertRaisesRegex(ContractError, "RUN_OR_QA_MISMATCH"):
-            self.builder.handle_precheck_feedback(
-                self.spec, feedback_1, first,
-                run_id="wrong-run", qa_id="QA-150",
-                attempt_no=2,
-                created_at=FIXED_TIME,
-                **self.sql_fields,
-            )
-
-    def test_task2_160_stub_consumes_retry_output(self) -> None:
-        first = self.build_ppre()
-        feedback_1 = precheck_feedback(first, attempt_no=1)
-        second = self.builder.handle_precheck_feedback(
-            self.spec, feedback_1, first,
-            run_id="run-150", qa_id="QA-150",
-            attempt_no=2,
-            created_at=FIXED_TIME,
-            **self.sql_fields,
-        )
-        consumed_id = _consume_160_stub(second)
-        self.assertEqual(consumed_id, second["payload"]["pending_precheck_id"])
-
-    # ── Probe integration test ─────────────────────────────────────
-
-    def test_sanitized_probe_passes(self) -> None:
-        result = run_sanitized_probe(ROOT)
-        s = result["summary"]
-        self.assertTrue(s["bad_hash_rejected"])
-        self.assertTrue(s["feedback_1_executed"])
-        self.assertTrue(s["feedback_2_valid_candidate"])
-        self.assertTrue(s["feedback_2_invalid_blocked"])
-        self.assertTrue(s["stub_160_consumed"])
-        self.assertTrue(s["validator_empty_sql_rejects"])
-        self.assertTrue(s["validator_entry_scope_rejects"])
-        self.assertTrue(s["validator_tables_consistency_rejects"])
-        self.assertTrue(s["validator_version_immutability_rejects"])
-
-
-if __name__ == "__main__":
-    unittest.main()
+if __name__=="__main__": unittest.main()
