@@ -1,0 +1,125 @@
+{
+  "$id": "https://east.example/contracts/packages/frozen-orm-package/v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Agent 252 frozen ORM package (ORM-PENDING-REGRESSION)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["envelope", "payload"],
+  "properties": {
+    "envelope": {
+      "allOf": [
+        {"$ref": "https://east.example/contracts/common-envelope/v1"},
+        {"type": "object", "properties": {"artifact_type": {"const": "frozen_orm"}, "producer_id": {"const": "252"}, "mode": {"const": "event_data"}, "status": {"const": "validated"}}}
+      ]
+    },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "validated_orm_plan", "source_orm_plan_ref", "safety_precheck_report", "sequence_validation_report", "validator_module_version", "validated_hash", "validated_at"],
+      "properties": {
+        "schema_version": {"const": "v5.frozen-orm/v2"},
+        "validated_orm_plan": {"$ref": "https://east.example/contracts/packages/frozen-orm-package/v1#/$defs/validated_orm_plan"},
+        "source_orm_plan_ref": {"$ref": "https://east.example/contracts/packages/frozen-orm-package/v1#/$defs/artifact_ref"},
+        "safety_precheck_report": {"$ref": "https://east.example/contracts/packages/frozen-orm-package/v1#/$defs/safety_precheck_report"},
+        "sequence_validation_report": {"$ref": "https://east.example/contracts/packages/frozen-orm-package/v1#/$defs/sequence_validation_report"},
+        "validator_module_version": {"const": "v5.orm-validator/v2"},
+        "validated_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "validated_at": {"type": "string", "format": "date-time"}
+      }
+    }
+  },
+  "$defs": {
+    "artifact_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifact_id", "version", "content_hash"],
+      "properties": {
+        "artifact_id": {"type": "string", "minLength": 1},
+        "version": {"type": "integer", "minimum": 1},
+        "content_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    },
+    "validated_orm_plan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["orm_source_code", "execution_contract", "operations", "code_hash"],
+      "properties": {
+        "orm_source_code": {"type": "string", "minLength": 1},
+        "execution_contract": {"$ref": "https://east.example/contracts/packages/frozen-orm-package/v1#/$defs/execution_contract"},
+        "operations": {"type": "array", "minItems": 1, "items": {"$ref": "https://east.example/contracts/packages/frozen-orm-package/v1#/$defs/operation"}},
+        "code_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    },
+    "slot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["slot_id", "target_table_id", "field_ids", "standard_type", "cardinality", "required", "data_placeholder_ref"],
+      "properties": {
+        "slot_id": {"type": "string", "pattern": "^slot_[a-z0-9_]+$"},
+        "target_table_id": {"type": "string", "minLength": 1},
+        "field_ids": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+        "standard_type": {"const": "UNSPECIFIED"},
+        "cardinality": {"const": "one"},
+        "required": {"type": "boolean"},
+        "data_placeholder_ref": {"type": "string", "pattern": "^placeholder:[A-Za-z_][A-Za-z0-9_]*\\.[A-Za-z_][A-Za-z0-9_]*$"}
+      }
+    },
+    "execution_contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["entrypoint", "binding_slots", "empty_run_contract", "transaction_id", "allowed_api", "rollback_policy"],
+      "properties": {
+        "entrypoint": {"type": "object", "additionalProperties": false, "required": ["module", "callable", "signature", "return_shape"], "properties": {"module": {"const": "generated_orm"}, "callable": {"const": "apply"}, "signature": {"const": "apply(context, params)"}, "return_shape": {"const": "execution_report/v1"}}},
+        "binding_slots": {"type": "array", "items": {"$ref": "https://east.example/contracts/packages/frozen-orm-package/v1#/$defs/slot"}},
+        "empty_run_contract": {"type": "object", "additionalProperties": false, "required": ["input", "write_count", "database_side_effect", "return_shape"], "properties": {"input": {"const": {}}, "write_count": {"const": 0}, "database_side_effect": {"const": false}, "return_shape": {"const": "execution_report/v1"}}},
+        "transaction_id": {"type": "string", "minLength": 1},
+        "allowed_api": {"type": "array", "const": ["context.transaction", "transaction.read", "transaction.check", "transaction.insert", "transaction.update", "transaction.rollback"]},
+        "rollback_policy": {"const": "transaction_context_rolls_back_on_exception; no transaction is opened for empty params"}
+      }
+    },
+    "operation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["operation_id", "source_operation_step_id", "kind", "table_id", "data_placeholder_ref", "where_ref", "depends_on", "preconditions", "postconditions", "transaction_id"],
+      "properties": {
+        "operation_id": {"type": "string", "pattern": "^orm-op-[0-9]{3}$"},
+        "source_operation_step_id": {"type": "string", "pattern": "^op-[0-9]{3}$"},
+        "kind": {"enum": ["READ", "CHECK", "INSERT", "UPDATE"]},
+        "table_id": {"type": "string", "minLength": 1},
+        "data_placeholder_ref": {"type": "array", "items": {"type": "string", "pattern": "^placeholder:[A-Za-z_][A-Za-z0-9_]*\\.[A-Za-z_][A-Za-z0-9_]*$"}},
+        "where_ref": {"type": ["string", "null"]},
+        "depends_on": {"type": "array", "items": {"type": "string", "pattern": "^orm-op-[0-9]{3}$"}},
+        "preconditions": {"type": "array", "items": {"type": "string"}},
+        "postconditions": {"type": "array", "items": {"type": "string"}},
+        "transaction_id": {"type": "string", "minLength": 1}
+      }
+    },
+    "pass_result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status"],
+      "properties": {"status": {"const": "PASS"}}
+    },
+    "safety_precheck_report": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["static_ast", "api_allowlist", "import_compile", "transaction", "code_hash"],
+      "properties": {
+        "static_ast": {"$ref": "https://east.example/contracts/packages/frozen-orm-package/v1#/$defs/pass_result"},
+        "api_allowlist": {"type": "object", "additionalProperties": false, "required": ["status", "allowed_api"], "properties": {"status": {"const": "PASS"}, "allowed_api": {"type": "array", "const": ["context.transaction", "transaction.read", "transaction.check", "transaction.insert", "transaction.update", "transaction.rollback"]}}},
+        "import_compile": {"$ref": "https://east.example/contracts/packages/frozen-orm-package/v1#/$defs/pass_result"},
+        "transaction": {"type": "object", "additionalProperties": false, "required": ["status", "transaction_id"], "properties": {"status": {"const": "PASS"}, "transaction_id": {"type": "string", "minLength": 1}}},
+        "code_hash": {"type": "object", "additionalProperties": false, "required": ["status", "code_hash"], "properties": {"status": {"const": "PASS"}, "code_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}}
+      }
+    },
+    "sequence_validation_report": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["empty_dry_run", "object_detail_state"],
+      "properties": {
+        "empty_dry_run": {"type": "object", "additionalProperties": false, "required": ["status", "execution_mode", "write_count", "database_side_effect"], "properties": {"status": {"const": "PASS"}, "execution_mode": {"const": "empty"}, "write_count": {"const": 0}, "database_side_effect": {"const": false}}},
+        "object_detail_state": {"type": "object", "additionalProperties": false, "required": ["status", "operation_count", "rule_refs"], "properties": {"status": {"const": "PASS"}, "operation_count": {"type": "integer", "minimum": 1}, "rule_refs": {"type": "array", "items": {"type": "string"}}}}
+      }
+    }
+  }
+}
