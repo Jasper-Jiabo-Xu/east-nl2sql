@@ -1,0 +1,8 @@
+{
+  "schema_version": "v5.251-runtime-manifest/v1",
+  "issue_key": "EAS-33",
+  "artifact_ref": {"artifact_id": "<artifact_id>", "version": 1, "content_hash": "<sha256>"},
+  "runtime_locator": "<V5_RUNTIME_ROOT>/vnext/03_构建过程层/issues/EAS-33/<run_id>/<attempt>/restricted-orm.json",
+  "contains_business_data": false,
+  "formal_database_write": false
+}
