@@ -414,8 +414,10 @@ class PendingPrecheckBuilder:
         for key in ("run_id", "qa_id", "trace_id"):
             if feedback["envelope"][key] != previous_envelope[key]:
                 _fail("FEEDBACK_LINEAGE_MISMATCH")
-        parents = [artifact_ref(query_spec["envelope"]), artifact_ref(feedback["envelope"]), artifact_ref(previous_envelope)]
-        if previous is not retry_base:
+        # Version ancestry is represented solely by supersedes_ref.  Keeping
+        # the same logical candidate in direct parents forms a registry cycle.
+        parents = [artifact_ref(query_spec["envelope"]), artifact_ref(feedback["envelope"])]
+        if previous is not retry_base and (route_capability is None or route_capability.capability_kind != "regression_feedback"):
             parents.append(artifact_ref(previous["envelope"]))
         if route_capability is not None and route_capability.capability_kind == "regression_feedback":
             # Preserve the consumer-side 110 decision as a direct input to

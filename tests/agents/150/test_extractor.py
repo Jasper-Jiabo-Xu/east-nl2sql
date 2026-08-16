@@ -8,6 +8,7 @@ import unittest
 from pathlib import Path
 
 from east_v5.agents.east_150 import MAPPED_SPEC_ITEMS, PendingPrecheckBuilder, TrustedRouteCapability
+from east_v5.agents.east_150.probe import run_sanitized_probe
 from east_v5.artifacts import ArtifactRegistry, artifact_ref, content_hash
 from east_v5.governance import ContractError
 
@@ -146,6 +147,12 @@ class Tests(unittest.TestCase):
         packages = {package["id"]: package for package in catalog["packages"]}
         self.assertIn("150", packages["deepseek_review_result"]["consumers"])
         self.assertIn("150", packages["glm_review_result"]["consumers"])
+
+    def test_runtime_registry_resolve_and_160_stub_closure(self):
+        summary = run_sanitized_probe(ROOT)["summary"]
+        self.assertTrue(summary["stub_160_consumed"])
+        self.assertTrue(summary["route_record_direct_parent"])
+        self.assertTrue(all(summary["runtime_registry_chain"].values()))
 
     def test_sql_positive_join_aggregate_subquery_cte_topn_matrix(self):
         for sql in ("SELECT t.F1 FROM T1 AS t JOIN T2 AS u ON t.F2=u.F2", "SELECT F1, COUNT(F2) FROM T1 GROUP BY F1", "SELECT F1 FROM T1 WHERE F1 IN (SELECT F1 FROM T1)", "WITH x AS (SELECT T1.F1 AS X1 FROM T1) SELECT x.X1 FROM x", "SELECT F1 FROM T1 ORDER BY F1 LIMIT 5"):
