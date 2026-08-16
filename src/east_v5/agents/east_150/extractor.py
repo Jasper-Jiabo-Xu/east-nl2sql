@@ -39,6 +39,19 @@ def _fail(code: str) -> None:
     raise ContractError(code)
 
 
+def validate_sql_regression_feedback_package(repo_root: Path, package: dict[str, Any]) -> None:
+    """Validate the complete 260 transport package before capability minting."""
+    try:
+        schema = load_json(repo_root / SCHEMAS["sql_regression_failed_feedback"])
+        resources = []
+        for path in [repo_root / "contracts/common/common-envelope.schema.json", *sorted((repo_root / "contracts/packages").glob("*.schema.json"))]:
+            item = load_json(path)
+            resources.append((item["$id"], Resource.from_contents(item)))
+        Draft202012Validator(schema, registry=Registry().with_resources(resources)).validate(package)
+    except Exception as exc:
+        raise ContractError("REGRESSION_SCHEMA_REJECTED") from exc
+
+
 _ROUTE_CAPABILITY_TOKEN = object()
 
 
@@ -128,6 +141,7 @@ class TrustedRouteCapability:
             feedback = registry.resolve(record_payload["source_feedback_ref"])
             feedback_envelope, feedback_payload = feedback["envelope"], feedback["payload"]
             validate_envelope(Path(registry.repo_root), feedback_envelope, feedback_payload)
+            validate_sql_regression_feedback_package(Path(registry.repo_root), feedback)
         except Exception as exc:
             raise ContractError("TRUSTED_ROUTE_CAPABILITY_INVALID") from exc
         if (record_envelope["artifact_type"], record_envelope["producer_id"]) != ("sql_regression_route_record", "110"):
@@ -140,7 +154,9 @@ class TrustedRouteCapability:
             _fail("TRUSTED_ROUTE_CAPABILITY_INVALID")
         if lineage != (record_envelope["run_id"], record_envelope["qa_id"], record_envelope["trace_id"]):
             _fail("TRUSTED_ROUTE_CAPABILITY_INVALID")
-        if feedback_ref not in record_envelope["parent_artifact_refs"]:
+        if record_envelope["mode"] != "event_data" or record_envelope["attempt_no"] != feedback_envelope["attempt_no"]:
+            _fail("TRUSTED_ROUTE_CAPABILITY_INVALID")
+        if record_envelope["parent_artifact_refs"] != [feedback_ref] or record_envelope["input_hashes"] != [feedback_ref["content_hash"]]:
             _fail("TRUSTED_ROUTE_CAPABILITY_INVALID")
         return cls(_ROUTE_CAPABILITY_TOKEN, registry, "regression_feedback", (record_ref, feedback_ref), lineage)
 
@@ -423,6 +439,9 @@ class PendingPrecheckBuilder:
             # Preserve the consumer-side 110 decision as a direct input to
             # the repaired 150 artifact: 260 feedback -> 110 record -> 150.
             parents.append(route_capability.refs[0])
+            # The 210 reviewed package is a distinct approval input, never a
+            # same-candidate version edge, and must remain directly auditable.
+            parents.append(artifact_ref(previous["envelope"]))
         kwargs = dict(run_id=run_id, qa_id=qa_id, sql_gold=sql_gold, version=previous_envelope["version"] + 1, attempt_no=attempt_no, supersedes_ref=artifact_ref(previous_envelope), parents=parents, created_at=created_at, artifact_id=previous_envelope["artifact_id"], **candidate)
         try:
             repaired = self.build_pending_precheck(query_spec, **kwargs)
@@ -446,15 +465,7 @@ class PendingPrecheckBuilder:
         return self._retry(query_spec, feedback, previous, **kwargs)
 
     def _validate_regression_package(self, package: dict[str, Any]) -> None:
-        try:
-            schema = load_json(self.repo_root / SCHEMAS["sql_regression_failed_feedback"])
-            resources = []
-            for path in [self.repo_root / "contracts/common/common-envelope.schema.json", *sorted((self.repo_root / "contracts/packages").glob("*.schema.json"))]:
-                item = load_json(path)
-                resources.append((item["$id"], Resource.from_contents(item)))
-            Draft202012Validator(schema, registry=Registry().with_resources(resources)).validate(package)
-        except Exception as exc:
-            raise ContractError("REGRESSION_SCHEMA_REJECTED") from exc
+        validate_sql_regression_feedback_package(self.repo_root, package)
 
     def handle_routed_feedback(
         self, query_spec: dict[str, Any], feedback: dict[str, Any], previous: dict[str, Any], *, route_capability: TrustedRouteCapability | None, **kwargs: Any,

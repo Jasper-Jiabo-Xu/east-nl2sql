@@ -152,7 +152,9 @@ class Tests(unittest.TestCase):
         summary = run_sanitized_probe(ROOT)["summary"]
         self.assertTrue(summary["stub_160_consumed"])
         self.assertTrue(summary["route_record_direct_parent"])
+        self.assertTrue(summary["reviewed_direct_parent"])
         self.assertTrue(all(summary["runtime_registry_chain"].values()))
+        self.assertTrue(all(summary["mint_reject_matrix"].values()))
 
     def test_sql_positive_join_aggregate_subquery_cte_topn_matrix(self):
         for sql in ("SELECT t.F1 FROM T1 AS t JOIN T2 AS u ON t.F2=u.F2", "SELECT F1, COUNT(F2) FROM T1 GROUP BY F1", "SELECT F1 FROM T1 WHERE F1 IN (SELECT F1 FROM T1)", "WITH x AS (SELECT T1.F1 AS X1 FROM T1) SELECT x.X1 FROM x", "SELECT F1 FROM T1 ORDER BY F1 LIMIT 5"):
