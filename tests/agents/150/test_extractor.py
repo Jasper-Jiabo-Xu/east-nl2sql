@@ -63,6 +63,7 @@ class Tests(unittest.TestCase):
         base = Path(self.temp.name)
         roots = {"repo_root": str(base / "repo"), "runtime_root": str(base / "runtime"), "reference_root": str(base / "reference"), "reference_read_only": True}
         self.registry = ArtifactRegistry(ROOT, roots, "EAS-24", "route150", 1)
+        self.registry.register(self.s["envelope"], self.s["payload"])
         self.route170 = self.review_package("deepseek_review_result", "170", "route170")
         self.route180 = self.review_package("glm_review_result", "180", "route180")
         self.registry.register(self.route170["envelope"], self.route170["payload"])
@@ -87,18 +88,28 @@ class Tests(unittest.TestCase):
         return self.review_package(kind, who, "feedback" + who, reviewed_ref=artifact_ref(old["envelope"]), error_types=error_types, parents=[artifact_ref(route["envelope"])] if parents is None else parents)
 
     def reviewed(self, old):
+        self.registry.register(old["envelope"], old["payload"])
+        approved170 = self.review_package("deepseek_review_result", "170", "approved170", reviewed_ref=artifact_ref(old["envelope"]), error_types=())
+        approved170["payload"]["semantic_review_report"]["decision"] = "yes"; approved170["envelope"]["content_hash"] = content_hash(approved170["envelope"], approved170["payload"])
+        approved180 = self.review_package("glm_review_result", "180", "approved180", reviewed_ref=artifact_ref(old["envelope"]), error_types=())
+        approved180["payload"]["semantic_review_report"]["decision"] = "yes"; approved180["envelope"]["content_hash"] = content_hash(approved180["envelope"], approved180["payload"])
+        self.registry.register(approved170["envelope"], approved170["payload"]); self.registry.register(approved180["envelope"], approved180["payload"])
+        release = wrap("release_candidate", "release210", {"synthetic": "release"}, producer="210")
+        receipt = wrap("release_receipt", "receipt010", {"schema_version": "v5.release-receipt/v1", "candidate_sha256": "a" * 64, "released_version": "candidate", "committed_package_sha256": "b" * 64, "approved_by": "test"}, producer="010", parents=[artifact_ref(release["envelope"])])
+        self.registry.register(release["envelope"], release["payload"]); self.registry.register(receipt["envelope"], receipt["payload"])
+        self.cap_regression = TrustedRouteCapability.from_registry(self.registry, release_candidate_ref=artifact_ref(release["envelope"]), release_receipt_ref=artifact_ref(receipt["envelope"]))
         fixture = json.loads((ROOT / "tests/agents/220/fixtures/event-data-dual-review.json").read_text(encoding="utf-8"))
         payload = copy.deepcopy(fixture["payload"])
         payload.update({"qa_id": "QA150", "candidate_ref": artifact_ref(old["envelope"]), "query_spec_ref": artifact_ref(self.s["envelope"]),
                         "precheck_report_ref": {"artifact_id": "precheck150", "version": 1, "content_hash": "c" * 64},
-                        "deepseek_review_ref": artifact_ref(self.route170["envelope"]), "glm_review_ref": artifact_ref(self.route180["envelope"])})
+                        "deepseek_review_ref": artifact_ref(approved170["envelope"]), "glm_review_ref": artifact_ref(approved180["envelope"])})
         payload["package_hash"] = hashlib.sha256(json.dumps({key: value for key, value in payload.items() if key != "package_hash"}, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
         return wrap("reviewed_question_sql", "reviewed150", payload, producer="210", attempt=old["envelope"]["attempt_no"], mode="event_data")
 
     def regression(self, parents=None, location="sql"):
         payload = {"schema_version": "v5.sql-regression-failed-feedback/v1", "mode": "event_data", "input_data_refs": [], "input_orm_ref": None, "sandbox_snapshot_id": "copy",
                    "failure_details": {"error_code": "SQL_EXECUTION_ERROR", "error_stage": "sql_execution", "error_location": location, "expected_values": [], "actual_values": [], "sql_error_detail": {"sql_text": self.sql, "error_code": "SQLITE", "error_message": "bad"}, "regression_metrics": {}}, "route_target": "110", "retry_count": 1}
-        return wrap("sql_regression_failed_feedback", "reg150", payload, producer="260", mode="event_data", parents=parents or [artifact_ref(self.route170["envelope"]), artifact_ref(self.route180["envelope"])])
+        return wrap("sql_regression_failed_feedback", "reg150", payload, producer="260", mode="event_data", parents=parents or [self.cap_regression.refs[1]])
 
     def test_sql_parser_and_quoted_aliases(self):
         cases = [("SELECT t.F9 FROM T1 AS t", "SQL_FIELD_OUT_OF_SCOPE"), ("SELECT F9 FROM T1", "SQL_UNQUALIFIED_FIELD_OUT_OF_SCOPE"), ("SELECT F2 FROM T1 JOIN T2 ON T1.F2=T2.F2", "SQL_UNQUALIFIED_FIELD_AMBIGUOUS"), ("WITH x AS (SELECT T1.F1 AS X1 FROM T1) SELECT x.F1 FROM x", "SQL_FIELD_OUT_OF_SCOPE"), ("SELECT \"F9\" FROM T1", "SQL_QUOTED_IDENTIFIER_OUT_OF_SCOPE")]
@@ -106,6 +117,50 @@ class Tests(unittest.TestCase):
             with self.subTest(sql=sql), self.assertRaisesRegex(ContractError, code):
                 self.build(**candidate(sql))
         self.build(**candidate('SELECT y."X1" FROM (SELECT T1.F1 AS "X1" FROM T1) AS y'))
+
+    def test_requires_all_generated_fields(self):
+        with self.assertRaisesRegex(ContractError, "GENERATED_FIELDS_REQUIRED"):
+            self.b.build_pending_precheck(self.s, run_id="run150", qa_id="QA150", sql_gold=self.sql, created_at=TIME)
+
+    def test_mapping_missing_rejected(self):
+        bad = candidate(self.sql); bad["specification_mapping"] = bad["specification_mapping"][:-1]
+        with self.assertRaisesRegex(ContractError, "SPECIFICATION_MAPPING_INCOMPLETE"):
+            self.build(**bad)
+
+    def test_mapping_duplicate_rejected(self):
+        bad = candidate(self.sql); bad["specification_mapping"].append(copy.deepcopy(bad["specification_mapping"][0]))
+        with self.assertRaisesRegex(ContractError, "SPECIFICATION_MAPPING_INCOMPLETE"):
+            self.build(**bad)
+
+    def test_mapping_unrelated_fragment_rejected(self):
+        bad = candidate(self.sql); bad["specification_mapping"][0]["sql_fragment"] = "NOT_IN_SQL"
+        with self.assertRaisesRegex(ContractError, "SPECIFICATION_MAPPING_FRAGMENT_INVALID"):
+            self.build(**bad)
+
+    def test_sql_positive_join_aggregate_subquery_cte_topn_matrix(self):
+        for sql in ("SELECT t.F1 FROM T1 AS t JOIN T2 AS u ON t.F2=u.F2", "SELECT F1, COUNT(F2) FROM T1 GROUP BY F1", "SELECT F1 FROM T1 WHERE F1 IN (SELECT F1 FROM T1)", "WITH x AS (SELECT T1.F1 AS X1 FROM T1) SELECT x.X1 FROM x", "SELECT F1 FROM T1 ORDER BY F1 LIMIT 5"):
+            with self.subTest(sql=sql):
+                self.build(**candidate(sql))
+
+    def test_160_producer_and_content_hash_rejected(self):
+        old = self.build()
+        with self.assertRaisesRegex(ContractError, "PRECHECK_PRODUCER_REJECTED"):
+            self.repair(old, precheck(old, producer="170"), **candidate("SELECT T1.F2 FROM T1"))
+        drift = copy.deepcopy(old); drift["payload"]["clear_question"] = "drift"
+        with self.assertRaisesRegex(ContractError, "CONTENT_HASH_DRIFT"):
+            self.b.validate_pending_precheck(drift)
+
+    def test_160_table_field_location_allows_sql_correction(self):
+        old = self.build()
+        repaired = self.repair(old, precheck(old, ("T1.F9",)), **candidate("SELECT T1.F2 FROM T1"))
+        self.assertEqual(repaired["payload"]["sql_gold"], "SELECT T1.F2 FROM T1")
+
+    def test_260_error_matrix_rejects_non_sql_execution(self):
+        old, reviewed = self.build(), None
+        reviewed = self.reviewed(old)
+        feedback = self.regression(); feedback["payload"]["failure_details"]["error_code"] = "DATA_VALUE_ERROR"; feedback["envelope"]["content_hash"] = content_hash(feedback["envelope"], feedback["payload"])
+        with self.assertRaisesRegex(ContractError, "REGRESSION_ROUTE_REJECTED"):
+            self.b.handle_routed_feedback(self.s, feedback, reviewed, route_capability=self.cap_regression, run_id="run150", qa_id="QA150", attempt_no=2, created_at=TIME, **candidate("SELECT T1.F2 FROM T1"))
 
     def test_precheck_required_change_map_is_targeted(self):
         old = self.build()
@@ -147,13 +202,21 @@ class Tests(unittest.TestCase):
     def test_260_requires_frozen_220_dual_review_lineage(self):
         old, reviewed = self.build(), None
         reviewed = self.reviewed(old)
-        result = self.b.handle_routed_feedback(self.s, self.regression(), reviewed, route_capability=self.cap_dual, run_id="run150", qa_id="QA150", attempt_no=2, created_at=TIME, **candidate("SELECT T1.F2 FROM T1"))
+        result = self.b.handle_routed_feedback(self.s, self.regression(), reviewed, route_capability=self.cap_regression, run_id="run150", qa_id="QA150", attempt_no=2, created_at=TIME, **candidate("SELECT T1.F2 FROM T1"))
         self.assertEqual(result["envelope"]["attempt_no"], 2)
+        self.assertEqual(result["envelope"]["artifact_id"], old["envelope"]["artifact_id"])
+        self.assertEqual(result["envelope"]["supersedes_ref"], artifact_ref(old["envelope"]))
         forged = copy.deepcopy(reviewed); forged["payload"].pop("glm_review_ref"); forged["envelope"]["content_hash"] = content_hash(forged["envelope"], forged["payload"])
         with self.assertRaisesRegex(ContractError, "REVIEWED_PREVIOUS_LINEAGE_REJECTED"):
-            self.b.handle_routed_feedback(self.s, self.regression(), forged, route_capability=self.cap_dual, run_id="run150", qa_id="QA150", attempt_no=2, created_at=TIME, **candidate("SELECT T1.F2 FROM T1"))
+            self.b.handle_routed_feedback(self.s, self.regression(), forged, route_capability=self.cap_regression, run_id="run150", qa_id="QA150", attempt_no=2, created_at=TIME, **candidate("SELECT T1.F2 FROM T1"))
+        no_approval = copy.deepcopy(reviewed); no_approval["payload"]["deepseek_review_ref"] = artifact_ref(self.route170["envelope"]); no_approval["payload"]["package_hash"] = hashlib.sha256(json.dumps({key: value for key, value in no_approval["payload"].items() if key != "package_hash"}, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()).hexdigest(); no_approval["envelope"]["content_hash"] = content_hash(no_approval["envelope"], no_approval["payload"])
+        with self.assertRaisesRegex(ContractError, "REVIEWED_PREVIOUS_LINEAGE_REJECTED"):
+            self.b.handle_routed_feedback(self.s, self.regression(), no_approval, route_capability=self.cap_regression, run_id="run150", qa_id="QA150", attempt_no=2, created_at=TIME, **candidate("SELECT T1.F2 FROM T1"))
+        wrong_query_spec = copy.deepcopy(reviewed); wrong_query_spec["payload"]["query_spec_ref"] = {"artifact_id": "other-spec", "version": 1, "content_hash": "e" * 64}; wrong_query_spec["payload"]["package_hash"] = hashlib.sha256(json.dumps({key: value for key, value in wrong_query_spec["payload"].items() if key != "package_hash"}, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()).hexdigest(); wrong_query_spec["envelope"]["content_hash"] = content_hash(wrong_query_spec["envelope"], wrong_query_spec["payload"])
+        with self.assertRaisesRegex(ContractError, "REVIEWED_PREVIOUS_LINEAGE_REJECTED"):
+            self.b.handle_routed_feedback(self.s, self.regression(), wrong_query_spec, route_capability=self.cap_regression, run_id="run150", qa_id="QA150", attempt_no=2, created_at=TIME, **candidate("SELECT T1.F2 FROM T1"))
         with self.assertRaisesRegex(ContractError, "TRUSTED_ROUTE_CAPABILITY_REJECTED"):
-            self.b.handle_routed_feedback(self.s, self.regression(parents=[artifact_ref(self.route170["envelope"])]), reviewed, route_capability=self.cap_dual, run_id="run150", qa_id="QA150", attempt_no=2, created_at=TIME, **candidate("SELECT T1.F2 FROM T1"))
+            self.b.handle_routed_feedback(self.s, self.regression(parents=[artifact_ref(self.route170["envelope"])]), reviewed, route_capability=self.cap_regression, run_id="run150", qa_id="QA150", attempt_no=2, created_at=TIME, **candidate("SELECT T1.F2 FROM T1"))
 
 
 if __name__ == "__main__":
