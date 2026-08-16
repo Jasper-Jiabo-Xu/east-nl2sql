@@ -70,7 +70,13 @@ class TrustedRouteContext:
                 _fail("TRUSTED_ROUTE_CONTEXT_INVALID")
             return artifact_ref(envelope), (envelope["run_id"], envelope["qa_id"], envelope["trace_id"])
 
-        trusted_110, lineage_110 = resolve(stage_110_ref, "110")
+        trusted_110, lineage_110 = resolve(stage_110_ref, "210")
+        try:
+            reviewed = registry.resolve(trusted_110)
+        except Exception as exc:
+            raise ContractError("TRUSTED_ROUTE_CONTEXT_INVALID") from exc
+        if reviewed["envelope"]["artifact_type"] != "reviewed_question_sql":
+            _fail("TRUSTED_ROUTE_CONTEXT_INVALID")
         if stage_010_ref is None:
             return cls(_ROUTE_CONTEXT_TOKEN, trusted_110, lineage_110)
         trusted_010, lineage_010 = resolve(stage_010_ref, "010")
@@ -135,6 +141,13 @@ class PendingPrecheckBuilder:
         identifier = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
         if not allowed or any(not identifier.fullmatch(table) or not fields or any(not identifier.fullmatch(field) for field in fields) for table, fields in allowed.items()):
             _fail("SQL_SCOPE_INVALID")
+        # SQLite DQS accepts an unknown double-quoted identifier as a string
+        # literal.  That fallback defeats schema closure, so quoted identifiers
+        # are allowed only when they name a frozen table/field (or a local alias).
+        quoted = re.findall(r'"([A-Za-z_][A-Za-z0-9_]*)"|`([A-Za-z_][A-Za-z0-9_]*)`|\[([A-Za-z_][A-Za-z0-9_]*)\]', statement)
+        known = set(allowed) | {field for fields in allowed.values() for field in fields}
+        if any(next(name for name in item if name) not in known for item in quoted):
+            _fail("SQL_QUOTED_IDENTIFIER_OUT_OF_SCOPE")
         # SQLite's own compiler is the scope parser.  The in-memory schema has
         # exactly the frozen tables/columns, therefore EXPLAIN rejects unknown
         # aliases, unqualified ambiguity, CTE leakage, derived-table leakage,
@@ -212,7 +225,7 @@ class PendingPrecheckBuilder:
             "sql_explanation": sql_explanation,
             "business_event_candidates": business_event_candidates,
             "specification_mapping": mapping,
-            "evidence_refs": [f"penalty:{spec['penalty_fact_package_ref']['artifact_id']}", f"observable:{spec['observable_fact_package_ref']['artifact_id']}"] + [item["evidence_ref"] for item in spec["filters_and_evidence"] if item.get("evidence_ref")],
+            "evidence_refs": list(dict.fromkeys([f"penalty:{spec['penalty_fact_package_ref']['artifact_id']}", f"observable:{spec['observable_fact_package_ref']['artifact_id']}", *spec["must_preserve_fact_refs"], *[item["evidence_ref"] for item in spec["filters_and_evidence"] if item.get("evidence_ref")]])),
             "sql_dialect": "sqlite",
         }
         parent_refs = list(parents or [artifact_ref(spec_envelope)])
@@ -227,8 +240,13 @@ class PendingPrecheckBuilder:
         self.validate_pending_precheck(package)
         return package
 
-    def _retry(self, query_spec: dict[str, Any], feedback: dict[str, Any], previous: dict[str, Any], *, run_id: str, qa_id: str, attempt_no: int, sql_gold: str, created_at: str | None, **candidate: Any) -> dict[str, Any]:
-        self.validate_pending_precheck(previous)
+    def _retry(self, query_spec: dict[str, Any], feedback: dict[str, Any], previous: dict[str, Any], *, run_id: str, qa_id: str, attempt_no: int, sql_gold: str, created_at: str | None, allow_reviewed: bool = False, **candidate: Any) -> dict[str, Any]:
+        if allow_reviewed and previous.get("envelope", {}).get("artifact_type") == "reviewed_question_sql":
+            validate_envelope(self.repo_root, previous["envelope"], previous["payload"])
+            if previous["envelope"]["producer_id"] != "210":
+                _fail("REVIEWED_PREVIOUS_PRODUCER_REJECTED")
+        else:
+            self.validate_pending_precheck(previous)
         previous_envelope = previous["envelope"]
         if attempt_no not in (2, 3):
             _fail("ATTEMPT_OUT_OF_RANGE")
@@ -242,7 +260,12 @@ class PendingPrecheckBuilder:
         parents = [artifact_ref(query_spec["envelope"]), artifact_ref(feedback["envelope"]), artifact_ref(previous_envelope)]
         kwargs = dict(run_id=run_id, qa_id=qa_id, sql_gold=sql_gold, version=previous_envelope["version"] + 1, attempt_no=attempt_no, supersedes_ref=artifact_ref(previous_envelope), parents=parents, created_at=created_at, **candidate)
         try:
-            return self.build_pending_precheck(query_spec, **kwargs)
+            repaired = self.build_pending_precheck(query_spec, **kwargs)
+            prior_payload = previous["payload"]
+            material_fields = ("clear_question", "sql_explanation", "business_event_candidates", "specification_mapping")
+            if any(repaired["payload"][field] == prior_payload.get(field) for field in material_fields):
+                _fail("SEMANTIC_REPAIR_INCOMPLETE")
+            return repaired
         except ContractError:
             if attempt_no != 3:
                 raise
@@ -297,6 +320,8 @@ class PendingPrecheckBuilder:
             route_context.authorize(feedback["envelope"], requires_010=True)
             if feedback["payload"]["failure_details"]["error_code"] != "SQL_EXECUTION_ERROR" or feedback["payload"]["route_target"] != "110":
                 _fail("REGRESSION_ROUTE_REJECTED")
+            if previous.get("envelope", {}).get("artifact_type") != "reviewed_question_sql" or previous["envelope"].get("producer_id") != "210":
+                _fail("REGRESSION_PREVIOUS_REVIEW_REQUIRED")
         else:
             _fail("ROUTE_SOURCE_REJECTED")
-        return self._retry(query_spec, feedback, previous, **kwargs)
+        return self._retry(query_spec, feedback, previous, allow_reviewed=artifact_type == "sql_regression_failed_feedback", **kwargs)

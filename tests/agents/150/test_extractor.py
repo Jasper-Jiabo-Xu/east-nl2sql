@@ -13,7 +13,7 @@ def hop(stage="110"): return {"artifact_id":f"{stage}-route-150","version":1,"co
 def spec():
     p={"query_spec_id":"qspec-150","penalty_fact_package_ref":{"artifact_id":"penalty","version":1,"content_hash":"a"*64},"observable_fact_package_ref":{"artifact_id":"observable","version":1,"content_hash":"b"*64},"query_goal":"脱敏风险筛查","must_preserve_fact_refs":["fact-1"],"main_object_and_grain":{"main_object":"机构","grain":"记录"},"query_entry":{"entry_table":"T1","entry_conditions":[]},"related_objects_and_path":[],"filters_and_evidence":[],"return_fields":[{"field_id":"F1","display_name":"字段1","source_table":"T1"}],"aggregation_dedup_sort_time":{"group_by_fields":[]},"observability_boundary":{"answerable":["风险"],"unanswerable":[]},"expected_result_shape":{"row_grain":"记录","column_set":["F1"],"aggregation_shape":"none"},"sql_schema_scope":{"allowed_tables":[{"table_id":"T1","allowed_fields":["F1","F2","F3"]},{"table_id":"T2","allowed_fields":["F2"]}]},"minimum_positive_count":1,"minimum_negative_count":1,"condition_coverage":[],"code_value_coverage":[],"expected_row_group_count":{"minimum":1,"target":1,"tolerance_range":{"low":1,"high":2}},"join_expansion_limit":{"max_multiplier":2,"max_result_rows":10},"query_specification_package_schema_version":"query-specification-v1"};return wrap("query_specification_package","qspec150",p,producer="140")
 def candidate(sql, suffix=""):
-    q="筛查机构"+suffix; return {"sql_gold":sql,"clear_question":q,"sql_explanation":{"select":"机构字段","from_join":"限定关联","where":"固定条件","aggregation":"无","sort":"固定排序","business_meaning":"风险筛查"},"business_event_candidates":[{"event_name":"筛查"+suffix,"objective":"风险筛查","objects":["机构"],"state_changes":["识别"]}],"specification_mapping":[{"spec_item":item,"question_fragment":q,"sql_fragment":sql} for item in MAPPED_SPEC_ITEMS]}
+    q="筛查机构"+suffix; return {"sql_gold":sql,"clear_question":q,"sql_explanation":{"select":"机构字段"+suffix,"from_join":"限定关联"+suffix,"where":"固定条件"+suffix,"aggregation":"无"+suffix,"sort":"固定排序"+suffix,"business_meaning":"风险筛查"+suffix},"business_event_candidates":[{"event_name":"筛查"+suffix,"objective":"风险筛查"+suffix,"objects":["机构"],"state_changes":["识别"+suffix]}],"specification_mapping":[{"spec_item":item,"question_fragment":q,"sql_fragment":sql} for item in MAPPED_SPEC_ITEMS]}
 def precheck(old, producer="160"):
     p={"candidate_ref":artifact_ref(old["envelope"]),"precheck_decision":"fail","failed_items":[{"failed_rule_ids":["RULE"],"error_locations":["sql_gold"],"expected_values":"合法","actual_values":"错误","error_details":"修复"}]};return wrap("precheck_failed_feedback","feedback150",p,producer=producer,attempt=old["envelope"]["attempt_no"])
 class Registry:
@@ -23,7 +23,7 @@ class Registry:
 class Tests(unittest.TestCase):
  def setUp(self):
     self.b,self.s,self.sql=PendingPrecheckBuilder(ROOT),spec(),"SELECT T1.F1, T1.F2 FROM T1 WHERE T1.F1=:v"
-    self.r110=wrap("reviewed_question_sql","opaque-approval",{},producer="110")
+    self.r110=wrap("reviewed_question_sql","opaque-approval",{},producer="210")
     self.r010=wrap("release_receipt","opaque-release",{},producer="010")
     self.ctx110=TrustedRouteContext.from_registry(Registry(self.r110),stage_110_ref=artifact_ref(self.r110["envelope"]))
     self.ctx260=TrustedRouteContext.from_registry(Registry(self.r110,self.r010),stage_110_ref=artifact_ref(self.r110["envelope"]),stage_010_ref=artifact_ref(self.r010["envelope"]))
@@ -45,7 +45,7 @@ class Tests(unittest.TestCase):
     bad=candidate(self.sql); bad["specification_mapping"][0].pop("sql_fragment")
     with self.assertRaisesRegex(ContractError,"SPECIFICATION_MAPPING_INCOMPLETE"): self.build(**bad)
  def test_alias_unqualified_and_cte_scope_rejected(self):
-    cases=[("SELECT t.F9 FROM T1 AS t","SQL_FIELD_OUT_OF_SCOPE"),("SELECT F9 FROM T1","SQL_UNQUALIFIED_FIELD_OUT_OF_SCOPE"),("SELECT F2 FROM T1 JOIN T2 ON T1.F2=T2.F2","SQL_UNQUALIFIED_FIELD_AMBIGUOUS"),("WITH x AS (SELECT T1.F1 AS X1 FROM T1) SELECT x.F1 FROM x","SQL_FIELD_OUT_OF_SCOPE"),("SELECT z.F1 FROM T1","SQL_QUALIFIER_OUT_OF_SCOPE"),("SELECT T1.* FROM T1","SQL_SELECT_STAR_FORBIDDEN"),("SELECT FROM T1","SQL_PARSE_REJECTED")]
+    cases=[("SELECT t.F9 FROM T1 AS t","SQL_FIELD_OUT_OF_SCOPE"),("SELECT F9 FROM T1","SQL_UNQUALIFIED_FIELD_OUT_OF_SCOPE"),("SELECT F2 FROM T1 JOIN T2 ON T1.F2=T2.F2","SQL_UNQUALIFIED_FIELD_AMBIGUOUS"),("WITH x AS (SELECT T1.F1 AS X1 FROM T1) SELECT x.F1 FROM x","SQL_FIELD_OUT_OF_SCOPE"),("SELECT z.F1 FROM T1","SQL_QUALIFIER_OUT_OF_SCOPE"),("SELECT T1.* FROM T1","SQL_SELECT_STAR_FORBIDDEN"),("SELECT FROM T1","SQL_PARSE_REJECTED"),("SELECT \"F9\" FROM T1","SQL_QUOTED_IDENTIFIER_OUT_OF_SCOPE"),("SELECT `F9` FROM T1","SQL_QUOTED_IDENTIFIER_OUT_OF_SCOPE"),("SELECT [F9] FROM T1","SQL_QUOTED_IDENTIFIER_OUT_OF_SCOPE")]
     for sql,code in cases:
       with self.subTest(sql=sql),self.assertRaisesRegex(ContractError,code): self.build(**candidate(sql))
  def test_sql_structures_allowed(self):
@@ -56,12 +56,20 @@ class Tests(unittest.TestCase):
     with self.assertRaisesRegex(ContractError,"PRECHECK_PRODUCER_REJECTED"): self.repair(old,precheck(old,"170"))
     bad=copy.deepcopy(old);bad["payload"]["clear_question"]="drift"
     with self.assertRaisesRegex(ContractError,"CONTENT_HASH_DRIFT"):self.b.validate_pending_precheck(bad)
+ def test_evidence_refs_preserve_facts_and_stable_deduplicate(self):
+    query=spec(); query["payload"]["must_preserve_fact_refs"]=["fact-1","fact-2","fact-1"]; query["payload"]["filters_and_evidence"]=[{"field_id":"F1","operator":"=","value":"x","evidence_ref":"filter-1"},{"field_id":"F2","operator":"=","value":"y","evidence_ref":"fact-2"}]; query["envelope"]["content_hash"]=content_hash(query["envelope"],query["payload"])
+    package=self.b.build_pending_precheck(query,run_id="run150",qa_id="QA150",created_at=TIME,**candidate(self.sql))
+    self.assertEqual(package["payload"]["evidence_refs"],["penalty:penalty","observable:observable","fact-1","fact-2","filter-1"])
  def test_invalid_third_attempt_becomes_manual_block(self):
     old=self.build(); second=self.repair(old,precheck(old))
     third=self.b.handle_precheck_feedback(self.s,precheck(second),second,run_id="run150",qa_id="QA150",attempt_no=3,created_at=TIME,**candidate("SELECT F9 FROM T1","-人工"))
     self.assertEqual(third["envelope"]["status"],"blocked_manual")
+ def test_repair_requires_material_candidate_difference(self):
+    old=self.build()
+    with self.assertRaisesRegex(ContractError,"SEMANTIC_REPAIR_INCOMPLETE"):self.repair(old,precheck(old),**candidate(self.sql))
  def review(self,old,kind="deepseek_review_result",producer=None,parents=None):
     who="170" if kind=="deepseek_review_result" else "180";p={"reviewed_package_ref":artifact_ref(old["envelope"]),"semantic_review_report":{"reviewer_id":who,"decision":"no","error_types":["QUESTION_SQL_ERROR","BUSINESS_EVENT_ERROR","QUESTION_FACT_OMISSION"],"error_details":[{}],"evidence_refs":[],"route_suggestion":"150"}};return wrap(kind,"review"+who,p,producer=producer or who,attempt=old["envelope"]["attempt_no"],parents=[artifact_ref(self.r110["envelope"])] if parents is None else parents)
+ def reviewed(self,old): return wrap("reviewed_question_sql","reviewed"+old["envelope"]["artifact_id"],copy.deepcopy(old["payload"]),producer="210",attempt=old["envelope"]["attempt_no"])
  def test_170_180_full_route_matrix(self):
     old=self.build()
     for kind in ("deepseek_review_result","glm_review_result"):
@@ -82,15 +90,16 @@ class Tests(unittest.TestCase):
  def regression(self,old, payload=None, parents=None):
     p=payload or {"schema_version":"v5.sql-regression-failed-feedback/v1","mode":"event_data","input_data_refs":[],"input_orm_ref":None,"sandbox_snapshot_id":"copy","failure_details":{"error_code":"SQL_EXECUTION_ERROR","error_stage":"sql_execution","error_location":"sql","expected_values":[],"actual_values":[],"sql_error_detail":{"sql_text":self.sql,"error_code":"SQLITE","error_message":"bad"},"regression_metrics":{}},"route_target":"110","retry_count":1};return wrap("sql_regression_failed_feedback","reg150",p,producer="260",mode="event_data",parents=[artifact_ref(self.r010["envelope"]),artifact_ref(self.r110["envelope"])] if parents is None else parents)
  def test_260_full_payload_and_route_matrix(self):
-    old=self.build();self.assertEqual(self.b.handle_routed_feedback(self.s,self.regression(old),old,route_context=self.ctx260,run_id="run150",qa_id="QA150",attempt_no=2,created_at=TIME,**candidate(self.sql,"-260"))["envelope"]["attempt_no"],2)
+    old=self.build(); reviewed=self.reviewed(old);self.assertEqual(self.b.handle_routed_feedback(self.s,self.regression(old),reviewed,route_context=self.ctx260,run_id="run150",qa_id="QA150",attempt_no=2,created_at=TIME,**candidate(self.sql,"-260"))["envelope"]["attempt_no"],2)
     p=self.regression(old)["payload"];p.pop("retry_count")
-    with self.assertRaisesRegex(ContractError,"REGRESSION_SCHEMA_REJECTED"):self.b.handle_routed_feedback(self.s,self.regression(old,p),old,route_context=self.ctx260,run_id="run150",qa_id="QA150",attempt_no=2,created_at=TIME,**candidate(self.sql))
+    with self.assertRaisesRegex(ContractError,"REGRESSION_SCHEMA_REJECTED"):self.b.handle_routed_feedback(self.s,self.regression(old,p),reviewed,route_context=self.ctx260,run_id="run150",qa_id="QA150",attempt_no=2,created_at=TIME,**candidate(self.sql))
     p=self.regression(old)["payload"];p["failure_details"]["sql_error_detail"]={"sql_text":self.sql}
-    with self.assertRaisesRegex(ContractError,"REGRESSION_SCHEMA_REJECTED"):self.b.handle_routed_feedback(self.s,self.regression(old,p),old,route_context=self.ctx260,run_id="run150",qa_id="QA150",attempt_no=2,created_at=TIME,**candidate(self.sql))
-    with self.assertRaisesRegex(ContractError,"TRUSTED_ROUTE_CONTEXT_REJECTED"):self.b.handle_routed_feedback(self.s,self.regression(old,parents=[artifact_ref(self.r110["envelope"])]),old,route_context=self.ctx260,run_id="run150",qa_id="QA150",attempt_no=2,created_at=TIME,**candidate(self.sql))
+    with self.assertRaisesRegex(ContractError,"REGRESSION_SCHEMA_REJECTED"):self.b.handle_routed_feedback(self.s,self.regression(old,p),reviewed,route_context=self.ctx260,run_id="run150",qa_id="QA150",attempt_no=2,created_at=TIME,**candidate(self.sql))
+    with self.assertRaisesRegex(ContractError,"TRUSTED_ROUTE_CONTEXT_REJECTED"):self.b.handle_routed_feedback(self.s,self.regression(old,parents=[artifact_ref(self.r110["envelope"])]),reviewed,route_context=self.ctx260,run_id="run150",qa_id="QA150",attempt_no=2,created_at=TIME,**candidate(self.sql))
+    with self.assertRaisesRegex(ContractError,"REGRESSION_PREVIOUS_REVIEW_REQUIRED"):self.b.handle_routed_feedback(self.s,self.regression(old),old,route_context=self.ctx260,run_id="run150",qa_id="QA150",attempt_no=2,created_at=TIME,**candidate(self.sql))
  def test_260_error_difference_matrix(self):
-    old=self.build()
+    old=self.build(); reviewed=self.reviewed(old)
     for error in ("DATA_VALUE_ERROR","ORM_PLAN_ERROR","FOUNDATION_REQUIRED","MANUAL_REVIEW_REQUIRED"):
       route=self.regression(old); route["payload"]["failure_details"]["error_code"]=error; route["envelope"]["content_hash"]=content_hash(route["envelope"],route["payload"])
-      with self.assertRaisesRegex(ContractError,"REGRESSION_ROUTE_REJECTED"):self.b.handle_routed_feedback(self.s,route,old,route_context=self.ctx260,run_id="run150",qa_id="QA150",attempt_no=2,created_at=TIME,**candidate(self.sql,error))
+      with self.assertRaisesRegex(ContractError,"REGRESSION_ROUTE_REJECTED"):self.b.handle_routed_feedback(self.s,route,reviewed,route_context=self.ctx260,run_id="run150",qa_id="QA150",attempt_no=2,created_at=TIME,**candidate(self.sql,error))
 if __name__=="__main__":unittest.main()
