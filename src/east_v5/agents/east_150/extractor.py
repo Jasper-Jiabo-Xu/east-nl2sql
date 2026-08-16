@@ -140,15 +140,19 @@ class TrustedRouteCapability:
             _fail("TRUSTED_ROUTE_CAPABILITY_INVALID")
         if lineage != (record_envelope["run_id"], record_envelope["qa_id"], record_envelope["trace_id"]):
             _fail("TRUSTED_ROUTE_CAPABILITY_INVALID")
+        if feedback_ref not in record_envelope["parent_artifact_refs"]:
+            _fail("TRUSTED_ROUTE_CAPABILITY_INVALID")
         return cls(_ROUTE_CAPABILITY_TOKEN, registry, "regression_feedback", (record_ref, feedback_ref), lineage)
 
     def authorize(self, feedback_envelope: dict[str, Any]) -> None:
         if self._token is not _ROUTE_CAPABILITY_TOKEN:
             _fail("TRUSTED_ROUTE_CAPABILITY_INVALID")
         lineage = (feedback_envelope["run_id"], feedback_envelope["qa_id"], feedback_envelope["trace_id"])
-        refs = feedback_envelope["parent_artifact_refs"]
         if self.capability_kind == "review_feedback":
-            valid = all(reference in refs for reference in self.refs)
+            # A 110 capability is minted for the original immutable review
+            # package, rather than for an arbitrary later package carrying a
+            # convenient parent reference.
+            valid = artifact_ref(feedback_envelope) in self.refs
         else:
             valid = artifact_ref(feedback_envelope) == self.refs[1]
         if lineage != self.lineage or not valid:
@@ -399,6 +403,8 @@ class PendingPrecheckBuilder:
             self.validate_pending_precheck(previous)
             retry_base = previous
         previous_envelope = retry_base["envelope"]
+        if artifact_ref(query_spec["envelope"]) != retry_base["payload"]["query_spec_ref"]:
+            _fail("QUERY_SPEC_LINEAGE_REJECTED")
         if attempt_no not in (2, 3):
             _fail("ATTEMPT_OUT_OF_RANGE")
         if attempt_no != previous_envelope["attempt_no"] + 1:
@@ -411,10 +417,14 @@ class PendingPrecheckBuilder:
         parents = [artifact_ref(query_spec["envelope"]), artifact_ref(feedback["envelope"]), artifact_ref(previous_envelope)]
         if previous is not retry_base:
             parents.append(artifact_ref(previous["envelope"]))
+        if route_capability is not None and route_capability.capability_kind == "regression_feedback":
+            # Preserve the consumer-side 110 decision as a direct input to
+            # the repaired 150 artifact: 260 feedback -> 110 record -> 150.
+            parents.append(route_capability.refs[0])
         kwargs = dict(run_id=run_id, qa_id=qa_id, sql_gold=sql_gold, version=previous_envelope["version"] + 1, attempt_no=attempt_no, supersedes_ref=artifact_ref(previous_envelope), parents=parents, created_at=created_at, artifact_id=previous_envelope["artifact_id"], **candidate)
         try:
             repaired = self.build_pending_precheck(query_spec, **kwargs)
-            prior_payload = previous["payload"]
+            prior_payload = retry_base["payload"]
             required_fields = self._required_change_map(feedback)
             if any(repaired["payload"].get(field) == prior_payload.get(field) for field in required_fields):
                 _fail("REQUIRED_CHANGE_MISSING")

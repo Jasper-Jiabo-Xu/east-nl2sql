@@ -27,8 +27,8 @@
     {"id": "east_observable_mapping_candidate", "producer": "130", "consumers": ["130"], "description": "130候选层：处罚事实到本次000资产记录的待验证映射"},
     {"id": "east_observable_fact_package", "producer": "130", "consumers": ["140", "150", "170", "180"], "description": "EAST可观察事实包"},
     {"id": "query_specification_package", "producer": "140", "consumers": ["150", "170", "180", "220", "260"], "description": "查询规格包：140消费120和130产出，供150/170/180/220/260消费", "payload_schema": "query-specification-v1", "package_schema": "contracts/packages/query-specification-package.schema.json"},
-    {"id": "deepseek_review_result", "producer": "170", "consumers": ["110", "130", "140"], "description": "170审核结果包"},
-    {"id": "glm_review_result", "producer": "180", "consumers": ["110", "130", "140"], "description": "180审核结果包"},
+    {"id": "deepseek_review_result", "producer": "170", "consumers": ["110", "130", "140", "150"], "description": "170审核结果包"},
+    {"id": "glm_review_result", "producer": "180", "consumers": ["110", "130", "140", "150"], "description": "180审核结果包"},
     {"id": "question_sql_pending_precheck", "producer": "150", "consumers": ["160"], "description": "待预检候选SQL包：150消费140产出，供160预检消费", "payload_schema": "question-sql-pending-precheck-v1", "package_schema": "contracts/packages/question-sql-pending-precheck-package.schema.json"},
     {"id": "precheck_failed_feedback", "producer": "160", "consumers": ["150"], "description": "预检失败反馈包：160产出，供150重试/升级消费", "payload_schema": "v5.precheck-failed-feedback/v1", "package_schema": "contracts/packages/precheck-failed-feedback-package.schema.json"}
   ]

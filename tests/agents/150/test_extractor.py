@@ -68,9 +68,6 @@ class Tests(unittest.TestCase):
         self.route180 = self.review_package("glm_review_result", "180", "route180")
         self.registry.register(self.route170["envelope"], self.route170["payload"])
         self.registry.register(self.route180["envelope"], self.route180["payload"])
-        self.cap170 = TrustedRouteCapability.from_registry(self.registry, review_refs=[artifact_ref(self.route170["envelope"])])
-        self.cap180 = TrustedRouteCapability.from_registry(self.registry, review_refs=[artifact_ref(self.route180["envelope"])])
-        self.cap_dual = TrustedRouteCapability.from_registry(self.registry, review_refs=[artifact_ref(self.route170["envelope"]), artifact_ref(self.route180["envelope"])])
 
     def build(self, **kw):
         return self.b.build_pending_precheck(self.s, run_id="run150", qa_id="QA150", created_at=TIME, **{**candidate(self.sql), **kw})
@@ -83,9 +80,13 @@ class Tests(unittest.TestCase):
                    "semantic_review_report": {"reviewer_id": who, "decision": "no", "error_types": list(error_types), "error_details": [{}], "evidence_refs": [], "route_suggestion": "150"}}
         return wrap(kind, identity, payload, producer=who, parents=parents)
 
-    def review(self, old, kind="deepseek_review_result", error_types=("QUESTION_SQL_ERROR",), parents=None):
+    def review(self, old, kind="deepseek_review_result", error_types=("QUESTION_SQL_ERROR",), parents=None, identity=None):
         who, route = ("170", self.route170) if kind == "deepseek_review_result" else ("180", self.route180)
-        return self.review_package(kind, who, "feedback" + who, reviewed_ref=artifact_ref(old["envelope"]), error_types=error_types, parents=[artifact_ref(route["envelope"])] if parents is None else parents)
+        return self.review_package(kind, who, identity or "feedback" + who, reviewed_ref=artifact_ref(old["envelope"]), error_types=error_types, parents=[artifact_ref(route["envelope"])] if parents is None else parents)
+
+    def review_capability(self, feedback):
+        self.registry.register(feedback["envelope"], feedback["payload"])
+        return TrustedRouteCapability.from_registry(self.registry, review_refs=[artifact_ref(feedback["envelope"])])
 
     def reviewed(self, old):
         self.registry.register(old["envelope"], old["payload"])
@@ -110,7 +111,7 @@ class Tests(unittest.TestCase):
     def regression_capability(self, feedback):
         self.registry.register(feedback["envelope"], feedback["payload"])
         payload = {"schema_version": "v5.sql-regression-route-record/v1", "source_feedback_ref": artifact_ref(feedback["envelope"]), "source_feedback_type": "sql_regression_failed_feedback", "route_path": ["260", "210", "010", "110"], "route_target": "150", "route_reason": "SQL_EXECUTION_ERROR"}
-        record = wrap("sql_regression_route_record", "route110", payload, producer="110", mode="event_data")
+        record = wrap("sql_regression_route_record", "route110", payload, producer="110", mode="event_data", parents=[artifact_ref(feedback["envelope"])])
         self.registry.register(record["envelope"], record["payload"])
         return TrustedRouteCapability.from_registry(self.registry, route_record_ref=artifact_ref(record["envelope"]))
 
@@ -139,6 +140,12 @@ class Tests(unittest.TestCase):
         bad = candidate(self.sql); bad["specification_mapping"][0]["sql_fragment"] = "NOT_IN_SQL"
         with self.assertRaisesRegex(ContractError, "SPECIFICATION_MAPPING_FRAGMENT_INVALID"):
             self.build(**bad)
+
+    def test_catalog_registers_150_as_both_review_consumers(self):
+        catalog = json.loads((ROOT / "config/v5-package-catalog.json").read_text(encoding="utf-8"))
+        packages = {package["id"]: package for package in catalog["packages"]}
+        self.assertIn("150", packages["deepseek_review_result"]["consumers"])
+        self.assertIn("150", packages["glm_review_result"]["consumers"])
 
     def test_sql_positive_join_aggregate_subquery_cte_topn_matrix(self):
         for sql in ("SELECT t.F1 FROM T1 AS t JOIN T2 AS u ON t.F2=u.F2", "SELECT F1, COUNT(F2) FROM T1 GROUP BY F1", "SELECT F1 FROM T1 WHERE F1 IN (SELECT F1 FROM T1)", "WITH x AS (SELECT T1.F1 AS X1 FROM T1) SELECT x.X1 FROM x", "SELECT F1 FROM T1 ORDER BY F1 LIMIT 5"):
@@ -185,23 +192,30 @@ class Tests(unittest.TestCase):
 
     def test_review_required_change_map(self):
         old = self.build()
-        for kind, capability in (("deepseek_review_result", self.cap170), ("glm_review_result", self.cap180)):
-            sql = self.b.handle_routed_feedback(self.s, self.review(old, kind, ("QUESTION_SQL_ERROR",)), old, route_capability=capability, run_id="run150", qa_id="QA150", attempt_no=2, created_at=TIME, **candidate("SELECT T1.F2 FROM T1"))
+        for kind in ("deepseek_review_result", "glm_review_result"):
+            review_sql = self.review(old, kind, ("QUESTION_SQL_ERROR",), identity=f"{kind}-sql")
+            sql = self.b.handle_routed_feedback(self.s, review_sql, old, route_capability=self.review_capability(review_sql), run_id="run150", qa_id="QA150", attempt_no=2, created_at=TIME, **candidate("SELECT T1.F2 FROM T1"))
             self.assertNotEqual(sql["payload"]["sql_gold"], old["payload"]["sql_gold"])
             events = candidate(self.sql); events["business_event_candidates"] = [{"event_name": "新事件", "objective": "风险", "objects": ["机构"], "state_changes": []}]
-            result = self.b.handle_routed_feedback(self.s, self.review(old, kind, ("BUSINESS_EVENT_ERROR",)), old, route_capability=capability, run_id="run150", qa_id="QA150", attempt_no=2, created_at=TIME, **events)
+            review_events = self.review(old, kind, ("BUSINESS_EVENT_ERROR",), identity=f"{kind}-event")
+            result = self.b.handle_routed_feedback(self.s, review_events, old, route_capability=self.review_capability(review_events), run_id="run150", qa_id="QA150", attempt_no=2, created_at=TIME, **events)
             self.assertEqual(result["payload"]["sql_gold"], old["payload"]["sql_gold"])
         facts = candidate(self.sql, "-事实", evidence_refs=[*old["payload"]["evidence_refs"], "fact-correction-1"])
-        result = self.b.handle_routed_feedback(self.s, self.review(old, error_types=("QUESTION_FACT_OMISSION",)), old, route_capability=self.cap170, run_id="run150", qa_id="QA150", attempt_no=2, created_at=TIME, **facts)
+        review_facts = self.review(old, error_types=("QUESTION_FACT_OMISSION",), identity="feedback170-facts")
+        result = self.b.handle_routed_feedback(self.s, review_facts, old, route_capability=self.review_capability(review_facts), run_id="run150", qa_id="QA150", attempt_no=2, created_at=TIME, **facts)
         self.assertNotEqual(result["payload"]["evidence_refs"], old["payload"]["evidence_refs"])
 
-    def test_route_capability_rejects_arbitrary_resolver_and_wrong_parent(self):
+    def test_route_capability_rejects_arbitrary_resolver_and_review_substitution(self):
         old = self.build()
         class Resolver: pass
         with self.assertRaisesRegex(ContractError, "TRUSTED_ROUTE_CAPABILITY_INVALID"):
             TrustedRouteCapability.from_registry(Resolver(), review_refs=[artifact_ref(self.route170["envelope"])])
-        with self.assertRaisesRegex(ContractError, "TRUSTED_ROUTE_CAPABILITY_REJECTED"):
-            self.b.handle_routed_feedback(self.s, self.review(old, parents=[]), old, route_capability=self.cap170, run_id="run150", qa_id="QA150", attempt_no=2, created_at=TIME, **candidate("SELECT T1.F2 FROM T1"))
+        for kind, who in (("deepseek_review_result", "170"), ("glm_review_result", "180")):
+            original = self.review(old, kind, identity=f"original-{who}")
+            capability = self.review_capability(original)
+            substituted = self.review_package(kind, who, f"substituted-{who}", reviewed_ref=artifact_ref(old["envelope"]), parents=[artifact_ref(self.route170["envelope"] if who == "170" else self.route180["envelope"])])
+            with self.subTest(kind=kind), self.assertRaisesRegex(ContractError, "TRUSTED_ROUTE_CAPABILITY_REJECTED"):
+                self.b.handle_routed_feedback(self.s, substituted, old, route_capability=capability, run_id="run150", qa_id="QA150", attempt_no=2, created_at=TIME, **candidate("SELECT T1.F2 FROM T1"))
 
     def test_260_requires_frozen_220_dual_review_lineage(self):
         old, reviewed = self.build(), None
@@ -211,6 +225,7 @@ class Tests(unittest.TestCase):
         self.assertEqual(result["envelope"]["attempt_no"], 2)
         self.assertEqual(result["envelope"]["artifact_id"], old["envelope"]["artifact_id"])
         self.assertEqual(result["envelope"]["supersedes_ref"], artifact_ref(old["envelope"]))
+        self.assertIn(capability.refs[0], result["envelope"]["parent_artifact_refs"])
         forged = copy.deepcopy(reviewed); forged["payload"].pop("glm_review_ref"); forged["envelope"]["content_hash"] = content_hash(forged["envelope"], forged["payload"])
         with self.assertRaisesRegex(ContractError, "REVIEWED_PREVIOUS_LINEAGE_REJECTED"):
             self.b.handle_routed_feedback(self.s, feedback, forged, route_capability=capability, run_id="run150", qa_id="QA150", attempt_no=2, created_at=TIME, **candidate("SELECT T1.F2 FROM T1"))
@@ -225,6 +240,19 @@ class Tests(unittest.TestCase):
             self.b.handle_routed_feedback(self.s, forged_feedback, reviewed, route_capability=capability, run_id="run150", qa_id="QA150", attempt_no=2, created_at=TIME, **candidate("SELECT T1.F2 FROM T1"))
         with self.assertRaisesRegex(ContractError, "TRUSTED_ROUTE_CAPABILITY_REJECTED"):
             self.b.handle_routed_feedback(self.s, self.regression(parents=[artifact_ref(self.route170["envelope"])]), reviewed, route_capability=capability, run_id="run150", qa_id="QA150", attempt_no=2, created_at=TIME, **candidate("SELECT T1.F2 FROM T1"))
+
+    def test_260_rejects_query_spec_swap_and_route_record_without_source_parent(self):
+        old, reviewed = self.build(), None
+        reviewed = self.reviewed(old)
+        feedback = self.regression(); capability = self.regression_capability(feedback)
+        swapped = copy.deepcopy(self.s); swapped["envelope"]["artifact_id"] = "qspec-swapped"; swapped["envelope"]["content_hash"] = content_hash(swapped["envelope"], swapped["payload"])
+        with self.assertRaisesRegex(ContractError, "QUERY_SPEC_LINEAGE_REJECTED"):
+            self.b.handle_routed_feedback(swapped, feedback, reviewed, route_capability=capability, run_id="run150", qa_id="QA150", attempt_no=2, created_at=TIME, **candidate("SELECT T1.F2 FROM T1"))
+        record_payload = {"schema_version": "v5.sql-regression-route-record/v1", "source_feedback_ref": artifact_ref(feedback["envelope"]), "source_feedback_type": "sql_regression_failed_feedback", "route_path": ["260", "210", "010", "110"], "route_target": "150", "route_reason": "SQL_EXECUTION_ERROR"}
+        parentless = wrap("sql_regression_route_record", "route110-parentless", record_payload, producer="110", mode="event_data")
+        self.registry.register(parentless["envelope"], parentless["payload"])
+        with self.assertRaisesRegex(ContractError, "TRUSTED_ROUTE_CAPABILITY_INVALID"):
+            TrustedRouteCapability.from_registry(self.registry, route_record_ref=artifact_ref(parentless["envelope"]))
 
 
 if __name__ == "__main__":
