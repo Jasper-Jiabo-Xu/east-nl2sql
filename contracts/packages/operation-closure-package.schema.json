@@ -1,0 +1,48 @@
+{
+  "$id": "https://east.example/contracts/packages/operation-closure-package/v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Operation closure package (Agent 230 event-only output)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["envelope", "payload"],
+  "properties": {
+    "envelope": {
+      "allOf": [
+        {"$ref": "https://east.example/contracts/common-envelope/v1"},
+        {"type": "object", "properties": {"artifact_type": {"const": "operation_closure"}, "producer_id": {"const": "230"}, "mode": {"const": "event_data"}}}
+      ]
+    },
+    "payload": {"$ref": "https://east.example/contracts/packages/operation-closure-package/v1#/$defs/payload"}
+  },
+  "$defs": {
+    "artifact_ref": {"type": "object", "additionalProperties": false, "required": ["artifact_id", "version", "content_hash"], "properties": {"artifact_id": {"type": "string"}, "version": {"type": "integer", "minimum": 1}, "content_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}},
+    "object_ref": {"type": "object", "additionalProperties": false, "required": ["table_id", "field_scope"], "properties": {"table_id": {"type": "string", "minLength": 1}, "field_scope": {"type": "array", "items": {"type": "string"}}}},
+    "boundary": {"type": "object", "additionalProperties": false, "required": ["transaction_id", "phase"], "properties": {"transaction_id": {"type": "string", "minLength": 1}, "phase": {"enum": ["begin", "inside", "commit"]}}},
+    "operation": {
+      "type": "object", "additionalProperties": false,
+      "required": ["operation_step_id", "sequence_no", "operation_type", "object_refs", "preconditions", "postconditions", "dependencies", "transaction_boundary", "data_placeholders", "object_detail_state_rule_refs"],
+      "properties": {
+        "operation_step_id": {"type": "string", "pattern": "^op-[0-9]{3}$"},
+        "sequence_no": {"type": "integer", "minimum": 1},
+        "operation_type": {"enum": ["READ", "CHECK", "INSERT", "UPDATE"]},
+        "object_refs": {"type": "array", "minItems": 1, "items": {"$ref": "https://east.example/contracts/packages/operation-closure-package/v1#/$defs/object_ref"}},
+        "preconditions": {"type": "array", "items": {"type": "string"}},
+        "postconditions": {"type": "array", "items": {"type": "string"}},
+        "dependencies": {"type": "array", "items": {"type": "string", "pattern": "^op-[0-9]{3}$"}},
+        "transaction_boundary": {"$ref": "https://east.example/contracts/packages/operation-closure-package/v1#/$defs/boundary"},
+        "data_placeholders": {"type": "array", "items": {"type": "string", "pattern": "^placeholder:[A-Za-z_][A-Za-z0-9_]*\\.[A-Za-z_][A-Za-z0-9_]*$"}},
+        "object_detail_state_rule_refs": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "payload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema_version", "mode", "operations", "consumers"],
+      "properties": {
+        "schema_version": {"const": "v5.operation-closure/v1"},
+        "mode": {"const": "event"},
+        "operations": {"type": "array", "minItems": 1, "items": {"$ref": "https://east.example/contracts/packages/operation-closure-package/v1#/$defs/operation"}},
+        "consumers": {"const": ["241", "251"]}
+      }
+    }
+  }
+}
