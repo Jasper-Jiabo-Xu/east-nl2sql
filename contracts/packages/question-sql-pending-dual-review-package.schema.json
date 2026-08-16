@@ -1,0 +1,126 @@
+{
+  "$id": "https://east.example/contracts/packages/question-sql-pending-dual-review-package/v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "QUESTION-SQL-PENDING-DUAL-REVIEW",
+  "description": "160 产生、170/180 消费的冻结待双审核 question-SQL payload。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "candidate_ref",
+    "candidate_content",
+    "query_specification_package",
+    "penalty_fact_package",
+    "observable_fact_package",
+    "constraint_evidence_summary",
+    "precheck_report",
+    "review_round",
+    "package_hash"
+  ],
+  "properties": {
+    "candidate_ref": { "$ref": "#/$defs/ref" },
+    "candidate_content": { "$ref": "#/$defs/candidate_content" },
+    "query_specification_package": { "$ref": "#/$defs/ref" },
+    "penalty_fact_package": { "$ref": "#/$defs/ref" },
+    "observable_fact_package": { "$ref": "#/$defs/ref" },
+    "constraint_evidence_summary": { "$ref": "#/$defs/constraint_evidence_summary" },
+    "precheck_report": { "$ref": "#/$defs/precheck_report" },
+    "review_round": { "type": "integer", "minimum": 1, "maximum": 3 },
+    "package_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+  },
+  "$defs": {
+    "ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifact_id", "version", "content_hash"],
+      "properties": {
+        "artifact_id": { "type": "string", "minLength": 1 },
+        "version": { "type": "integer", "minimum": 1 },
+        "content_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      }
+    },
+    "candidate_content": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["clear_question", "sql_gold", "sql_explanation", "business_event_candidates", "specification_mapping"],
+      "properties": {
+        "clear_question": { "type": "string", "minLength": 1 },
+        "sql_gold": { "type": "string", "minLength": 1 },
+        "sql_explanation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["select", "from_join", "where", "aggregation", "sort", "business_meaning"],
+          "properties": {
+            "select": { "type": "string", "minLength": 1 },
+            "from_join": { "type": "string", "minLength": 1 },
+            "where": { "type": "string" },
+            "aggregation": { "type": "string" },
+            "sort": { "type": "string" },
+            "business_meaning": { "type": "string", "minLength": 1 }
+          }
+        },
+        "business_event_candidates": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["event_name", "objective", "objects", "state_changes"],
+            "properties": {
+              "event_name": { "type": "string", "minLength": 1 },
+              "objective": { "type": "string", "minLength": 1 },
+              "objects": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
+              "state_changes": { "type": "array", "items": { "type": "string" } }
+            }
+          }
+        },
+        "specification_mapping": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["spec_item", "question_fragment", "sql_fragment"],
+            "properties": {
+              "spec_item": { "type": "string", "minLength": 1 },
+              "question_fragment": { "type": "string", "minLength": 1 },
+              "sql_fragment": { "type": "string", "minLength": 1 }
+            }
+          }
+        }
+      }
+    },
+    "constraint_evidence_summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tables", "fields", "data_elements", "relationships", "source_refs"],
+      "properties": {
+        "tables": { "type": "array", "items": { "type": "string" } },
+        "fields": { "type": "array", "items": { "type": "string" } },
+        "data_elements": { "type": "array", "items": { "type": "string" } },
+        "relationships": { "type": "array", "items": { "type": "string" } },
+        "source_refs": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+      }
+    },
+    "precheck_report": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["decision", "rules", "checked_at", "report_hash"],
+      "properties": {
+        "decision": { "const": "pass" },
+        "rules": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/rule_result" } },
+        "checked_at": { "type": "string", "format": "date-time" },
+        "report_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      }
+    },
+    "rule_result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rule_id", "status", "detail"],
+      "properties": {
+        "rule_id": { "type": "string", "minLength": 1 },
+        "status": { "const": "pass" },
+        "detail": { "type": "string" }
+      }
+    }
+  }
+}
