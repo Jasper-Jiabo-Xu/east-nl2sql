@@ -30,6 +30,7 @@
     {"id": "deepseek_review_result", "producer": "170", "consumers": ["110", "130", "140", "150"], "description": "170审核结果包"},
     {"id": "glm_review_result", "producer": "180", "consumers": ["110", "130", "140", "150"], "description": "180审核结果包"},
     {"id": "question_sql_pending_precheck", "producer": "150", "consumers": ["160"], "description": "待预检候选SQL包：150消费140产出，供160预检消费", "payload_schema": "question-sql-pending-precheck-v1", "package_schema": "contracts/packages/question-sql-pending-precheck-package.schema.json"},
-    {"id": "precheck_failed_feedback", "producer": "160", "consumers": ["150"], "description": "预检失败反馈包：160产出，供150重试/升级消费", "payload_schema": "v5.precheck-failed-feedback/v1", "package_schema": "contracts/packages/precheck-failed-feedback-package.schema.json"}
+    {"id": "precheck_failed_feedback", "producer": "160", "consumers": ["150"], "description": "预检失败反馈包：160产出，供150重试/升级消费", "payload_schema": "v5.precheck-failed-feedback/v1", "package_schema": "contracts/packages/precheck-failed-feedback-package.schema.json"},
+    {"id": "question_sql_pending_dual_review", "producer": "160", "consumers": ["170", "180"], "description": "待双审核question-SQL结果包：160产出，供170/180双审消费", "payload_schema": "question-sql-pending-dual-review-v1", "package_schema": "contracts/packages/question-sql-pending-dual-review-package.schema.json"}
   ]
 }
