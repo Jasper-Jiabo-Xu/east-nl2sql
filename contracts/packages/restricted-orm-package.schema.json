@@ -6,18 +6,23 @@
   "additionalProperties": false,
   "required": ["envelope", "payload"],
   "properties": {
-    "envelope": {"type": "object"},
+    "envelope": {
+      "allOf": [
+        {"$ref": "https://east.example/contracts/common-envelope/v1"},
+        {"type": "object", "properties": {"artifact_type": {"const": "restricted_orm"}, "producer_id": {"const": "251"}, "mode": {"const": "event_data"}}}
+      ]
+    },
     "payload": {
       "type": "object",
       "additionalProperties": false,
       "required": ["schema_version", "structure_closure_ref", "operation_closure_ref", "orm_source_code", "execution_contract", "operations", "orm_runtime_version", "code_hash"],
       "properties": {
         "schema_version": {"const": "v5.restricted-orm/v2"},
-        "structure_closure_ref": {"$ref": "#/$defs/artifact_ref"},
-        "operation_closure_ref": {"$ref": "#/$defs/artifact_ref"},
+        "structure_closure_ref": {"$ref": "https://east.example/contracts/packages/restricted-orm-package/v2#/$defs/artifact_ref"},
+        "operation_closure_ref": {"$ref": "https://east.example/contracts/packages/restricted-orm-package/v2#/$defs/artifact_ref"},
         "orm_source_code": {"type": "string", "minLength": 1},
-        "execution_contract": {"$ref": "#/$defs/execution_contract"},
-        "operations": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/operation"}},
+        "execution_contract": {"$ref": "https://east.example/contracts/packages/restricted-orm-package/v2#/$defs/execution_contract"},
+        "operations": {"type": "array", "minItems": 1, "items": {"$ref": "https://east.example/contracts/packages/restricted-orm-package/v2#/$defs/operation"}},
         "orm_runtime_version": {"const": "v5.restricted-orm-runtime/v1"},
         "code_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
       }
@@ -41,22 +46,23 @@
     },
     "execution_contract": {
       "type": "object", "additionalProperties": false,
-      "required": ["entrypoint", "binding_slots", "empty_run_contract", "allowed_api", "rollback_policy"],
+      "required": ["entrypoint", "binding_slots", "empty_run_contract", "transaction_id", "allowed_api", "rollback_policy"],
       "properties": {
         "entrypoint": {"type": "object", "additionalProperties": false, "required": ["module", "callable", "signature", "return_shape"], "properties": {"module": {"const": "generated_orm"}, "callable": {"const": "apply"}, "signature": {"const": "apply(context, params)"}, "return_shape": {"const": "execution_report/v1"}}},
-        "binding_slots": {"type": "array", "items": {"$ref": "#/$defs/slot"}},
+        "binding_slots": {"type": "array", "items": {"$ref": "https://east.example/contracts/packages/restricted-orm-package/v2#/$defs/slot"}},
         "empty_run_contract": {"type": "object", "additionalProperties": false, "required": ["input", "write_count", "database_side_effect", "return_shape"], "properties": {"input": {"const": {}}, "write_count": {"const": 0}, "database_side_effect": {"const": false}, "return_shape": {"const": "execution_report/v1"}}},
+        "transaction_id": {"type": "string", "minLength": 1},
         "allowed_api": {"type": "array", "const": ["context.transaction", "transaction.read", "transaction.check", "transaction.insert", "transaction.update", "transaction.rollback"]},
         "rollback_policy": {"const": "transaction_context_rolls_back_on_exception; no transaction is opened for empty params"}
       }
     },
     "operation": {
       "type": "object", "additionalProperties": false,
-      "required": ["operation_id", "source_operation_step_id", "kind", "table_id", "binding_slot_ids", "where_ref", "depends_on", "preconditions", "postconditions", "transaction_id"],
+      "required": ["operation_id", "source_operation_step_id", "kind", "table_id", "data_placeholder_ref", "where_ref", "depends_on", "preconditions", "postconditions", "transaction_id"],
       "properties": {
         "operation_id": {"type": "string", "pattern": "^orm-op-[0-9]{3}$"}, "source_operation_step_id": {"type": "string", "pattern": "^op-[0-9]{3}$"},
         "kind": {"enum": ["READ", "CHECK", "INSERT", "UPDATE"]}, "table_id": {"type": "string", "minLength": 1},
-        "binding_slot_ids": {"type": "array", "items": {"type": "string", "pattern": "^slot_[a-z0-9_]+$"}}, "where_ref": {"type": ["string", "null"]},
+        "data_placeholder_ref": {"type": "array", "items": {"type": "string", "pattern": "^placeholder:[A-Za-z_][A-Za-z0-9_]*\\.[A-Za-z_][A-Za-z0-9_]*$"}}, "where_ref": {"type": ["string", "null"]},
         "depends_on": {"type": "array", "items": {"type": "string", "pattern": "^orm-op-[0-9]{3}$"}}, "preconditions": {"type": "array", "items": {"type": "string"}}, "postconditions": {"type": "array", "items": {"type": "string"}}, "transaction_id": {"type": "string", "minLength": 1}
       }
     }

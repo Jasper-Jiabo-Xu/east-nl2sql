@@ -11,7 +11,8 @@ from typing import Any
 from jsonschema import Draft202012Validator, RefResolver, ValidationError
 
 from east_v5.artifacts import artifact_ref, content_hash, validate_envelope
-from east_v5.governance import ContractError, load_json
+from east_v5.artifacts.schema import validate_common_envelope_schema
+from east_v5.governance import ContractError, canonical_bytes, load_json
 
 
 TRANSPORT_KEYS = {"envelope", "payload"}
@@ -21,6 +22,7 @@ PAYLOAD_KEYS = {"schema_version", "structure_closure_ref", "operation_closure_re
 OP_TYPES = {"READ", "CHECK", "INSERT", "UPDATE"}
 WRITE_TYPES = {"INSERT", "UPDATE"}
 SAFE_IDENT = re.compile(r"[^a-z0-9_]+")
+FEEDBACK_KEYS = {"envelope", "payload"}
 
 
 def _fail(code: str) -> None:
@@ -35,6 +37,13 @@ class RestrictedOrmGenerator:
 
     def _validator(self, name: str) -> Draft202012Validator:
         schema = load_json(self.repo_root / "contracts" / "packages" / name)
+        def absolutize(value: Any) -> Any:
+            if isinstance(value, dict):
+                return {key: (schema["$id"] + item if key == "$ref" and isinstance(item, str) and item.startswith("#/$defs/") else absolutize(item)) for key, item in value.items()}
+            if isinstance(value, list):
+                return [absolutize(item) for item in value]
+            return value
+        schema = absolutize(schema)
         common = load_json(self.repo_root / "contracts" / "common" / "common-envelope.schema.json")
         runtime = load_json(self.repo_root / "contracts" / "v5-runtime-packages.schema.json")
         return Draft202012Validator(schema, resolver=RefResolver(schema["$id"], schema, store={schema["$id"]: schema, common["$id"]: common, runtime["$id"]: runtime}))
@@ -114,32 +123,29 @@ class RestrictedOrmGenerator:
         for number, source in enumerate(closure["operations"], 1):
             table = source["object_refs"][0]["table_id"]
             placeholder_refs = self._operation_placeholders(source)
-            slot_ids: list[str] = []
             for placeholder in placeholder_refs:
                 _, location = placeholder.split(":", 1)
                 slot_id = self._slot_id(placeholder)
                 if slot_id in seen_slots:
-                    slot_ids.append(slot_id)
                     continue
                 target, field = location.split(".", 1)
                 slots.append({"slot_id": slot_id, "target_table_id": target, "field_ids": [field], "standard_type": "UNSPECIFIED", "cardinality": "one", "required": source["operation_type"] in WRITE_TYPES, "data_placeholder_ref": placeholder})
                 seen_slots.add(slot_id)
-                slot_ids.append(slot_id)
             operation_id = f"orm-op-{number:03d}"
             source_to_orm[source["operation_step_id"]] = operation_id
-            operations.append({"operation_id": operation_id, "source_operation_step_id": source["operation_step_id"], "kind": source["operation_type"], "table_id": table, "binding_slot_ids": slot_ids, "where_ref": f"operation:{source['operation_step_id']}:object_refs" if source["operation_type"] in {"READ", "UPDATE"} else None, "depends_on": list(source["dependencies"]), "preconditions": list(source["preconditions"]), "postconditions": list(source["postconditions"]), "transaction_id": source["transaction_boundary"]["transaction_id"]})
+            operations.append({"operation_id": operation_id, "source_operation_step_id": source["operation_step_id"], "kind": source["operation_type"], "table_id": table, "data_placeholder_ref": placeholder_refs, "where_ref": f"operation:{source['operation_step_id']}:object_refs" if source["operation_type"] in {"READ", "UPDATE"} else None, "depends_on": list(source["dependencies"]), "preconditions": list(source["preconditions"]), "postconditions": list(source["postconditions"]), "transaction_id": source["transaction_boundary"]["transaction_id"]})
         for operation in operations:
             operation["depends_on"] = [source_to_orm[item] for item in operation["depends_on"]]
         return slots, operations
 
     @staticmethod
     def _render_code(operations: list[dict[str, Any]], slots: list[dict[str, Any]]) -> str:
-        slot_placeholder = {slot["slot_id"]: slot["data_placeholder_ref"].split(".", 1)[1] for slot in slots}
+        placeholder_slot = {slot["data_placeholder_ref"]: slot["slot_id"] for slot in slots}
         lines = ["def apply(context, params):", "    if not params:", "        return {'execution_mode': 'empty', 'executed_operation_ids': [], 'write_count': 0}", "    with context.transaction() as transaction:"]
         writes = 0
         for operation in operations:
             method = operation["kind"].lower()
-            mapping = {slot_placeholder[slot]: slot for slot in operation["binding_slot_ids"]}
+            mapping = {placeholder.split(".", 1)[1]: placeholder_slot[placeholder] for placeholder in operation["data_placeholder_ref"]}
             rendered = ", ".join(f"{field!r}: params[{slot!r}]" for field, slot in mapping.items())
             lines.append(f"        transaction.{method}({operation['table_id']!r}, {{{rendered}}})")
             if operation["kind"] in WRITE_TYPES:
@@ -148,8 +154,15 @@ class RestrictedOrmGenerator:
         lines.append(f"    return {{'execution_mode': 'bound', 'executed_operation_ids': {ids!r}, 'write_count': {writes}}}")
         return "\n".join(lines) + "\n"
 
-    def _execution_contract(self, slots: list[dict[str, Any]]) -> dict[str, Any]:
-        return {"entrypoint": {"module": "generated_orm", "callable": "apply", "signature": "apply(context, params)", "return_shape": "execution_report/v1"}, "binding_slots": slots, "empty_run_contract": {"input": {}, "write_count": 0, "database_side_effect": False, "return_shape": "execution_report/v1"}, "allowed_api": ["context.transaction", "transaction.read", "transaction.check", "transaction.insert", "transaction.update", "transaction.rollback"], "rollback_policy": "transaction_context_rolls_back_on_exception; no transaction is opened for empty params"}
+    def _execution_contract(self, slots: list[dict[str, Any]], operations: list[dict[str, Any]]) -> dict[str, Any]:
+        transaction_ids = {operation["transaction_id"] for operation in operations}
+        if len(transaction_ids) != 1:
+            _fail("TRANSACTION_ID_MISMATCH")
+        return {"entrypoint": {"module": "generated_orm", "callable": "apply", "signature": "apply(context, params)", "return_shape": "execution_report/v1"}, "binding_slots": slots, "empty_run_contract": {"input": {}, "write_count": 0, "database_side_effect": False, "return_shape": "execution_report/v1"}, "transaction_id": next(iter(transaction_ids)), "allowed_api": ["context.transaction", "transaction.read", "transaction.check", "transaction.insert", "transaction.update", "transaction.rollback"], "rollback_policy": "transaction_context_rolls_back_on_exception; no transaction is opened for empty params"}
+
+    @staticmethod
+    def _code_hash(code: str, execution_contract: dict[str, Any], operations: list[dict[str, Any]]) -> str:
+        return hashlib.sha256(canonical_bytes({"orm_source_code": code, "execution_contract": execution_contract, "operations": operations})).hexdigest()
 
     def _wrap(self, payload: dict[str, Any], structure: dict[str, Any], operation: dict[str, Any], *, version: int, attempt_no: int, supersedes_ref: dict[str, Any] | None, status: str) -> dict[str, Any]:
         source = operation["envelope"]
@@ -165,7 +178,8 @@ class RestrictedOrmGenerator:
             _fail("ATTEMPT_OUT_OF_RANGE")
         slots, operations = self._slots_and_operations(closure)
         code = self._render_code(operations, slots)
-        payload = {"schema_version": "v5.restricted-orm/v2", "structure_closure_ref": artifact_ref(structure_closure["envelope"]), "operation_closure_ref": artifact_ref(operation_closure["envelope"]), "orm_source_code": code, "execution_contract": self._execution_contract(slots), "operations": operations, "orm_runtime_version": "v5.restricted-orm-runtime/v1", "code_hash": hashlib.sha256(code.encode("utf-8")).hexdigest()}
+        execution_contract = self._execution_contract(slots, operations)
+        payload = {"schema_version": "v5.restricted-orm/v2", "structure_closure_ref": artifact_ref(structure_closure["envelope"]), "operation_closure_ref": artifact_ref(operation_closure["envelope"]), "orm_source_code": code, "execution_contract": execution_contract, "operations": operations, "orm_runtime_version": "v5.restricted-orm-runtime/v1", "code_hash": self._code_hash(code, execution_contract, operations)}
         package = self._wrap(payload, structure_closure, operation_closure, version=version, attempt_no=attempt_no, supersedes_ref=supersedes_ref, status=status)
         self.validate_restricted_orm(package, structure_closure, operation_closure)
         return package
@@ -190,9 +204,10 @@ class RestrictedOrmGenerator:
             raise ContractError("SCHEMA_VALIDATION_FAILED:RESTRICTED_ORM") from exc
         slots, expected_operations = self._slots_and_operations(closure)
         expected_code = self._render_code(expected_operations, slots)
-        if payload["operations"] != expected_operations or payload["execution_contract"] != self._execution_contract(slots):
+        expected_contract = self._execution_contract(slots, expected_operations)
+        if payload["operations"] != expected_operations or payload["execution_contract"] != expected_contract:
             _fail("OPERATION_OR_SLOT_MISMATCH")
-        if payload["orm_source_code"] != expected_code or payload["code_hash"] != hashlib.sha256(expected_code.encode("utf-8")).hexdigest():
+        if payload["orm_source_code"] != expected_code or payload["code_hash"] != self._code_hash(expected_code, expected_contract, expected_operations):
             _fail("CODE_HASH_OR_API_DRIFT")
         try:
             ast.parse(payload["orm_source_code"], mode="exec")
@@ -201,17 +216,48 @@ class RestrictedOrmGenerator:
         if before != (package, structure_closure, operation_closure):
             _fail("INPUT_MUTATED")
 
+    def _validate_252_feedback(self, feedback: dict[str, Any], previous: dict[str, Any]) -> None:
+        if not isinstance(feedback, dict) or set(feedback) != FEEDBACK_KEYS:
+            _fail("TRANSPORT_PACKAGE_INVALID")
+        envelope, payload = feedback["envelope"], feedback["payload"]
+        validate_common_envelope_schema(self.repo_root, envelope)
+        if envelope["content_hash"] != content_hash(envelope, payload):
+            _fail("CONTENT_HASH_DRIFT")
+        if (envelope["artifact_type"], envelope["producer_id"], envelope["mode"], envelope["status"]) != ("orm_validation_failed_feedback", "252", "event_data", "rejected"):
+            _fail("ORM_VALIDATION_FEEDBACK_ENVELOPE_INVALID")
+        if envelope["run_id"] != previous["envelope"]["run_id"] or envelope["qa_id"] != previous["envelope"]["qa_id"] or envelope["trace_id"] != previous["envelope"]["trace_id"] or envelope["attempt_no"] != previous["envelope"]["attempt_no"]:
+            _fail("ATTEMPT_LINEAGE_MISMATCH")
+        if envelope["parent_artifact_refs"] != [artifact_ref(previous["envelope"])] or envelope["input_hashes"] != [previous["envelope"]["content_hash"]]:
+            _fail("FEEDBACK_LINEAGE_MISMATCH")
+        try:
+            self._validator("orm-validation-failed-feedback-package.schema.json").validate(feedback)
+        except ValidationError as exc:
+            raise ContractError("SCHEMA_VALIDATION_FAILED:ORM_VALIDATION_FEEDBACK") from exc
+        if payload["orm_plan_ref"] != artifact_ref(previous["envelope"]):
+            _fail("FEEDBACK_PACKAGE_REF_MISMATCH")
+
     def apply_252_feedback(self, previous: dict[str, Any], feedback: dict[str, Any], structure_closure: dict[str, Any], operation_closure: dict[str, Any]) -> dict[str, Any]:
         self.validate_restricted_orm(previous, structure_closure, operation_closure)
-        if not isinstance(feedback, dict) or set(feedback) != {"orm_plan_ref", "decision", "validation_types", "failed_items"} or feedback["decision"] != "fail" or not isinstance(feedback["validation_types"], list) or not isinstance(feedback["failed_items"], list) or not feedback["failed_items"]:
-            _fail("ORM_VALIDATION_FEEDBACK_INVALID")
-        if feedback["orm_plan_ref"] != artifact_ref(previous["envelope"]):
-            _fail("FEEDBACK_PACKAGE_REF_MISMATCH")
+        self._validate_252_feedback(feedback, previous)
         return self._revision(previous, structure_closure, operation_closure)
 
     def apply_260_feedback(self, previous: dict[str, Any], feedback: dict[str, Any], structure_closure: dict[str, Any], operation_closure: dict[str, Any]) -> dict[str, Any]:
         self.validate_restricted_orm(previous, structure_closure, operation_closure)
-        if not isinstance(feedback, dict) or feedback.get("route_target") != "251" or feedback.get("error_code") != "ORM_PLAN_ERROR" or feedback.get("input_orm_ref") != artifact_ref(previous["envelope"]):
+        if not isinstance(feedback, dict) or set(feedback) != TRANSPORT_KEYS:
+            _fail("TRANSPORT_PACKAGE_INVALID")
+        envelope, payload = feedback["envelope"], feedback["payload"]
+        validate_envelope(self.repo_root, envelope, payload)
+        try:
+            self._validator("sql-regression-failed-feedback.schema.json").validate(feedback)
+        except ValidationError as exc:
+            raise ContractError("SCHEMA_VALIDATION_FAILED:SQL_REGRESSION_FEEDBACK") from exc
+        if (envelope["artifact_type"], envelope["producer_id"], envelope["mode"], envelope["status"]) != ("sql_regression_failed_feedback", "260", "event_data", "rejected"):
+            _fail("REGRESSION_FEEDBACK_ENVELOPE_INVALID")
+        if envelope["run_id"] != previous["envelope"]["run_id"] or envelope["qa_id"] != previous["envelope"]["qa_id"] or envelope["trace_id"] != previous["envelope"]["trace_id"] or envelope["attempt_no"] != previous["envelope"]["attempt_no"]:
+            _fail("ATTEMPT_LINEAGE_MISMATCH")
+        if artifact_ref(previous["envelope"]) not in envelope["parent_artifact_refs"] or previous["envelope"]["content_hash"] not in envelope["input_hashes"]:
+            _fail("FEEDBACK_LINEAGE_MISMATCH")
+        if payload["route_target"] != "251" or payload["failure_details"]["error_code"] != "ORM_PLAN_ERROR" or payload["input_orm_ref"] != artifact_ref(previous["envelope"]) or payload["retry_count"] != previous["envelope"]["attempt_no"]:
             _fail("REGRESSION_NOT_ROUTED_TO_251")
         return self._revision(previous, structure_closure, operation_closure)
 

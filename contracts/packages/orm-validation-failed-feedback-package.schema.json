@@ -1,0 +1,18 @@
+{
+  "$id": "https://east.example/contracts/packages/orm-validation-failed-feedback-package/v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ORM validation failed feedback (Agent 252 to Agent 251)",
+  "type": "object", "additionalProperties": false, "required": ["envelope", "payload"],
+  "properties": {
+    "envelope": {"allOf": [{"$ref": "https://east.example/contracts/common-envelope/v1"}, {"type": "object", "properties": {"artifact_type": {"const": "orm_validation_failed_feedback"}, "producer_id": {"const": "252"}, "mode": {"const": "event_data"}, "status": {"const": "rejected"}}}]},
+    "payload": {"type": "object", "additionalProperties": false, "required": ["schema_version", "orm_plan_ref", "decision", "validation_types", "failed_items"], "properties": {
+      "schema_version": {"const": "v5.orm-validation-failed-feedback/v1"}, "orm_plan_ref": {"$ref": "https://east.example/contracts/packages/orm-validation-failed-feedback-package/v1#/$defs/ref"}, "decision": {"const": "fail"},
+      "validation_types": {"type": "array", "minItems": 1, "items": {"enum": ["static_ast", "api_allowlist", "import_compile", "empty_dry_run", "object_detail_state"]}},
+      "failed_items": {"type": "array", "minItems": 1, "items": {"$ref": "https://east.example/contracts/packages/orm-validation-failed-feedback-package/v1#/$defs/failed_item"}}
+    }}
+  },
+  "$defs": {
+    "ref": {"type": "object", "additionalProperties": false, "required": ["artifact_id", "version", "content_hash"], "properties": {"artifact_id": {"type": "string", "minLength": 1}, "version": {"type": "integer", "minimum": 1}, "content_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}},
+    "failed_item": {"type": "object", "additionalProperties": false, "required": ["failed_rule_ids", "operation_locations", "expected_values", "actual_values", "error_details"], "properties": {"failed_rule_ids": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}, "operation_locations": {"type": "array", "minItems": 1, "items": {"type": "string", "pattern": "^orm-op-[0-9]{3}$"}}, "expected_values": {"type": "array"}, "actual_values": {"type": "array"}, "error_details": {"type": "string", "minLength": 1}}}
+  }
+}
