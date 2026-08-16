@@ -7,6 +7,7 @@
 结合 PENALTY-FACT-PACKAGE（120 产出）和 EAST-OBSERVABLE-FACT-PACKAGE（130 产出）构建 QUERY-SPECIFICATION-PACKAGE。
 
 1. 校验两个输入包的 COMMON-ENVELOPE 和业务 Schema。
+   两包的 `run_id`、`qa_id`、`trace_id` 必须一致，并与本次构建参数一致；任一不一致即拒绝，禁止混合血缘。
 2. 从 PENALTY-FACT-PACKAGE 提取 `must_preserve_in_question=yes/conditional` 的事实 ID 列表，全部纳入 `must_preserve_fact_refs`。
 3. 从 EAST-OBSERVABLE-FACT-PACKAGE 提取入口表、关联表字段、表内/跨表关系、时间和金额条件、可观察代理和映射矩阵。
 4. 由 LLM 设计查询目标、主对象/粒度、入口条件、穿透路径、筛选条件、返回字段、聚合/去重/排序/时间窗口、可观察性边界、预期结果形态、正反例数量目标、条件覆盖、码值覆盖、预期行数/分组数和 JOIN 发散上限。
@@ -18,17 +19,17 @@
 1. 只接收 170 或 180 的完整审核包，且必须是 `QUERY_SPEC_ERROR`、`decision=no`、`route_suggestion=140`。
 2. 保留原始输入包引用不变。
 3. 生成新版本查询规格包：`version` 递增，`supersedes_ref` 保存前一版本三元组，`attempt_no` 递增。
-4. 最多三次；第 3 次仍不能得到可验证结果时生成 `blocked_manual` 包并要求人工审核。
+4. 最多三次；第 3 次重构若通过全部 Schema 与确定性校验，仍输出 `candidate`。仅第 3 次重构不能得到可验证结果时，才输出带完整 `[penalty, observable, review, previous_spec]` 直接父引用的 `blocked_manual` 包并要求人工审核。
 
 ## 硬代码校验（LLM 不得绕过）
 
 1. **必须保留事实覆盖**：PENALTY-FACT-PACKAGE 中 `must_preserve_in_question=yes/conditional` 的事实必须全部出现在 `must_preserve_fact_refs` 中。
-2. **SQL 表字段范围**：`sql_schema_scope.allowed_tables` 中的每个 `table_id` 必须出现在 EAST-OBSERVABLE-FACT-PACKAGE 的 `entry_table` 或 `related_tables_fields.table_id` 中。
+2. **SQL 表字段范围**：`sql_schema_scope.allowed_tables` 中的每个 `table_id` 及 `allowed_fields` 均必须可由 EAST-OBSERVABLE-FACT-PACKAGE 的 `mapping_matrix.table_field_path` 或 `related_tables_fields` 精确证明。
 3. **引用完整性**：`penalty_fact_package_ref` 和 `observable_fact_package_ref` 必须分别匹配输入包的 artifact_id + version + content_hash。
 4. **计数/阈值**：`minimum_positive_count` 和 `minimum_negative_count` 必须为正整数。
 5. **JOIN 发散上限**：`max_multiplier > 0` 且 `max_result_rows >= 1`。
-6. **预期行数/分组数**：`tolerance_range.low <= tolerance_range.high`，`minimum >= 0`，`target >= 0`。
-7. **版本不可覆盖**：任何修改生成新版本，`supersedes_ref` 保存前一版本引用。
+6. **预期行数/分组数**：`minimum <= target` 且 `minimum <= tolerance_range.low <= target <= tolerance_range.high`。
+7. **版本不可覆盖与审计**：任何修改生成新版本，`query_spec_id` 对同一 `run_id+qa_id` 稳定；`supersedes_ref` 保存前一版本引用。审核回退的直接父引用和 `input_hashes` 顺序必须为 `[penalty, observable, review, previous_spec]`。
 
 ## 执行脱敏运行验收
 

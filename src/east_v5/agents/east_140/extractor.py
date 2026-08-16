@@ -10,6 +10,7 @@ validators run before the output package is sealed.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import hashlib
 import json
 from pathlib import Path
 from typing import Any, Callable
@@ -46,6 +47,17 @@ def _same_lineage(envelope: dict[str, Any], reference: dict[str, Any], code: str
     for key in ("run_id", "qa_id", "trace_id"):
         if envelope[key] != reference[key]:
             _fail(code)
+
+
+def _stable_query_spec_id(run_id: str, qa_id: str) -> str:
+    """Return a deterministic package-local logical identity.
+
+    The frozen v1 schema reserves a three-digit suffix.  Deriving it solely
+    from the stable task identity, rather than the attempt/version, preserves
+    the ID across every reconstruction of the same query specification.
+    """
+    digest = hashlib.sha256(f"{run_id}|{qa_id}".encode("utf-8")).hexdigest()
+    return f"qspec-{int(digest[:8], 16) % 1000:03d}"
 
 
 class QuerySpecBuilder:
@@ -139,17 +151,39 @@ class QuerySpecBuilder:
     def _validate_sql_scope(
         sql_scope: dict[str, Any], observable_payload: dict[str, Any],
     ) -> None:
-        """Check 2: every table in sql_schema_scope must exist in observable facts."""
-        allowed_tables = {t["table_id"] for t in sql_scope.get("allowed_tables", [])}
-        observable_tables = set()
+        """Check 2: every scoped table *and field* is observable."""
+        observable_fields: dict[str, set[str]] = {}
         for fact in observable_payload.get("observable_facts", []):
-            observable_tables.add(fact.get("entry_table", ""))
+            entry_table = fact.get("entry_table", "")
+            if entry_table:
+                observable_fields.setdefault(entry_table, set())
             for rel in fact.get("related_tables_fields", []):
-                observable_tables.add(rel.get("table_id", ""))
-        observable_tables.discard("")
-        unknown = allowed_tables - observable_tables
-        if unknown:
-            _fail("SQL_SCOPE_TABLE_NOT_FOUND")
+                table_id, field_id = rel.get("table_id", ""), rel.get("field_id", "")
+                if table_id and field_id:
+                    observable_fields.setdefault(table_id, set()).add(field_id)
+            for mapping in fact.get("mapping_matrix", []):
+                path = mapping.get("table_field_path", "")
+                if isinstance(path, str) and "." in path:
+                    table_id, field_id = path.rsplit(".", 1)
+                    if table_id and field_id:
+                        observable_fields.setdefault(table_id, set()).add(field_id)
+
+        for scoped_table in sql_scope.get("allowed_tables", []):
+            table_id = scoped_table["table_id"]
+            if table_id not in observable_fields:
+                _fail("SQL_SCOPE_TABLE_NOT_FOUND")
+            unknown_fields = set(scoped_table.get("allowed_fields", [])) - observable_fields[table_id]
+            if unknown_fields:
+                _fail("SQL_SCOPE_FIELD_NOT_FOUND")
+
+    @staticmethod
+    def _validate_input_lineage(
+        penalty_envelope: dict[str, Any], observable_envelope: dict[str, Any], run_id: str, qa_id: str,
+    ) -> None:
+        """Task 1 accepts only the same 120/130 run, QA pair, and trace."""
+        _same_lineage(observable_envelope, penalty_envelope, "INPUT_LINEAGE_MISMATCH")
+        if penalty_envelope["run_id"] != run_id or penalty_envelope["qa_id"] != qa_id:
+            _fail("RUN_OR_QA_MISMATCH")
 
     @staticmethod
     def _validate_ref_integrity(
@@ -180,7 +214,7 @@ class QuerySpecBuilder:
 
     @staticmethod
     def _validate_row_group_count(rgc: dict[str, Any]) -> None:
-        """Check 6: low <= high, minimum >= 0, target >= 0."""
+        """Check 6: minimum, target, and permissible range agree."""
         tr = rgc.get("tolerance_range", {})
         if tr.get("low", 0) > tr.get("high", 0):
             _fail("ROW_GROUP_RANGE_INVALID")
@@ -188,6 +222,12 @@ class QuerySpecBuilder:
             _fail("ROW_GROUP_RANGE_INVALID")
         if not isinstance(rgc.get("target"), int) or rgc["target"] < 0:
             _fail("ROW_GROUP_RANGE_INVALID")
+        if rgc["minimum"] > rgc["target"]:
+            _fail("ROW_GROUP_TARGET_INCONSISTENT")
+        if not tr.get("low", 0) <= rgc["target"] <= tr.get("high", 0):
+            _fail("ROW_GROUP_TARGET_INCONSISTENT")
+        if rgc["minimum"] > tr.get("low", 0):
+            _fail("ROW_GROUP_TARGET_INCONSISTENT")
 
     @staticmethod
     def _validate_version_immutability(
@@ -254,10 +294,12 @@ class QuerySpecBuilder:
         expected_row_group_count: dict[str, Any],
         join_expansion_limit: dict[str, Any],
         created_at: str | None = None,
+        parent_refs: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         """Task 1: combine penalty and observable facts into a query specification."""
         self.validate_penalty(penalty)
         self.validate_observable(observable)
+        self._validate_input_lineage(penalty["envelope"], observable["envelope"], run_id, qa_id)
 
         # Hard-code check 7: version immutability
         self._validate_version_immutability(version, supersedes_ref)
@@ -273,7 +315,7 @@ class QuerySpecBuilder:
 
         # Build payload
         payload: dict[str, Any] = {
-            "query_spec_id": f"qspec-{attempt_no:03d}",
+            "query_spec_id": _stable_query_spec_id(run_id, qa_id),
             "penalty_fact_package_ref": artifact_ref(penalty["envelope"]),
             "observable_fact_package_ref": artifact_ref(observable["envelope"]),
             "query_goal": query_goal,
@@ -311,7 +353,9 @@ class QuerySpecBuilder:
         if attempt_no > MAX_ATTEMPTS:
             _fail("MAX_ATTEMPTS_EXCEEDED")
 
-        parents = [artifact_ref(penalty["envelope"]), artifact_ref(observable["envelope"])]
+        parents = parent_refs if parent_refs is not None else [
+            artifact_ref(penalty["envelope"]), artifact_ref(observable["envelope"]),
+        ]
         return self._wrap(
             "query_specification_package", f"140-qspec-{run_id}", payload,
             run_id=run_id, qa_id=qa_id, version=version, attempt_no=attempt_no,
@@ -322,7 +366,8 @@ class QuerySpecBuilder:
     # ── Task 2: Review feedback ────────────────────────────────────
 
     def _validate_remap_output(
-        self, output: dict[str, Any], previous: dict[str, Any], attempt_no: int,
+        self, output: dict[str, Any], previous: dict[str, Any], review: dict[str, Any],
+        penalty: dict[str, Any], observable: dict[str, Any], attempt_no: int,
     ) -> None:
         self.validate_query_spec(output)
         envelope = output["envelope"]
@@ -333,6 +378,16 @@ class QuerySpecBuilder:
         _same_ref(envelope["supersedes_ref"], artifact_ref(prior), "REMAP_OUTPUT_SUPERSEDES_MISMATCH")
         if envelope["attempt_no"] != attempt_no:
             _fail("REMAP_OUTPUT_ATTEMPT_MISMATCH")
+        expected_parents = [
+            artifact_ref(penalty["envelope"]), artifact_ref(observable["envelope"]),
+            artifact_ref(review["envelope"]), artifact_ref(prior),
+        ]
+        if envelope["parent_artifact_refs"] != expected_parents:
+            _fail("REMAP_OUTPUT_PARENT_LINEAGE_MISMATCH")
+        if envelope["input_hashes"] != [ref["content_hash"] for ref in expected_parents]:
+            _fail("REMAP_OUTPUT_INPUT_HASH_ORDER_MISMATCH")
+        if output["payload"]["query_spec_id"] != previous["payload"]["query_spec_id"]:
+            _fail("REMAP_OUTPUT_QUERY_SPEC_ID_MISMATCH")
 
     def handle_review_feedback(
         self,
@@ -394,17 +449,16 @@ class QuerySpecBuilder:
         if run_id != previous_envelope["run_id"] or qa_id != previous_envelope["qa_id"]:
             _fail("RUN_OR_QA_MISMATCH")
 
-        # Determine if this is a terminal attempt
-        terminal = attempt_no == MAX_ATTEMPTS
-        new_status = "blocked_manual" if terminal else "candidate"
-
-        new_spec = self.build_query_spec(
-            penalty, observable,
+        parents = [
+            artifact_ref(penalty_envelope), artifact_ref(observable_envelope),
+            artifact_ref(review["envelope"]), artifact_ref(previous_envelope),
+        ]
+        build_args = dict(
             run_id=run_id, qa_id=qa_id,
             version=previous_envelope["version"] + 1,
             attempt_no=attempt_no,
             supersedes_ref=artifact_ref(previous_envelope),
-            status=new_status,
+            status="candidate",
             query_goal=query_goal,
             main_object_and_grain=main_object_and_grain,
             query_entry=query_entry,
@@ -423,5 +477,19 @@ class QuerySpecBuilder:
             join_expansion_limit=join_expansion_limit,
             created_at=created_at,
         )
-        self._validate_remap_output(new_spec, previous_spec, attempt_no)
+        # A valid third reconstruction remains a candidate.  Only a failed
+        # reconstruction on that final attempt becomes a lawful manual block.
+        try:
+            new_spec = self.build_query_spec(penalty, observable, **build_args, parent_refs=parents)
+        except ContractError:
+            if attempt_no != MAX_ATTEMPTS:
+                raise
+            blocked_payload = dict(previous_spec["payload"])
+            new_spec = self._wrap(
+                "query_specification_package", f"140-qspec-{run_id}", blocked_payload,
+                run_id=run_id, qa_id=qa_id, version=previous_envelope["version"] + 1,
+                attempt_no=attempt_no, parents=parents, supersedes_ref=artifact_ref(previous_envelope),
+                status="blocked_manual", trace_id=penalty_envelope["trace_id"], created_at=created_at,
+            )
+        self._validate_remap_output(new_spec, previous_spec, review, penalty, observable, attempt_no)
         return new_spec

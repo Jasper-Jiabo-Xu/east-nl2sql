@@ -17,14 +17,14 @@
 - 输入、输出和审核结果均为 `{envelope,payload}` 传输包；先验证 COMMON-ENVELOPE 及哈希/血缘，再验证业务 Schema。
 - 任务 1：消费 PENALTY-FACT-PACKAGE（120）和 EAST-OBSERVABLE-FACT-PACKAGE（130），构建 QUERY-SPECIFICATION-PACKAGE。将正例、反例及非稀疏要求对应的数据数量目标纳入查询规格。
 - 任务 2：接收 110 路由的审核结果（170/180 的 `QUERY_SPEC_ERROR` 且 `route_suggestion=140`），结合原始处罚事实包和可观察事实包重新构建新版本 QUERY-SPECIFICATION-PACKAGE。每次修改生成新版本，`supersedes_ref` 保存前一版本不可变三元组。
-- 硬代码校验：必须保留事实覆盖、SQL 表字段范围、引用完整性、计数/阈值正整数、JOIN 发散上限、预期行数/分组数范围和版本不可覆盖。
+- 硬代码校验：必须保留事实覆盖、SQL 表字段范围（未知字段拒绝）、120/130 run/qa/trace 一致性、引用完整性、计数/阈值正整数、JOIN 发散上限、相互一致的预期行数/分组数范围和版本不可覆盖。
 - LLM 可设计对象/粒度、入口、穿透路径、筛选、返回、聚合、正反例和密度目标。
-- 审核包必须精确引用被审核查询规格的三元组。最多三次尝试；第 3 次仍不能得到可验证结果时输出 `blocked_manual` 新版本。
+- 审核包必须精确引用被审核查询规格的三元组。回退包的父引用顺序为 `[penalty, observable, review, previous_spec]`；每个 `input_hashes` 一一对应。最多三次尝试；第 3 次有效重构仍为 candidate，只有无效重构才输出 `blocked_manual` 新版本。
 - 输出供 150/170/180/220/260 消费；不得生成 question/SQL、认定违法、写数据库、覆盖上游包或提交正式资产。
 
 ## 失败码
 
-`TRANSPORT_PACKAGE_INVALID`、`SCHEMA_VALIDATION_FAILED:*`、`ARTIFACT_TYPE_MISMATCH`、`CONTENT_HASH_DRIFT`、`MUST_PRESERVE_FACTS_NOT_COVERED`、`SQL_SCOPE_TABLE_NOT_IN_OBSERVABLE`、`REF_INTEGRITY_VIOLATION`、`REVIEW_NOT_ROUTED_TO_140`、`ATTEMPT_OUT_OF_RANGE`、`JOIN_EXPANSION_LIMIT_INVALID`、`ROW_GROUP_COUNT_INVALID`。
+`TRANSPORT_PACKAGE_INVALID`、`SCHEMA_VALIDATION_FAILED:*`、`ARTIFACT_TYPE_MISMATCH`、`CONTENT_HASH_DRIFT`、`INPUT_LINEAGE_MISMATCH`、`SQL_SCOPE_TABLE_NOT_FOUND`、`SQL_SCOPE_FIELD_NOT_FOUND`、`REF_INTEGRITY_VIOLATION`、`REVIEW_NOT_ROUTED_TO_140`、`ATTEMPT_OUT_OF_RANGE`、`ROW_GROUP_TARGET_INCONSISTENT`、`REMAP_OUTPUT_PARENT_LINEAGE_MISMATCH`。
 
 ## 运行验收
 

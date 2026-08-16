@@ -14,9 +14,9 @@ ROOT = Path(__file__).resolve().parents[3]
 FIXED_TIME = "2026-08-16T00:00:00+00:00"
 
 
-def wrap(artifact_type: str, artifact_id: str, payload: dict, *, producer: str, attempt: int = 1, version: int = 1, parents: list[dict] | None = None, trace_id: str = "trace-140") -> dict:
+def wrap(artifact_type: str, artifact_id: str, payload: dict, *, producer: str, attempt: int = 1, version: int = 1, parents: list[dict] | None = None, trace_id: str = "trace-140", run_id: str = "run-140", qa_id: str = "QA-140") -> dict:
     parents = parents or []
-    envelope = {"artifact_id": artifact_id, "artifact_type": artifact_type, "run_id": "run-140", "qa_id": "QA-140", "version": version, "schema_version": "COMMON-ENVELOPE/v1", "content_hash": "0" * 64, "supersedes_ref": None, "attempt_no": attempt, "producer_id": producer, "parent_artifact_refs": parents, "input_hashes": [x["content_hash"] for x in parents], "status": "candidate", "mode": "question_sql", "created_at": FIXED_TIME, "trace_id": trace_id, "storage_locator": None}
+    envelope = {"artifact_id": artifact_id, "artifact_type": artifact_type, "run_id": run_id, "qa_id": qa_id, "version": version, "schema_version": "COMMON-ENVELOPE/v1", "content_hash": "0" * 64, "supersedes_ref": None, "attempt_no": attempt, "producer_id": producer, "parent_artifact_refs": parents, "input_hashes": [x["content_hash"] for x in parents], "status": "candidate", "mode": "question_sql", "created_at": FIXED_TIME, "trace_id": trace_id, "storage_locator": None}
     envelope["content_hash"] = content_hash(envelope, payload)
     return {"envelope": envelope, "payload": payload}
 
@@ -32,7 +32,7 @@ def penalty() -> dict:
 
 def observable() -> dict:
     payload = {
-        "observable_facts": [{"observable_fact_id": "observable-fact-001", "penalty_fact_refs": ["fact-001"], "topic": "监管处罚风险筛查", "main_object": "脱敏机构", "query_grain": "一条EAST业务记录或聚合事件", "entry_table": "EAST_D001", "related_tables_fields": [{"table_id": "EAST_D002", "field_id": "F002", "purpose": "关联字段"}], "within_table_relations": [], "cross_table_relations": [], "time_amount_conditions": ["仅使用冻结资产中可表达的时间或金额条件"], "observable_proxy": "以 EAST_D001.F001 筛查处罚事实 fact-001", "observability_type": "direct", "unobservable_parts": [], "risk_screening_boundary": "仅用于风险筛查，不直接认定监管违法或替代人工结论。", "mapping_matrix": [{"penalty_fact_id": "fact-001", "proxy_expression": "以 EAST_D001.F001 筛查处罚事实 fact-001", "table_field_path": "EAST_D001.F001", "asset_evidence_ref": "constraint_asset:CA-V0.3.0#record-0"}], "constraint_asset_refs": ["constraint_asset:CA-V0.3.0#record-0"]}],
+        "observable_facts": [{"observable_fact_id": "observable-fact-001", "penalty_fact_refs": ["fact-001"], "topic": "监管处罚风险筛查", "main_object": "脱敏机构", "query_grain": "一条EAST业务记录或聚合事件", "entry_table": "EAST_D001", "related_tables_fields": [{"table_id": "EAST_D002", "field_id": "F002", "purpose": "关联字段"}], "within_table_relations": [], "cross_table_relations": [], "time_amount_conditions": ["仅使用冻结资产中可表达的时间或金额条件"], "observable_proxy": "以 EAST_D001.F001 筛查处罚事实 fact-001", "observability_type": "direct", "unobservable_parts": [], "risk_screening_boundary": "仅用于风险筛查，不直接认定监管违法或替代人工结论。", "mapping_matrix": [{"penalty_fact_id": "fact-001", "proxy_expression": "以 EAST_D001.F001 筛查处罚事实 fact-001", "table_field_path": "EAST_D001.F001", "asset_evidence_ref": "constraint_asset:CA-V0.3.0#record-0"}, {"penalty_fact_id": "fact-001", "proxy_expression": "以 EAST_D001.F002 支持关联", "table_field_path": "EAST_D001.F002", "asset_evidence_ref": "constraint_asset:CA-V0.3.0#record-0"}, {"penalty_fact_id": "fact-001", "proxy_expression": "以 EAST_D001.F003 支持时间窗口", "table_field_path": "EAST_D001.F003", "asset_evidence_ref": "constraint_asset:CA-V0.3.0#record-0"}], "constraint_asset_refs": ["constraint_asset:CA-V0.3.0#record-0"]}],
         "coverage_status": "complete", "asset_version": "CA-V0.3.0", "unresolved_items": [],
     }
     return wrap("east_observable_fact_package", "observable-140", payload, producer="130")
@@ -85,7 +85,7 @@ class TestAgent140Contracts(unittest.TestCase):
     def test_task1_builds_valid_query_spec(self) -> None:
         spec = self.build_spec()
         self.builder.validate_query_spec(spec)
-        self.assertEqual(spec["payload"]["query_spec_id"], "qspec-001")
+        self.assertRegex(spec["payload"]["query_spec_id"], r"^qspec-[0-9]{3}$")
         self.assertEqual(spec["payload"]["query_specification_package_schema_version"], "query-specification-v1")
         self.assertIn("fact-001", spec["payload"]["must_preserve_fact_refs"])
 
@@ -119,6 +119,20 @@ class TestAgent140Contracts(unittest.TestCase):
                 {"observable_facts": [{"entry_table": "EAST_D001", "related_tables_fields": []}]},
             )
 
+    def test_rejects_sql_scope_unknown_field(self) -> None:
+        with self.assertRaisesRegex(ContractError, "SQL_SCOPE_FIELD_NOT_FOUND"):
+            self.builder._validate_sql_scope(
+                {"allowed_tables": [{"table_id": "EAST_D001", "allowed_fields": ["FIELD-NOT-OBSERVABLE"]}]},
+                self.observable["payload"],
+            )
+
+    def test_rejects_mixed_input_lineage(self) -> None:
+        mixed = copy.deepcopy(self.observable)
+        mixed["envelope"]["run_id"] = "other-run"
+        mixed["envelope"]["content_hash"] = content_hash(mixed["envelope"], mixed["payload"])
+        with self.assertRaisesRegex(ContractError, "INPUT_LINEAGE_MISMATCH"):
+            self.builder.build_query_spec(self.penalty, mixed, run_id="run-140", qa_id="QA-140", created_at=FIXED_TIME, **self.fields)
+
     def test_rejects_ref_integrity_violation(self) -> None:
         wrong_ref = {"artifact_id": "wrong", "version": 1, "content_hash": "0" * 64}
         with self.assertRaisesRegex(ContractError, "REF_INTEGRITY_VIOLATION"):
@@ -143,6 +157,10 @@ class TestAgent140Contracts(unittest.TestCase):
         with self.assertRaisesRegex(ContractError, "ROW_GROUP_RANGE_INVALID"):
             self.builder._validate_row_group_count({"minimum": 0, "target": 5, "tolerance_range": {"low": 10, "high": 5}})
 
+    def test_rejects_inconsistent_row_group_targets(self) -> None:
+        with self.assertRaisesRegex(ContractError, "ROW_GROUP_TARGET_INCONSISTENT"):
+            self.builder._validate_row_group_count({"minimum": 100, "target": 1, "tolerance_range": {"low": 0, "high": 2}})
+
     def test_rejects_version_overwrite_attempted(self) -> None:
         with self.assertRaisesRegex(ContractError, "VERSION_OVERWRITE_ATTEMPTED"):
             self.builder._validate_version_immutability(1, {"artifact_id": "x", "version": 1, "content_hash": "0" * 64})
@@ -163,21 +181,31 @@ class TestAgent140Contracts(unittest.TestCase):
             self.assertEqual(second["envelope"]["attempt_no"], 2)
             self.assertEqual(second["envelope"]["supersedes_ref"], artifact_ref(first["envelope"]))
             self.assertEqual(second["envelope"]["status"], "candidate")
+            self.assertEqual(second["payload"]["query_spec_id"], first["payload"]["query_spec_id"])
+            self.assertEqual(second["envelope"]["parent_artifact_refs"], [artifact_ref(self.penalty["envelope"]), artifact_ref(self.observable["envelope"]), artifact_ref(review(first, kind)["envelope"]), artifact_ref(first["envelope"])])
 
-    def test_third_attempt_blocks_manual(self) -> None:
+    def test_third_attempt_valid_candidate_is_not_blocked(self) -> None:
         first = self.build_spec()
         second = self.builder.handle_review_feedback(
             self.penalty, self.observable, review(first, "deepseek_review_result"), first,
             run_id="run-140", qa_id="QA-140", attempt_no=2,
             created_at=FIXED_TIME, **self.fields,
         )
-        blocked = self.builder.handle_review_feedback(
+        candidate = self.builder.handle_review_feedback(
             self.penalty, self.observable, review(second, "glm_review_result"), second,
             run_id="run-140", qa_id="QA-140", attempt_no=3,
             created_at=FIXED_TIME, **self.fields,
         )
+        self.assertEqual(candidate["envelope"]["status"], "candidate")
+        self.assertEqual(candidate["envelope"]["attempt_no"], 3)
+
+    def test_third_attempt_invalid_candidate_blocks_manual(self) -> None:
+        first = self.build_spec()
+        second = self.builder.handle_review_feedback(self.penalty, self.observable, review(first), first, run_id="run-140", qa_id="QA-140", attempt_no=2, created_at=FIXED_TIME, **self.fields)
+        invalid_fields = {**self.fields, "expected_row_group_count": {"minimum": 100, "target": 1, "tolerance_range": {"low": 0, "high": 2}}}
+        blocked = self.builder.handle_review_feedback(self.penalty, self.observable, review(second, "glm_review_result"), second, run_id="run-140", qa_id="QA-140", attempt_no=3, created_at=FIXED_TIME, **invalid_fields)
         self.assertEqual(blocked["envelope"]["status"], "blocked_manual")
-        self.assertEqual(blocked["envelope"]["attempt_no"], 3)
+        self.assertEqual(blocked["payload"]["query_spec_id"], first["payload"]["query_spec_id"])
 
     def test_rejects_review_not_routed_to_140(self) -> None:
         first = self.build_spec()
@@ -219,14 +247,20 @@ class TestAgent140Contracts(unittest.TestCase):
         s = result["summary"]
         self.assertTrue(s["bad_hash_rejected"])
         self.assertTrue(s["review_170_executed"])
-        self.assertTrue(s["review_180_blocked"])
+        self.assertTrue(s["review_180_valid_candidate"])
+        self.assertTrue(s["review_180_invalid_blocked"])
         self.assertTrue(s["stub_150_consumed"])
         self.assertTrue(s["stub_170_consumed"])
+        self.assertTrue(s["stub_180_consumed"])
+        self.assertTrue(s["stub_220_consumed"])
+        self.assertTrue(s["stub_260_consumed"])
         self.assertTrue(s["validator_must_preserve_rejects"])
         self.assertTrue(s["validator_invalid_count_rejects"])
         self.assertTrue(s["validator_join_limit_rejects"])
         self.assertTrue(s["validator_row_group_rejects"])
         self.assertTrue(s["validator_sql_scope_rejects"])
+        self.assertTrue(s["validator_sql_scope_field_rejects"])
+        self.assertTrue(s["validator_row_group_consistency_rejects"])
         self.assertTrue(s["validator_version_immutability_rejects"])
 
 
