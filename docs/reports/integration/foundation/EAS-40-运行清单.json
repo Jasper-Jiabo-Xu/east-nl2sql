@@ -1,0 +1,67 @@
+{
+  "schema_version": "eas40-foundation-e2e-manifest/v1",
+  "issue_key": "EAS-40",
+  "title": "[V5-INT-FDN-001] Foundation铺底端到端联调",
+  "implementation_owner": "EAST DeepSeek 构建员",
+  "base_sha": "763a93100e2f69e4dda0d7869a35d34d90c74d39",
+  "rebased_on": "EAS-65 合同修补（PR #39 合入 main；release_candidate.payload.resume_qa_ref 修为 runtime_artifact_ref|null）",
+  "pipeline": ["210", "220", "241", "242", "260", "210", "010"],
+  "mode": "foundation",
+  "compiler": "east-foundation-insert-compiler/v1",
+  "frozen_inputs": {
+    "constraint_assets": {"artifact_id": "CA-V0.3.0", "version": 1, "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+    "typed_reference_graph": {"artifact_id": "TRG-V1.0.0", "version": 1, "content_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
+    "fixtures": {
+      "foundation-task-initial.json": "898355f747a64ffacbed2374c815e0813c9ec79b5dac23f6c3842ed6bad55d98",
+      "foundation-task-expansion.json": "83ec67a17ced5c949e38f20fa989c28cfdf1c372ec187d3a9775d44dccc3eb64"
+    }
+  },
+  "deterministic_outputs": {
+    "initial_seed": {
+      "foundation_task_ref": {"artifact_id": "eas40-foundation-initial", "version": 1, "content_hash": "77857982be4d3bc6b5c6da17dff637a393f318f7ac430e14fa954516754a2f6e"},
+      "foundation_profile_ref": {"artifact_id": "eas40-foundation-initial:profile", "version": 1, "content_hash": "20adf9fcd098ce07dd4ca5e63a31696e066d6189b5b5b9134488d8c8fbcdc435"},
+      "structure_closure_ref": {"artifact_id": "eas40-foundation-initial:structure-closure", "version": 1, "content_hash": "9f3e4c51feeac16c8e8dd14528d6da76922780a8eb4dba796efdd94917e66c81"},
+      "bound_data_ref": {"artifact_id": "bound-data-eas40-e2e", "version": 1, "content_hash": "3d63334e5809219cd38d750ee325db4ab736a80743c0f4e695d17064827d85c8"},
+      "verified_bound_data_ref": {"artifact_id": "bound-data-eas40-e2e:verified-bound-data", "version": 1, "content_hash": "a436b48c0e0a8ae949c92d0a51210b9da1e0c2dee88386da3ea4461872cc8376"},
+      "foundation_write_batch_hash": "d0f8a4670d1cee5ba326e922445127aae4f2382cdef1dcd4a4e5a0e174fc05b0"
+    },
+    "expansion": {
+      "foundation_task_ref": {"artifact_id": "eas40-foundation-expansion", "version": 1, "content_hash": "6728dfe87f2c8d96eea49a958e2db7a4ef2a5fb5ef41f3757b0f45ac6cea8d20"},
+      "foundation_profile_ref": {"artifact_id": "eas40-foundation-expansion:profile", "version": 1, "content_hash": "1344fe9ac0bf914cafe4fcb030ceebd27da5e9ba998474ba760b630d2408ce39"},
+      "structure_closure_ref": {"artifact_id": "eas40-foundation-expansion:structure-closure", "version": 1, "content_hash": "154048d49f86eeb7b5c76e2d74d8aca516bc4d9a6f31d8da1fd4851f5f18d7f6"},
+      "bound_data_ref": {"artifact_id": "bound-data-eas40-e2e", "version": 1, "content_hash": "024638979c51e41723ebed634121940fe842cf9a288feae66cfe1c396fbdb669"},
+      "verified_bound_data_ref": {"artifact_id": "bound-data-eas40-e2e:verified-bound-data", "version": 1, "content_hash": "91959c42b725cda8583e4a50d13f3ed10b8e7d4eccd6a8830faa60d5a7b2751b"},
+      "foundation_write_batch_hash": "d0f8a4670d1cee5ba326e922445127aae4f2382cdef1dcd4a4e5a0e174fc05b0"
+    }
+  },
+  "forbidden_agents": ["230", "251", "252"],
+  "prohibited_runtime_components": [
+    "legacy_field_generator",
+    "legacy_field_policy",
+    "legacy_table_assembler",
+    "legacy_registry",
+    "independent_ods_generator",
+    "independent_ods_validator"
+  ],
+  "zero_invocation_evidence": {
+    "forbidden_agent_calls_during_foundation_run": 0,
+    "legacy_component_modules_present_in_src_east_v5": 0
+  },
+  "resume_qa_ref_evidence": {
+    "schema": "release_candidate.payload.resume_qa_ref = runtime_artifact_ref|null（EAS-65 修补）",
+    "event_closure_lineage": "event FOUNDATION_REQUIRED feedback_ref（260 产出）→ foundation_mode=expansion 任务的 resume_qa_ref 与 parent_artifact_refs/input_hashes → 260 → release_candidate.resume_qa_ref 与 feedback_ref 完全一致 → 010 Stub 严格消费",
+    "null_positive": "release_mode=foundation 且 resume_qa_ref=null 经 010 Stub 严格消费（initial seed）",
+    "expansion_fixture_positive": "foundation-task-expansion.json 携带非空三元组（eas40-resume-qa），经 210 原值保留并被 010 Stub 严格消费",
+    "idempotent": "同一输入两次 build_foundation_release 产出同一 release_candidate",
+    "strict_reject": "resume_qa_ref 裸字符串被 010 Stub 拒绝（RELEASE_CANDIDATE_STUB_REJECTED）"
+  },
+  "test_summary": {
+    "test_file": "tests/integration/foundation/test_foundation_e2e.py",
+    "tests_total": 8,
+    "tests_passed": 8,
+    "tests_failed": 0,
+    "entry_points": ["initial_seed", "expansion", "event_missing_object_state"],
+    "release_candidate": "assembled, resume_qa_ref retained（null 与非空三元组均覆盖，含 event→expansion 真实血缘）, no formal commit"
+  },
+  "unresolved": []
+}
