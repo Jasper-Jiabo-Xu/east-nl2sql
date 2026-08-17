@@ -1,0 +1,56 @@
+{
+  "envelope": {
+    "artifact_id": "eas39-approved",
+    "artifact_type": "question_sql_dual_review_passed",
+    "run_id": "eas39-run",
+    "qa_id": "QA-EAS39",
+    "version": 1,
+    "schema_version": "COMMON-ENVELOPE/v1",
+    "content_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+    "supersedes_ref": null,
+    "attempt_no": 1,
+    "producer_id": "110",
+    "parent_artifact_refs": [
+      {"artifact_id": "precheck", "version": 1, "content_hash": "4444444444444444444444444444444444444444444444444444444444444444"},
+      {"artifact_id": "deepseek", "version": 1, "content_hash": "5555555555555555555555555555555555555555555555555555555555555555"},
+      {"artifact_id": "glm", "version": 1, "content_hash": "6666666666666666666666666666666666666666666666666666666666666666"}
+    ],
+    "input_hashes": [
+      "4444444444444444444444444444444444444444444444444444444444444444",
+      "5555555555555555555555555555555555555555555555555555555555555555",
+      "6666666666666666666666666666666666666666666666666666666666666666"
+    ],
+    "status": "validated",
+    "mode": "event_data",
+    "created_at": "2026-08-17T00:00:00+00:00",
+    "trace_id": "eas39-trace",
+    "storage_locator": null
+  },
+  "payload": {
+    "schema_version": "v5.question-sql-dual-review-passed/v1",
+    "candidate_ref": {"artifact_id": "candidate", "version": 1, "content_hash": "1111111111111111111111111111111111111111111111111111111111111111"},
+    "candidate_content": {
+      "clear_question": "脱敏跨表关联开户问题",
+      "sql_gold": "SELECT T1.F001, T1.F002 FROM FIXTURE_T001 T1 JOIN FIXTURE_T002 T2 ON T1.F001 = T2.PK001",
+      "sql_explanation": {"select": "F001,F002", "from_join": "FIXTURE_T001 JOIN FIXTURE_T002", "where": "F001=PK001", "aggregation": "无", "sort": "无", "business_meaning": "脱敏关联"},
+      "business_event_candidates": [
+        {"event_name": "开户", "objective": "开户", "objects": ["账户"], "state_changes": ["FIXTURE_T001.F001->FIXTURE_T002.PK001"]}
+      ],
+      "specification_mapping": [
+        {"spec_item": "字段一", "question_fragment": "脱敏关联", "sql_fragment": "FIXTURE_T001.F001"},
+        {"spec_item": "字段二", "question_fragment": "脱敏关联", "sql_fragment": "FIXTURE_T001.F002"},
+        {"spec_item": "主键", "question_fragment": "脱敏关联", "sql_fragment": "FIXTURE_T002.PK001"}
+      ]
+    },
+    "query_specification_package": {"artifact_id": "query-spec", "version": 1, "content_hash": "2222222222222222222222222222222222222222222222222222222222222222"},
+    "penalty_fact_package": {"artifact_id": "penalty", "version": 1, "content_hash": "7777777777777777777777777777777777777777777777777777777777777777"},
+    "observable_fact_package": {"artifact_id": "observable", "version": 1, "content_hash": "8888888888888888888888888888888888888888888888888888888888888888"},
+    "constraint_evidence_summary": {"tables": ["FIXTURE_T001", "FIXTURE_T002"], "fields": ["FIXTURE_T001.F001", "FIXTURE_T001.F002", "FIXTURE_T002.PK001"], "data_elements": [], "relationships": ["FIXTURE_T001.F001->FIXTURE_T002.PK001"], "source_refs": ["CA-V0.3.0"]},
+    "precheck_report": {"decision": "pass", "report_hash": "4444444444444444444444444444444444444444444444444444444444444444"},
+    "deepseek_review": {"decision": "pass", "issue_level": "none", "reason": "通过", "review_hash": "5555555555555555555555555555555555555555555555555555555555555555"},
+    "glm_review": {"decision": "pass", "issue_level": "none", "reason": "通过", "review_hash": "6666666666666666666666666666666666666666666666666666666666666666"},
+    "adjudication": {"decision": "pass", "report_hash": "9999999999999999999999999999999999999999999999999999999999999999"},
+    "review_round": 1,
+    "package_hash": ""
+  }
+}

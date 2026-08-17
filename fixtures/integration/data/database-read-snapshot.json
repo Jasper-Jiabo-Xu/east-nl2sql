@@ -1,0 +1,31 @@
+{
+  "envelope": {
+    "artifact_id": "snapshot-eas39",
+    "artifact_type": "database_read_snapshot",
+    "run_id": "eas39-run",
+    "qa_id": "QA-EAS39",
+    "version": 1,
+    "schema_version": "COMMON-ENVELOPE/v1",
+    "content_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+    "supersedes_ref": null,
+    "attempt_no": 1,
+    "producer_id": "EAS-19",
+    "parent_artifact_refs": [],
+    "input_hashes": [],
+    "status": "validated",
+    "mode": "event_data",
+    "created_at": "2026-08-17T00:00:00+00:00",
+    "trace_id": "eas39-trace",
+    "storage_locator": null
+  },
+  "payload": {
+    "schema_version": "v5.database-read-snapshot/v1",
+    "snapshot_id": "eas39-snapshot",
+    "base_database_version": "db-v1",
+    "query_time": "2026-08-17T00:00:00+00:00",
+    "query_scope": "sanitized",
+    "executed_queries": ["SELECT 1"],
+    "object_state_records": [],
+    "snapshot_hash": ""
+  }
+}
