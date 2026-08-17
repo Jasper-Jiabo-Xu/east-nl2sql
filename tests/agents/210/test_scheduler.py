@@ -227,7 +227,7 @@ class DataStageCoordinatorTests(unittest.TestCase):
         self.assertEqual(bound["payload"]["structure_closure_ref"], artifact_ref(structure["envelope"]))
         self.assertEqual(verified["payload"]["source_data_package_ref"], artifact_ref(bound["envelope"]))
         self.assertEqual(frozen["envelope"]["producer_id"], "252")
-        dispatch = self.coordinator.join_event_validations(approved, structure, operation, restricted, verified, frozen)
+        dispatch = self.coordinator.join_event_validations(approved, reviewed, structure, operation, restricted, verified, frozen)
         self.assertEqual(dispatch["target"], "260")
 
     def test_event_same_source_242_and_252_run_through_260_release_and_010(self) -> None:
@@ -236,14 +236,14 @@ class DataStageCoordinatorTests(unittest.TestCase):
         case.setUp()
         try:
             self._prepare_same_source_event_regression(case)
-            approved, _, structure, operation, _, verified, restricted, frozen, _ = self._actual_event_validation_chain(query_spec_ref=artifact_ref(case.spec["envelope"]))
+            approved, started, structure, operation, _, verified, restricted, frozen, _ = self._actual_event_validation_chain(query_spec_ref=artifact_ref(case.spec["envelope"]))
             import sqlite3
             connection = sqlite3.connect(case.db)
             connection.execute("CREATE TABLE FIXTURE_T001 (F001 TEXT, F002 TEXT)")
             connection.execute("CREATE TABLE FIXTURE_T002 (PK001 TEXT)")
             connection.commit()
             connection.close()
-            dispatch = self.coordinator.join_event_validations(approved, structure, operation, restricted, verified, frozen)
+            dispatch = self.coordinator.join_event_validations(approved, started["reviewed_question_sql"], structure, operation, restricted, verified, frozen)
             self.assertEqual(dispatch["target"], "260")
             regression = case.worker.run_event(verified, frozen, case.snapshot, approved, case.spec, case.db)
             self.assertEqual(regression["payload"]["regression_status"], "passed")
@@ -276,7 +276,8 @@ class DataStageCoordinatorTests(unittest.TestCase):
             self.coordinator.dispatch_event_branches(reviewed, structure, blocked)
 
     def test_event_join_rejects_same_context_cross_closure_mix_before_260(self) -> None:
-        approved, _, structure, operation, _, verified, restricted, _, operation_builder = self._actual_event_validation_chain()
+        approved, started, structure, operation, _, verified, restricted, _, operation_builder = self._actual_event_validation_chain()
+        reviewed = started["reviewed_question_sql"]
         other_structure = copy.deepcopy(structure)
         other_structure["envelope"]["artifact_id"] += "-other"
         other_structure["envelope"]["content_hash"] = content_hash(other_structure["envelope"], other_structure["payload"])
@@ -288,13 +289,28 @@ class DataStageCoordinatorTests(unittest.TestCase):
             (other_frozen["envelope"]["run_id"], other_frozen["envelope"]["qa_id"], other_frozen["envelope"]["trace_id"], other_frozen["envelope"]["attempt_no"]),
         )
         with self.assertRaisesRegex(ContractError, "210_EVENT_ORM_LINEAGE_REJECTED"):
-            self.coordinator.join_event_validations(approved, structure, operation, restricted, verified, other_frozen)
+            self.coordinator.join_event_validations(approved, reviewed, structure, operation, restricted, verified, other_frozen)
         late_verified = copy.deepcopy(verified)
         late_verified["envelope"]["attempt_no"] = 2
         late_verified["envelope"]["content_hash"] = content_hash(late_verified["envelope"], late_verified["payload"])
         frozen = importlib.import_module("east_v5.agents.252.validator").OrmValidator(ROOT).freeze_orm(restricted, structure, operation)
         with self.assertRaisesRegex(ContractError, "210_ATTEMPT_MISMATCH"):
-            self.coordinator.join_event_validations(approved, structure, operation, restricted, late_verified, frozen)
+            self.coordinator.join_event_validations(approved, reviewed, structure, operation, restricted, late_verified, frozen)
+
+    def test_event_join_rejects_same_context_cross_approval_before_260(self) -> None:
+        approved, started, structure, operation, _, verified, restricted, frozen, _ = self._actual_event_validation_chain()
+        reviewed = started["reviewed_question_sql"]
+        other_approved = copy.deepcopy(approved)
+        other_approved["payload"]["candidate_content"]["clear_question"] = "另一条脱敏审批问题"
+        other_approved["payload"]["package_hash"] = sha256({key: value for key, value in other_approved["payload"].items() if key != "package_hash"})
+        other_approved["envelope"]["content_hash"] = content_hash(other_approved["envelope"], other_approved["payload"])
+        self.assertEqual(
+            (approved["envelope"]["run_id"], approved["envelope"]["qa_id"], approved["envelope"]["trace_id"], approved["envelope"]["attempt_no"]),
+            (other_approved["envelope"]["run_id"], other_approved["envelope"]["qa_id"], other_approved["envelope"]["trace_id"], other_approved["envelope"]["attempt_no"]),
+        )
+        self.assertNotEqual(artifact_ref(other_approved["envelope"]), reviewed["envelope"]["parent_artifact_refs"][0])
+        with self.assertRaisesRegex(ContractError, "210_EVENT_REVIEWED_LINEAGE_REJECTED"):
+            self.coordinator.join_event_validations(other_approved, reviewed, structure, operation, restricted, verified, frozen)
 
     def test_foundation_is_ordered_220_then_real_241_242_then_260_and_010(self) -> None:
         foundation_tests = test_module("agents.260.test_regression")
