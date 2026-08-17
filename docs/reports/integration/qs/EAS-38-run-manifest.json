@@ -1,0 +1,672 @@
+{
+  "manifest_schema_version": "v5.integration-run-manifest/v1",
+  "issue": {
+    "key": "EAS-38",
+    "id": "bdf5dc86-82d2-4b03-a6b6-2e3d7b02779d",
+    "base_sha": "4b83d9d513f01484c71b811512339fd7fe8943ec",
+    "head_sha": "0dfadf6393972d6e422384f8a127844c8e59072d"
+  },
+  "run": {
+    "run_id": "run-qs",
+    "qa_id": "QA-QS",
+    "trace_id": "trace-qs",
+    "attempt_no": 1,
+    "mode": "question_sql",
+    "created_at": "2026-08-17T00:00:00+00:00"
+  },
+  "participants": [
+    {
+      "agent_id": "120",
+      "role": "监管处罚不可丢失事实构造",
+      "platform_agent_identity": {
+        "kind": "multica_agent",
+        "agent_uuid": "22533152-db59-4a1b-8d01-5f251c618e6b",
+        "agent_name": "120-监管处罚不可丢失事实构造agent",
+        "skill_bindings": []
+      },
+      "repo_component_identity": {
+        "commit_sha": "0dfadf6393972d6e422384f8a127844c8e59072d",
+        "algorithm": "sha256",
+        "code_files": [
+          {
+            "relative_path": "src/east_v5/agents/east_120/extractor.py",
+            "sha256": "8778309d87801df734e9c3bd9310ce85bbf63b488c9d5a528dc6e97cef6e9358"
+          }
+        ],
+        "prompt_files": [
+          {
+            "relative_path": "agents/120/prompt.md",
+            "sha256": "5cd0c78b5e2003ee330b48711ccfbd77e1565e4bf0e3ac03fe78acbca9bd5858"
+          }
+        ]
+      },
+      "execution_mode": "in_process_component_or_stub"
+    },
+    {
+      "agent_id": "130",
+      "role": "EAST可观察事实构造",
+      "platform_agent_identity": {
+        "kind": "multica_agent",
+        "agent_uuid": "32074806-be1d-45e0-becb-a03bb3737750",
+        "agent_name": "130-EAST可观察事实构造agent",
+        "skill_bindings": [
+          {
+            "skill_id": "e4b03e06-c351-449c-9211-e48dae737874",
+            "name": "east-v5-test-driven-development",
+            "updated_at": "2026-08-14T03:07:36Z",
+            "binding_enabled": true
+          }
+        ]
+      },
+      "repo_component_identity": {
+        "commit_sha": "0dfadf6393972d6e422384f8a127844c8e59072d",
+        "algorithm": "sha256",
+        "code_files": [
+          {
+            "relative_path": "src/east_v5/agents/east_130/extractor.py",
+            "sha256": "8301f97b69b07cd0d04f33d3c84a5050a4fda598345e72f1f3d1cb56e1dbb518"
+          }
+        ],
+        "prompt_files": [
+          {
+            "relative_path": "agents/130/prompt.md",
+            "sha256": "4bfd81c24127b523cba29f6df5a07c7b55dbc9bf76f4a7755b63c03e91b0e734"
+          }
+        ]
+      },
+      "execution_mode": "in_process_component_or_stub"
+    },
+    {
+      "agent_id": "000",
+      "role": "资产检索（固定组件）",
+      "platform_agent_identity": {
+        "kind": "fixed_component",
+        "agent_uuid": null,
+        "not_applicable_reason": "not_applicable_no_platform_agent_record"
+      },
+      "repo_component_identity": {
+        "commit_sha": "0dfadf6393972d6e422384f8a127844c8e59072d",
+        "algorithm": "sha256",
+        "code_files": [
+          {
+            "relative_path": "src/east_v5/agents/east_000/__init__.py",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "relative_path": "src/east_v5/agents/east_000/extractor.py",
+            "sha256": "0858441329daaca41c2023706326781dab729093848856ac2f861f301fdf9350"
+          },
+          {
+            "relative_path": "src/east_v5/agents/east_000/query_executor.py",
+            "sha256": "f682f43b789ad42f5d4836da6c63cca27da38d071a835439820582eae977a8b5"
+          },
+          {
+            "relative_path": "src/east_v5/agents/east_000/safety_gate.py",
+            "sha256": "f6758350a1e7b14476279f11baa100ff2bffafb56474778596c5d81f7c998f21"
+          }
+        ],
+        "prompt_files": [
+          {
+            "relative_path": "agents/000/prompt.md",
+            "sha256": "a968b51b9ea635b965290723c6cbf9d2e712a73d3cfeb5a41f16ec4ec43aed39"
+          }
+        ],
+        "contract_files": [
+          {
+            "relative_path": "contracts/packages/constraint-query-request.schema.json",
+            "sha256": "332589d2c36a3fe208e9182be0455064193ca35bfa3168c958286fa552bafba1"
+          },
+          {
+            "relative_path": "contracts/packages/constraint-asset-package.schema.json",
+            "sha256": "228b992a91310598ca0f9258f7d7eec183803d882496ca995134477c28179ed7"
+          }
+        ]
+      },
+      "execution_mode": "in_process_component_or_stub"
+    },
+    {
+      "agent_id": "140",
+      "role": "查询规格构造",
+      "platform_agent_identity": {
+        "kind": "multica_agent",
+        "agent_uuid": "b90b55df-8d99-470e-b179-2028a3db58cc",
+        "agent_name": "140-查询规格agent",
+        "skill_bindings": [
+          {
+            "skill_id": "e4b03e06-c351-449c-9211-e48dae737874",
+            "name": "east-v5-test-driven-development",
+            "updated_at": "2026-08-14T03:07:36Z",
+            "binding_enabled": true
+          }
+        ]
+      },
+      "repo_component_identity": {
+        "commit_sha": "0dfadf6393972d6e422384f8a127844c8e59072d",
+        "algorithm": "sha256",
+        "code_files": [
+          {
+            "relative_path": "src/east_v5/agents/east_140/extractor.py",
+            "sha256": "434403a014fec6d0519ceaeda91f5482bcff2d38179670131f1ba0605ea2685c"
+          }
+        ],
+        "prompt_files": [
+          {
+            "relative_path": "agents/140/prompt.md",
+            "sha256": "c456c9129eef347c41b7e62b1ab0d941191b73d67df0ded280db88a6022a202d"
+          }
+        ]
+      },
+      "execution_mode": "in_process_component_or_stub"
+    },
+    {
+      "agent_id": "150",
+      "role": "question-sql主生成",
+      "platform_agent_identity": {
+        "kind": "multica_agent",
+        "agent_uuid": "42e84d5d-140d-43e1-bc57-71e0a55c9ba6",
+        "agent_name": "150-Codex question-sql主生成agent",
+        "skill_bindings": [
+          {
+            "skill_id": "e4b03e06-c351-449c-9211-e48dae737874",
+            "name": "east-v5-test-driven-development",
+            "updated_at": "2026-08-14T03:07:36Z",
+            "binding_enabled": true
+          }
+        ]
+      },
+      "repo_component_identity": {
+        "commit_sha": "0dfadf6393972d6e422384f8a127844c8e59072d",
+        "algorithm": "sha256",
+        "code_files": [
+          {
+            "relative_path": "src/east_v5/agents/east_150/extractor.py",
+            "sha256": "0f3b6767527e750fdb10e8345ad0f65aa7435685571c6eebfda163e86801ff97"
+          }
+        ],
+        "prompt_files": [
+          {
+            "relative_path": "agents/150/prompt.md",
+            "sha256": "a62333adf83992f8f55906a7aa90410af8142aeb6c3696fde0c2fc854c1098d7"
+          }
+        ]
+      },
+      "execution_mode": "in_process_component_or_stub"
+    },
+    {
+      "agent_id": "160",
+      "role": "确定性预审",
+      "platform_agent_identity": {
+        "kind": "multica_agent",
+        "agent_uuid": "65ccd12e-3c3a-4574-a779-2f65c91cc2f6",
+        "agent_name": "160-确定性预审agent",
+        "skill_bindings": [
+          {
+            "skill_id": "e4b03e06-c351-449c-9211-e48dae737874",
+            "name": "east-v5-test-driven-development",
+            "updated_at": "2026-08-14T03:07:36Z",
+            "binding_enabled": true
+          }
+        ]
+      },
+      "repo_component_identity": {
+        "commit_sha": "0dfadf6393972d6e422384f8a127844c8e59072d",
+        "algorithm": "sha256",
+        "code_files": [
+          {
+            "relative_path": "src/east_v5/agents/160/precheck.py",
+            "sha256": "a3797b020c0c328b5d384e8adb82238fdebce1601e77b115ad2fb637be79ce1f"
+          }
+        ],
+        "prompt_files": [
+          {
+            "relative_path": "agents/160/prompt.md",
+            "sha256": "df4aac8b2fadf4afc5f3a6bc99df72fdbe993bb4289e8423cd8fb6a39c3c98ea"
+          }
+        ]
+      },
+      "execution_mode": "in_process_component_or_stub"
+    },
+    {
+      "agent_id": "170",
+      "role": "DeepSeek审核员",
+      "platform_agent_identity": {
+        "kind": "multica_agent",
+        "agent_uuid": "2335a247-2257-4a50-9085-5e75dba034ad",
+        "agent_name": "170-DeepSeek审核员agent",
+        "skill_bindings": [
+          {
+            "skill_id": "e4b03e06-c351-449c-9211-e48dae737874",
+            "name": "east-v5-test-driven-development",
+            "updated_at": "2026-08-14T03:07:36Z",
+            "binding_enabled": true
+          }
+        ]
+      },
+      "repo_component_identity": {
+        "commit_sha": "0dfadf6393972d6e422384f8a127844c8e59072d",
+        "algorithm": "sha256",
+        "code_files": [
+          {
+            "relative_path": "src/east_v5/agents/170/review.py",
+            "sha256": "af48d85d8eeaf9fdd99815f1a4a25635632852d5e745bff01f54b1f823346f2e"
+          }
+        ],
+        "prompt_files": [
+          {
+            "relative_path": "agents/170/prompt.md",
+            "sha256": "8765ac30768cbdb8ad71dbb7de6421496d444d0296b0a5057324b4932df1709f"
+          }
+        ]
+      },
+      "execution_mode": "in_process_component_or_stub"
+    },
+    {
+      "agent_id": "180",
+      "role": "GLM审核员",
+      "platform_agent_identity": {
+        "kind": "multica_agent",
+        "agent_uuid": "9639f8aa-44fa-46ac-9373-ff4085d609fc",
+        "agent_name": "180-GLM审核员agent",
+        "skill_bindings": []
+      },
+      "repo_component_identity": {
+        "commit_sha": "0dfadf6393972d6e422384f8a127844c8e59072d",
+        "algorithm": "sha256",
+        "code_files": [
+          {
+            "relative_path": "src/east_v5/agents/east_180/reviewer.py",
+            "sha256": "1d76c9e4763912243a566413b84129db222e6c187ea0767f8c764b7f4ad04c32"
+          }
+        ],
+        "prompt_files": [
+          {
+            "relative_path": "agents/180/prompt.md",
+            "sha256": "903cad042204b73817df837bd0de009605374d013e7c79e2fdb0ac5a697646d1"
+          }
+        ]
+      },
+      "execution_mode": "in_process_component_or_stub"
+    },
+    {
+      "agent_id": "110",
+      "role": "question-sql阶段调度",
+      "platform_agent_identity": {
+        "kind": "multica_agent",
+        "agent_uuid": "67f9cf29-cd45-4ef3-8c87-963fd3ff5898",
+        "agent_name": "110-question-sql阶段调度agent",
+        "skill_bindings": [
+          {
+            "skill_id": "e4b03e06-c351-449c-9211-e48dae737874",
+            "name": "east-v5-test-driven-development",
+            "updated_at": "2026-08-14T03:07:36Z",
+            "binding_enabled": true
+          }
+        ]
+      },
+      "repo_component_identity": {
+        "commit_sha": "0dfadf6393972d6e422384f8a127844c8e59072d",
+        "algorithm": "sha256",
+        "code_files": [
+          {
+            "relative_path": "src/east_v5/agents/110/scheduler.py",
+            "sha256": "f23d1ce4ad2e2a33f66f63e9e6e42f055e82828ae18a414669ba0e9a45b145b6"
+          }
+        ],
+        "prompt_files": [
+          {
+            "relative_path": "agents/110/prompt.md",
+            "sha256": "4811e415c671b4b7cbec18fb3343f35fe735cdd66552037b16e22fcd5263f286"
+          }
+        ]
+      },
+      "execution_mode": "in_process_component_or_stub"
+    },
+    {
+      "agent_id": "210",
+      "role": "data阶段调度（下游消费）",
+      "platform_agent_identity": {
+        "kind": "multica_agent",
+        "agent_uuid": "9b8b6b0f-f4be-41d4-9aa7-9647542ddc78",
+        "agent_name": "EAST V5 210-data阶段调度agent",
+        "skill_bindings": []
+      },
+      "repo_component_identity": {
+        "commit_sha": "0dfadf6393972d6e422384f8a127844c8e59072d",
+        "algorithm": "sha256",
+        "code_files": [
+          {
+            "relative_path": "src/east_v5/agents/210/scheduler.py",
+            "sha256": "d91292f476761a06e418e7927d884437e8f43ce39107aa1692ff97d2d1451f36"
+          }
+        ],
+        "prompt_files": [
+          {
+            "relative_path": "agents/210/prompt.md",
+            "sha256": "2a7cba19e4061ab1f95ea1e5529f3b6ff160de52ffd378ebdbdce370d69dd4b5"
+          }
+        ]
+      },
+      "execution_mode": "in_process_component_or_stub"
+    },
+    {
+      "agent_id": "220",
+      "role": "结构闭包构造（下游消费）",
+      "platform_agent_identity": {
+        "kind": "multica_agent",
+        "agent_uuid": "94511939-5004-4f86-9f03-016d2484ff88",
+        "agent_name": "220-结构闭包构造agent",
+        "skill_bindings": []
+      },
+      "repo_component_identity": {
+        "commit_sha": "0dfadf6393972d6e422384f8a127844c8e59072d",
+        "algorithm": "sha256",
+        "code_files": [
+          {
+            "relative_path": "src/east_v5/agents/220/closure.py",
+            "sha256": "225c2f7739e23b90795e9e2470871631a2bce5133d0a6c783d45525aa73c9e06"
+          }
+        ],
+        "prompt_files": [
+          {
+            "relative_path": "agents/220/prompt.md",
+            "sha256": "41ce3c3f32be4ddb513273dd57e6e9c93fc41501ff3ab0c1dca203034a561f56"
+          }
+        ]
+      },
+      "execution_mode": "in_process_component_or_stub"
+    }
+  ],
+  "edges": [
+    {
+      "edge_id": "010→120",
+      "from": "010",
+      "to": "120",
+      "package_type": "penalty_source_package",
+      "input_ref": null,
+      "output_ref": {
+        "artifact_id": "penalty-source-sanitized",
+        "version": 1,
+        "content_hash": "74a0636fe634d66d131377844215772ea831cd0a3cefda72ace6e3f4817a2add"
+      },
+      "producer": "010",
+      "consumer": "120",
+      "consumption_conclusion": "冻结处罚来源 Fixture（sha256=74a0636f…）经 FactExtractor.validate_input 通过，确定性提取 7 条事实"
+    },
+    {
+      "edge_id": "120→130",
+      "from": "120",
+      "to": "130",
+      "package_type": "penalty_fact_package",
+      "input_ref": {
+        "artifact_id": "penalty-source-sanitized",
+        "version": 1,
+        "content_hash": "74a0636fe634d66d131377844215772ea831cd0a3cefda72ace6e3f4817a2add"
+      },
+      "output_ref": {
+        "artifact_id": "penalty-qs",
+        "version": 1,
+        "content_hash": "a921c267b2848dee54bb30a5d16aa58e03a46a9d00310e4ae4a857e4305bc930"
+      },
+      "producer": "120",
+      "consumer": "130",
+      "consumption_conclusion": "130 validate_penalty 通过，作为约束查询请求父引用"
+    },
+    {
+      "edge_id": "130→000",
+      "from": "130",
+      "to": "000",
+      "package_type": "constraint_query_request",
+      "input_ref": {
+        "artifact_id": "penalty-qs",
+        "version": 1,
+        "content_hash": "a921c267b2848dee54bb30a5d16aa58e03a46a9d00310e4ae4a857e4305bc930"
+      },
+      "output_ref": {
+        "artifact_id": "130-query-run-qs-1",
+        "version": 1,
+        "content_hash": "6f02abfe6c643827b268fbf2e14ccee6cce91b2d852f9fda1344d1a322a4f8e5"
+      },
+      "producer": "130",
+      "consumer": "000",
+      "consumption_conclusion": "000 以脱敏 constraint_asset_package 回执消费（未触真实 CoreBank SQLite）"
+    },
+    {
+      "edge_id": "000→130",
+      "from": "000",
+      "to": "130",
+      "package_type": "constraint_asset_package",
+      "input_ref": {
+        "artifact_id": "130-query-run-qs-1",
+        "version": 1,
+        "content_hash": "6f02abfe6c643827b268fbf2e14ccee6cce91b2d852f9fda1344d1a322a4f8e5"
+      },
+      "output_ref": {
+        "artifact_id": "asset-130-query-run-qs-1",
+        "version": 1,
+        "content_hash": "02902234b600abe22bc243f129b9ccadf7b176a1729ca9e6b1b603f3850de1ac"
+      },
+      "producer": "000",
+      "consumer": "130",
+      "consumption_conclusion": "130 validate_assets 通过，映射候选 3 条（EAST_D001.F001/F002/F003）"
+    },
+    {
+      "edge_id": "130→140",
+      "from": "130",
+      "to": "140",
+      "package_type": "east_observable_fact_package",
+      "input_ref": {
+        "artifact_id": "asset-130-query-run-qs-1",
+        "version": 1,
+        "content_hash": "02902234b600abe22bc243f129b9ccadf7b176a1729ca9e6b1b603f3850de1ac"
+      },
+      "output_ref": {
+        "artifact_id": "130-observable-run-qs",
+        "version": 1,
+        "content_hash": "b0e8132215487902381b259db8f2f874870dcbf8da6af319fe0e2387c1ce4ab1"
+      },
+      "producer": "130",
+      "consumer": "140",
+      "consumption_conclusion": "140 validate_observable 通过，coverage_status=partial（4 条 NO_EAST_ASSET 不伪造）"
+    },
+    {
+      "edge_id": "140→150",
+      "from": "140",
+      "to": "150",
+      "package_type": "query_specification_package",
+      "input_ref": {
+        "artifact_id": "130-observable-run-qs",
+        "version": 1,
+        "content_hash": "b0e8132215487902381b259db8f2f874870dcbf8da6af319fe0e2387c1ce4ab1"
+      },
+      "output_ref": {
+        "artifact_id": "140-qspec-run-qs",
+        "version": 1,
+        "content_hash": "44f80e543042e7b481668730cad4bff6abd0649a61867939900cf6a5bde86e52"
+      },
+      "producer": "140",
+      "consumer": "150",
+      "consumption_conclusion": "150 validate_query_spec 通过，must_preserve_fact_refs 覆盖全部 yes/conditional"
+    },
+    {
+      "edge_id": "150→160",
+      "from": "150",
+      "to": "160",
+      "package_type": "question_sql_pending_precheck",
+      "input_ref": {
+        "artifact_id": "140-qspec-run-qs",
+        "version": 1,
+        "content_hash": "44f80e543042e7b481668730cad4bff6abd0649a61867939900cf6a5bde86e52"
+      },
+      "output_ref": {
+        "artifact_id": "150-question-sql-run-qs",
+        "version": 1,
+        "content_hash": "0cec0d3303d44f5cd37a119171da910a56f9b61d1429faf36a3a6c0e0a80891c"
+      },
+      "producer": "150",
+      "consumer": "160",
+      "consumption_conclusion": "160 precheck 通过（16 条 PC 规则全 pass）"
+    },
+    {
+      "edge_id": "160→170,180",
+      "from": "160",
+      "to": "170,180",
+      "package_type": "question_sql_pending_dual_review",
+      "input_ref": {
+        "artifact_id": "150-question-sql-run-qs",
+        "version": 1,
+        "content_hash": "0cec0d3303d44f5cd37a119171da910a56f9b61d1429faf36a3a6c0e0a80891c"
+      },
+      "output_ref": {
+        "artifact_id": "150-run-qs-QA-QS-dual-review",
+        "version": 1,
+        "content_hash": "78d43c479a85b5e84cef4063fb14e455e75a8bb11723f57788b7df3792a583a0"
+      },
+      "producer": "160",
+      "consumer": "170,180",
+      "consumption_conclusion": "170/180 输入同一 package_hash=386b1bd4235e6fd5dd806a867d2cf650429c310bebd63f104aed1d13a4f78281"
+    },
+    {
+      "edge_id": "170→110",
+      "from": "170",
+      "to": "110",
+      "package_type": "deepseek_review_result",
+      "input_ref": {
+        "artifact_id": "150-run-qs-QA-QS-dual-review",
+        "version": 1,
+        "content_hash": "78d43c479a85b5e84cef4063fb14e455e75a8bb11723f57788b7df3792a583a0"
+      },
+      "output_ref": {
+        "artifact_id": "150-run-qs-QA-QS-dual-review-deepseek-review",
+        "version": 1,
+        "content_hash": "46c768a5eeee2dc711b53162786c58f69d35cf4ac9cb3f71c13ec241a55b58c2"
+      },
+      "producer": "170",
+      "consumer": "110",
+      "consumption_conclusion": "110 validate_result 通过，decision=yes"
+    },
+    {
+      "edge_id": "180→110",
+      "from": "180",
+      "to": "110",
+      "package_type": "glm_review_result",
+      "input_ref": {
+        "artifact_id": "150-run-qs-QA-QS-dual-review",
+        "version": 1,
+        "content_hash": "78d43c479a85b5e84cef4063fb14e455e75a8bb11723f57788b7df3792a583a0"
+      },
+      "output_ref": {
+        "artifact_id": "150-run-qs-QA-QS-dual-review-v1-glm-review",
+        "version": 1,
+        "content_hash": "2f4487f64df46c1e60377bcc84385f8ae17e02e365ba6dad1cfc61f41d1fc75c"
+      },
+      "producer": "180",
+      "consumer": "110",
+      "consumption_conclusion": "110 validate_output 通过，decision=yes"
+    },
+    {
+      "edge_id": "110→210",
+      "from": "110",
+      "to": "210",
+      "package_type": "question_sql_dual_review_passed",
+      "input_ref": {
+        "artifact_id": "150-run-qs-QA-QS-dual-review",
+        "version": 1,
+        "content_hash": "78d43c479a85b5e84cef4063fb14e455e75a8bb11723f57788b7df3792a583a0"
+      },
+      "output_ref": {
+        "artifact_id": "150-run-qs-QA-QS-dual-review-dual-review-passed",
+        "version": 1,
+        "content_hash": "53377cd151578db1f2e553473ccd60c3612ab62f6a9042ba17032e84cbc03276"
+      },
+      "producer": "110",
+      "consumer": "210",
+      "consumption_conclusion": "210 begin_event 消费批准包并调度 220，未误启动 data 阶段"
+    },
+    {
+      "edge_id": "210→220",
+      "from": "210",
+      "to": "220",
+      "package_type": "reviewed_question_sql",
+      "input_ref": {
+        "artifact_id": "150-run-qs-QA-QS-dual-review-dual-review-passed",
+        "version": 1,
+        "content_hash": "53377cd151578db1f2e553473ccd60c3612ab62f6a9042ba17032e84cbc03276"
+      },
+      "output_ref": {
+        "artifact_id": "210-reviewed-150-run-qs-QA-QS-dual-review-dual-review-passed",
+        "version": 1,
+        "content_hash": "3921603f23b0d4e3f9a53f56beef0f89c0b57a596459ad6300b2eb441f647b58"
+      },
+      "producer": "210",
+      "consumer": "220",
+      "consumption_conclusion": "220 结构闭包调度（kind=structure_closure）"
+    }
+  ],
+  "routing": {
+    "normal_path": "170/180 双 YES → 110 组装 question_sql_dual_review_passed → 210 → 220",
+    "error_routes": {
+      "FACT_PACKAGE_ERROR": "120",
+      "OBSERVABLE_MAPPING_ERROR": "130",
+      "QUERY_SPEC_ERROR": "140",
+      "QUESTION_SQL_ERROR": "150",
+      "BUSINESS_EVENT_ERROR": "150",
+      "QUESTION_FACT_OMISSION": "150"
+    },
+    "most_upstream_priority": [
+      "120",
+      "130",
+      "140",
+      "150"
+    ]
+  },
+  "retries_and_blocks": [
+    {
+      "scenario": "160 预审失败（PC-SQL-005 越界字段）→ 150 修复",
+      "attempt_no": 1,
+      "outcome": "precheck_failed_feedback → 150 handle_precheck_feedback 生成 attempt2 并复检通过"
+    },
+    {
+      "scenario": "170 模型失败（三次调用）",
+      "attempt_no": 3,
+      "outcome": "blocked_manual"
+    },
+    {
+      "scenario": "180 超时（第三次 attempt）",
+      "attempt_no": 3,
+      "outcome": "blocked_manual"
+    },
+    {
+      "scenario": "180 非法 JSON 输出（非第三次）",
+      "attempt_no": 1,
+      "outcome": "MODEL_RETRY_EXHAUSTED（拒绝，不伪造审核包）"
+    },
+    {
+      "scenario": "110 第三次 NO",
+      "attempt_no": 3,
+      "outcome": "manual 人工阻断"
+    },
+    {
+      "scenario": "任一审核 blocked_manual",
+      "attempt_no": null,
+      "outcome": "110 → manual 人工阻断"
+    }
+  ],
+  "timings_ms": {
+    "integration_suite_15_tests": 560,
+    "manifest_suite_9_tests": 50,
+    "chain_unit_tests_9_files_total": 2020,
+    "recorded_at_head": "0dfadf6393972d6e422384f8a127844c8e59072d"
+  },
+  "non_applicable": {
+    "database_copy": "本阶段（question-SQL 联调）不适用：无数据/ORM 生成，无沙箱或正式库 copy；260 数据库 copy 回归属 data 阶段，非本 Issue 范围。",
+    "real_model_calls": "本阶段未执行真实模型调用：170/180 语义输出以固定脱敏报告/ScriptedGLM 驱动，无模型外发；真实 GLM/DeepSeek 运行时由各 Agent 主 Issue 受控探针验收。"
+  },
+  "routing_governance": {
+    "authority": "110",
+    "question_fact_omission_target": "150",
+    "review_suggestion_only": true,
+    "divergence": "180 的 ERROR_ROUTE 将 QUESTION_FACT_OMISSION 映射为 120（审核建议），而 110（唯一最终调度权威）与 170 均映射为 150（最终修复目标）。EAS-38 未修改已验收的 180。",
+    "governance_before": "EAS-41"
+  },
+  "content_sha256": "5e78bc8d4c24a2ea3aa688a4687ea579a66c4d9b2fd35df8733ec85a2c5accd8"
+}

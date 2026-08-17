@@ -307,6 +307,23 @@ class QuestionSqlE2ETests(unittest.TestCase):
         r180 = review_180(dual, report_180_no(["FACT_PACKAGE_ERROR", "QUESTION_SQL_ERROR"], "120"))
         self.assertEqual(self.scheduler.collect_reviews(dual, [r170, r180], created_at=TIME)["target"], "120")
 
+    def test_180_suggests_120_but_110_dispatches_150(self):
+        """路由口径冻结：110 是唯一最终调度权威，170/180 的 route_suggestion 仅为审核建议。
+
+        QUESTION_FACT_OMISSION 在 180 的 ERROR_ROUTE 中映射为 120（审核建议），
+        但 110 依据自身冻结 ERROR_ROUTE 最终调度到 150。本回归证明该上游差异
+        兼容且 110 不采纳 180 的建议值（登记为 EAS-41 前必须治理的上游差异）。
+        """
+        dual = build_full_chain()["dual"]
+        r170 = review_170(dual, report_170_yes())
+        r180 = review_180(dual, report_180_no(["QUESTION_FACT_OMISSION"], "120"))
+        # 180 的审核建议为 120（其自身 ERROR_ROUTE 口径）
+        self.assertEqual(r180["payload"]["semantic_review_report"]["route_suggestion"], "120")
+        # 110 依据自身冻结 ERROR_ROUTE 最终调度到 150，不采纳 180 的建议值
+        result = self.scheduler.collect_reviews(dual, [r170, r180], created_at=TIME)
+        self.assertEqual((result["target"], result["kind"]), ("150", "repair"))
+        self.assertEqual(result["reason"], "SEMANTIC_REVIEW_REJECTED")
+
     # ── 170/180 独立且输入同一冻结哈希 ────────────────────────────
 
     def test_170_180_independent_and_same_frozen_hash(self):

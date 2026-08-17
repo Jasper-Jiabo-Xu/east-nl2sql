@@ -1,0 +1,190 @@
+{
+  "$id": "https://east.example/contracts/integration/qs/run-manifest/v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "EAS-38 question-SQL 阶段端到端联调机器可读运行清单",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "manifest_schema_version", "issue", "run", "participants", "edges",
+    "routing", "retries_and_blocks", "timings_ms", "non_applicable",
+    "routing_governance", "content_sha256"
+  ],
+  "properties": {
+    "manifest_schema_version": {"const": "v5.integration-run-manifest/v1"},
+    "issue": {
+      "type": "object", "additionalProperties": false,
+      "required": ["key", "id", "base_sha", "head_sha"],
+      "properties": {
+        "key": {"type": "string", "minLength": 1},
+        "id": {"type": "string", "minLength": 1},
+        "base_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "head_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"}
+      }
+    },
+    "run": {
+      "type": "object", "additionalProperties": false,
+      "required": ["run_id", "qa_id", "trace_id", "attempt_no", "mode", "created_at"],
+      "properties": {
+        "run_id": {"type": "string", "minLength": 1},
+        "qa_id": {"type": "string", "minLength": 1},
+        "trace_id": {"type": "string", "minLength": 1},
+        "attempt_no": {"type": "integer", "minimum": 1, "maximum": 3},
+        "mode": {"const": "question_sql"},
+        "created_at": {"type": "string", "format": "date-time"}
+      }
+    },
+    "participants": {
+      "type": "array", "minItems": 1,
+      "items": {"$ref": "#/$defs/participant"}
+    },
+    "edges": {
+      "type": "array", "minItems": 1,
+      "items": {"$ref": "#/$defs/edge"}
+    },
+    "routing": {"$ref": "#/$defs/routing"},
+    "retries_and_blocks": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/retry_or_block"}
+    },
+    "timings_ms": {"type": "object", "additionalProperties": true},
+    "non_applicable": {
+      "type": "object", "additionalProperties": false,
+      "required": ["database_copy", "real_model_calls"],
+      "properties": {
+        "database_copy": {"type": "string", "minLength": 1},
+        "real_model_calls": {"type": "string", "minLength": 1}
+      }
+    },
+    "routing_governance": {
+      "type": "object", "additionalProperties": false,
+      "required": ["authority", "question_fact_omission_target", "review_suggestion_only", "divergence", "governance_before"],
+      "properties": {
+        "authority": {"const": "110"},
+        "question_fact_omission_target": {"const": "150"},
+        "review_suggestion_only": {"type": "boolean", "const": true},
+        "divergence": {"type": "string", "minLength": 1},
+        "governance_before": {"type": "string", "minLength": 1}
+      }
+    },
+    "content_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  },
+  "$defs": {
+    "uuid": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"},
+    "ref": {
+      "type": "object", "additionalProperties": false,
+      "required": ["artifact_id", "version", "content_hash"],
+      "properties": {
+        "artifact_id": {"type": "string", "minLength": 1},
+        "version": {"type": "integer", "minimum": 1},
+        "content_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    },
+    "repo_file": {
+      "type": "object", "additionalProperties": false,
+      "required": ["relative_path", "sha256"],
+      "properties": {
+        "relative_path": {"type": "string", "minLength": 1},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    },
+    "skill_binding": {
+      "type": "object", "additionalProperties": false,
+      "required": ["skill_id", "name", "updated_at", "binding_enabled"],
+      "properties": {
+        "skill_id": {"$ref": "#/$defs/uuid"},
+        "name": {"type": "string", "minLength": 1},
+        "updated_at": {"type": "string", "format": "date-time"},
+        "binding_enabled": {"const": true}
+      }
+    },
+    "repo_component_identity": {
+      "type": "object", "additionalProperties": false,
+      "required": ["commit_sha", "algorithm", "code_files", "prompt_files"],
+      "properties": {
+        "commit_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "algorithm": {"const": "sha256"},
+        "code_files": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/repo_file"}},
+        "prompt_files": {"type": "array", "items": {"$ref": "#/$defs/repo_file"}},
+        "contract_files": {"type": "array", "items": {"$ref": "#/$defs/repo_file"}}
+      }
+    },
+    "platform_agent_identity": {
+      "oneOf": [
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["kind", "agent_uuid", "agent_name", "skill_bindings"],
+          "properties": {
+            "kind": {"const": "multica_agent"},
+            "agent_uuid": {"$ref": "#/$defs/uuid"},
+            "agent_name": {"type": "string", "minLength": 1},
+            "skill_bindings": {"type": "array", "items": {"$ref": "#/$defs/skill_binding"}}
+          }
+        },
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["kind", "agent_uuid", "not_applicable_reason"],
+          "properties": {
+            "kind": {"const": "fixed_component"},
+            "agent_uuid": {"type": "null"},
+            "not_applicable_reason": {"const": "not_applicable_no_platform_agent_record"}
+          }
+        }
+      ]
+    },
+    "participant": {
+      "type": "object", "additionalProperties": false,
+      "required": ["agent_id", "role", "platform_agent_identity", "repo_component_identity", "execution_mode"],
+      "properties": {
+        "agent_id": {"type": "string", "minLength": 1},
+        "role": {"type": "string", "minLength": 1},
+        "platform_agent_identity": {"$ref": "#/$defs/platform_agent_identity"},
+        "repo_component_identity": {"$ref": "#/$defs/repo_component_identity"},
+        "execution_mode": {"const": "in_process_component_or_stub"}
+      }
+    },
+    "edge": {
+      "type": "object", "additionalProperties": false,
+      "required": ["edge_id", "from", "to", "package_type", "input_ref", "output_ref", "producer", "consumer", "consumption_conclusion"],
+      "properties": {
+        "edge_id": {"type": "string", "minLength": 1},
+        "from": {"type": "string", "minLength": 1},
+        "to": {"type": "string", "minLength": 1},
+        "package_type": {"type": "string", "minLength": 1},
+        "input_ref": {"anyOf": [{"$ref": "#/$defs/ref"}, {"type": "null"}]},
+        "output_ref": {"anyOf": [{"$ref": "#/$defs/ref"}, {"type": "null"}]},
+        "producer": {"type": "string", "minLength": 1},
+        "consumer": {"type": "string", "minLength": 1},
+        "consumption_conclusion": {"type": "string", "minLength": 1}
+      }
+    },
+    "routing": {
+      "type": "object", "additionalProperties": false,
+      "required": ["normal_path", "error_routes", "most_upstream_priority"],
+      "properties": {
+        "normal_path": {"type": "string", "minLength": 1},
+        "error_routes": {
+          "type": "object", "additionalProperties": false,
+          "required": ["FACT_PACKAGE_ERROR", "OBSERVABLE_MAPPING_ERROR", "QUERY_SPEC_ERROR", "QUESTION_SQL_ERROR", "BUSINESS_EVENT_ERROR", "QUESTION_FACT_OMISSION"],
+          "properties": {
+            "FACT_PACKAGE_ERROR": {"const": "120"},
+            "OBSERVABLE_MAPPING_ERROR": {"const": "130"},
+            "QUERY_SPEC_ERROR": {"const": "140"},
+            "QUESTION_SQL_ERROR": {"const": "150"},
+            "BUSINESS_EVENT_ERROR": {"const": "150"},
+            "QUESTION_FACT_OMISSION": {"const": "150"}
+          }
+        },
+        "most_upstream_priority": {"type": "array", "items": {"type": "string"}, "minItems": 4}
+      }
+    },
+    "retry_or_block": {
+      "type": "object", "additionalProperties": false,
+      "required": ["scenario", "attempt_no", "outcome"],
+      "properties": {
+        "scenario": {"type": "string", "minLength": 1},
+        "attempt_no": {"type": ["integer", "null"]},
+        "outcome": {"type": "string", "minLength": 1}
+      }
+    }
+  }
+}
