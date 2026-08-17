@@ -1,0 +1,21 @@
+{
+  "schema_version": "v5.agent-runtime-manifest/v1",
+  "agent_number": "210",
+  "agent_name": "EAST V5 210-data阶段调度agent",
+  "model": "gpt-5.6-terra",
+  "thinking_level": "high",
+  "max_concurrent_tasks": 1,
+  "skills": [],
+  "permissions": {
+    "artifact_registry": "runtime_attempt_scope_only",
+    "database": "none",
+    "internet": "none",
+    "reference_root": "read_only",
+    "formal_release": "forbidden",
+    "agent_dispatch": ["220", "230", "241", "242", "251", "252", "260", "010"]
+  },
+  "input_artifacts": ["question_sql_dual_review_passed", "sql_regression_failed_feedback", "foundation_task_package", "database_copy_regression"],
+  "output_artifacts": ["reviewed_question_sql", "foundation_task_package", "foundation_profile", "release_candidate"],
+  "contract_paths": ["contracts/packages/reviewed-question-sql-package.schema.json", "contracts/packages/release-candidate-package.schema.json"],
+  "runtime_artifact_path_template": "${V5_RUNTIME_ROOT}/vnext/03_构建过程层/issues/EAS-36/${run_id}/${attempt}/"
+}
