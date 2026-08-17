@@ -3,6 +3,20 @@
   "assets": [
     {
       "artifact_type": "constraint_asset_ref",
+      "artifact_id": "CA-FOUNDATION-20260805-002",
+      "asset_version": "CA-V0.2.0",
+      "content_hash": "6cb0f385adae4e3e9e24558dc432132b43c437e8c2db5ce329c46bf68e8c4188",
+      "required_payload": {
+        "single_field": "f137be03a3814428b76507373d2032705dcacb1ff804adbddd96e397da5c1d6f"
+      },
+      "required_sqlite_tables": [
+        "field_master",
+        "single_field_constraints"
+      ],
+      "required_sqlite_views": []
+    },
+    {
+      "artifact_type": "constraint_asset_ref",
       "artifact_id": "CA-MULTIFIELD-20260812-003",
       "asset_version": "CA-V0.3.0",
       "content_hash": "cbcbd79e318f91522393403241b50919a656aa77d71c7f950f43725286b64d3d",

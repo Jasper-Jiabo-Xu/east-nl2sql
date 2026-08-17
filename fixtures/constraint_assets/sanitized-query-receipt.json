@@ -1,0 +1,19 @@
+{
+  "schema_version": "v5.constraint-asset-query-result/v2",
+  "artifact_type": "constraint_asset_ref",
+  "artifact_id": "sanitized-ca",
+  "asset_version": "CA-V0.3.0",
+  "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "query_method": "constraints_for_table",
+  "table_code": "SANITIZED_TABLE",
+  "query_parameters": {"page_size": 100},
+  "total": 1,
+  "returned_count": 1,
+  "complete": true,
+  "cursor": null,
+  "next_cursor": null,
+  "source_hash": "b610e22532d1bd46295499a7ef4f1b5c57c73e4740fd8434181486590898d4fe",
+  "records_hash": "2e953ba7b5980a6d45bfc5130629ba2ea0d7ecaf9079e47b21f9c9c9ae484cfe",
+  "receipt_hash": "0e398008741acecdbf0a8986f04d192624fa4db991e6644c0da8d4786e8fc1b8",
+  "records": [{"canonical_rule_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "constraint_id": "SAN-001", "constraint_item_type": "COMPARISON", "evidence_refs_json": "[]", "scope": "INTRA_TABLE", "structured_expression_json": "{\"kind\":\"comparison\"}"}]
+}
