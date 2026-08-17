@@ -205,16 +205,44 @@ class DataStageCoordinator:
             {"target": "251", "kind": "restricted_orm", "structure_closure_ref": artifact_ref(structure["envelope"]), "operation_closure_ref": artifact_ref(operation["envelope"])},
         ]
 
-    def join_event_validations(self, approved: dict[str, Any], verified_data: dict[str, Any], frozen_orm: dict[str, Any]) -> dict[str, Any]:
-        """Authorize 260 only after both validated event branches converge."""
+    def join_event_validations(
+        self,
+        approved: dict[str, Any],
+        structure: dict[str, Any],
+        operation: dict[str, Any],
+        restricted_orm: dict[str, Any],
+        verified_data: dict[str, Any],
+        frozen_orm: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Authorize 260 only for the one 220/230 closure pair and its two validated branches."""
         self._validate(approved, "question-sql-dual-review-passed-package.schema.json", "210_DUAL_REVIEW_REJECTED")
+        closure = importlib.import_module("east_v5.agents.220.closure")
+        operation_builder = importlib.import_module("east_v5.agents.230.builder").OperationClosureBuilder(self.repo_root)
+        orm_generator = importlib.import_module("east_v5.agents.251.generator").RestrictedOrmGenerator(self.repo_root)
+        try:
+            closure.validate_structure_closure_package(structure)
+            operation_builder.validate_operation_closure_package(operation)
+            orm_generator.validate_restricted_orm(restricted_orm, structure, operation)
+        except ContractError as exc:
+            raise ContractError("210_EVENT_CLOSURE_REJECTED") from exc
         self._validate(verified_data, "verified-bound-data-package.schema.json", "210_DATA_BRANCH_REJECTED")
         self._validate(frozen_orm, "frozen-orm-package.schema.json", "210_ORM_BRANCH_REJECTED")
         if (verified_data["envelope"]["producer_id"], verified_data["envelope"]["mode"], verified_data["envelope"]["status"]) != ("242", "event_data", "validated"):
             _fail("210_DATA_BRANCH_STATE_REJECTED")
         if (frozen_orm["envelope"]["producer_id"], frozen_orm["envelope"]["mode"], frozen_orm["envelope"]["status"]) != ("252", "event_data", "validated"):
             _fail("210_ORM_BRANCH_STATE_REJECTED")
-        self._same_context(approved, verified_data, frozen_orm)
+        structure_ref, operation_ref, restricted_ref = (
+            artifact_ref(structure["envelope"]), artifact_ref(operation["envelope"]), artifact_ref(restricted_orm["envelope"]),
+        )
+        data_payload = verified_data["payload"]
+        if (data_payload["source_data_package_ref"] not in verified_data["envelope"]["parent_artifact_refs"]
+                or data_payload["validated_data_package"]["structure_closure_ref"] != structure_ref
+                or data_payload["validated_data_package"]["operation_closure_ref"] != operation_ref):
+            _fail("210_EVENT_DATA_LINEAGE_REJECTED")
+        if (frozen_orm["payload"]["source_orm_plan_ref"] != restricted_ref
+                or frozen_orm["envelope"]["parent_artifact_refs"] != [restricted_ref]):
+            _fail("210_EVENT_ORM_LINEAGE_REJECTED")
+        self._same_context_and_attempt(approved, structure, operation, restricted_orm, verified_data, frozen_orm)
         return {"target": "260", "kind": "database_copy_regression", "mode": "event_data", "verified_data_ref": artifact_ref(verified_data["envelope"]), "frozen_orm_ref": artifact_ref(frozen_orm["envelope"]), "approved_question_sql_ref": artifact_ref(approved["envelope"]), "query_spec_ref": approved["payload"]["query_specification_package"]}
 
     def begin_foundation(self, task_payload: dict[str, Any], *, run_id: str, trace_id: str, created_at: str, parents: list[dict[str, Any]]) -> dict[str, Any]:
