@@ -1,0 +1,12 @@
+{
+  "schema_version": "v5.integration-qs-error-reports/v1",
+  "reviewer": "170",
+  "error_reports": [
+    {"error_type": "FACT_PACKAGE_ERROR", "route": "120", "report": {"reviewer_id": "170", "decision": "no", "error_types": ["FACT_PACKAGE_ERROR"], "error_details": [{"object": "penalty_fact_package", "location": "source_facts", "reason": "事实包存在遗漏", "suggestion": "重新提取处罚事实"}], "evidence_refs": [{"source": "fixture", "ref": "fact-001"}], "route_suggestion": "120"}},
+    {"error_type": "OBSERVABLE_MAPPING_ERROR", "route": "130", "report": {"reviewer_id": "170", "decision": "no", "error_types": ["OBSERVABLE_MAPPING_ERROR"], "error_details": [{"object": "east_observable_fact_package", "location": "mapping_matrix", "reason": "可观察映射缺失", "suggestion": "扩大约束资产检索范围"}], "evidence_refs": [{"source": "fixture", "ref": "fact-001"}], "route_suggestion": "130"}},
+    {"error_type": "QUERY_SPEC_ERROR", "route": "140", "report": {"reviewer_id": "170", "decision": "no", "error_types": ["QUERY_SPEC_ERROR"], "error_details": [{"object": "query_specification_package", "location": "sql_schema_scope", "reason": "查询规格有误", "suggestion": "重建查询规格"}], "evidence_refs": [{"source": "fixture", "ref": "fact-001"}], "route_suggestion": "140"}},
+    {"error_type": "QUESTION_SQL_ERROR", "route": "150", "report": {"reviewer_id": "170", "decision": "no", "error_types": ["QUESTION_SQL_ERROR"], "error_details": [{"object": "candidate", "location": "sql_gold", "reason": "question-SQL 表达有误", "suggestion": "修正 question-SQL"}], "evidence_refs": [{"source": "fixture", "ref": "fact-001"}], "route_suggestion": "150"}},
+    {"error_type": "BUSINESS_EVENT_ERROR", "route": "150", "report": {"reviewer_id": "170", "decision": "no", "error_types": ["BUSINESS_EVENT_ERROR"], "error_details": [{"object": "candidate", "location": "business_event_candidates", "reason": "业务事件候选有误", "suggestion": "修正业务事件候选"}], "evidence_refs": [{"source": "fixture", "ref": "fact-001"}], "route_suggestion": "150"}},
+    {"error_type": "QUESTION_FACT_OMISSION", "route": "150", "report": {"reviewer_id": "170", "decision": "no", "error_types": ["QUESTION_FACT_OMISSION"], "error_details": [{"object": "candidate", "location": "clear_question", "reason": "处罚事实在问题中遗漏", "suggestion": "补充处罚事实"}], "evidence_refs": [{"source": "fixture", "ref": "fact-001"}], "route_suggestion": "150"}}
+  ]
+}

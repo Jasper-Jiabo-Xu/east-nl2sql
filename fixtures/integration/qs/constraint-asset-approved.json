@@ -1,0 +1,16 @@
+{
+  "asset_version": "CA-V0.3.0",
+  "executed_queries": [
+    {"sql": "SELECT * FROM field_master LIMIT 100", "query_parameters": [100], "safety_check_result": "pass"}
+  ],
+  "matched_records": [
+    {"record_type": "single_field", "data": {"table_id": "EAST_D001", "field_id": "F001", "field_name": "处罚主体", "data_type": "VARCHAR"}, "source_refs": [{"source_type": "constraint_asset", "source_id": "CA-V0.3.0"}], "hierarchy_refs": []},
+    {"record_type": "single_field", "data": {"table_id": "EAST_D001", "field_id": "F002", "field_name": "违规行为", "data_type": "VARCHAR"}, "source_refs": [{"source_type": "constraint_asset", "source_id": "CA-V0.3.0"}], "hierarchy_refs": []},
+    {"record_type": "single_field", "data": {"table_id": "EAST_D001", "field_id": "F003", "field_name": "处罚日期", "data_type": "DATE"}, "source_refs": [{"source_type": "constraint_asset", "source_id": "CA-V0.3.0"}], "hierarchy_refs": []}
+  ],
+  "constraint_summary": {"total_matched": 3, "asset_types_covered": ["single_field"]},
+  "unmatched_items": [],
+  "query_trace": [
+    {"round": 1, "sql": "SELECT * FROM field_master LIMIT 100", "elapsed_ms": 1.0, "row_count": 3}
+  ]
+}
