@@ -84,7 +84,34 @@ class DataStageCoordinatorTests(unittest.TestCase):
     def setUp(self) -> None:
         self.coordinator = DataStageCoordinator(ROOT)
 
-    def test_event_start_produces_distinct_reviewed_artifact_and_two_dispatches(self) -> None:
+    def _real_event_closures(self) -> tuple[dict[str, object], dict[str, object], dict[str, object], object]:
+        """Build the actual 220→230 inputs from one 210 reviewed package."""
+        approved = dual_review()
+        approved["payload"]["candidate_content"]["sql_gold"] = (
+            "SELECT A.STATUS FROM FIXTURE_ACCOUNT A JOIN FIXTURE_CUSTOMER C "
+            "ON A.CUSTOMER_ID = C.ID"
+        )
+        approved["payload"]["candidate_content"]["specification_mapping"] = [
+            {"spec_item": "状态", "question_fragment": "开户", "sql_fragment": "FIXTURE_ACCOUNT.STATUS"},
+            {"spec_item": "账户客户", "question_fragment": "开户", "sql_fragment": "FIXTURE_ACCOUNT.CUSTOMER_ID"},
+            {"spec_item": "客户标识", "question_fragment": "开户", "sql_fragment": "FIXTURE_CUSTOMER.ID"},
+        ]
+        approved["payload"]["candidate_content"]["business_event_candidates"][0]["state_changes"] = [
+            "FIXTURE_ACCOUNT.CUSTOMER_ID->FIXTURE_CUSTOMER.ID",
+        ]
+        approved["payload"]["package_hash"] = sha256({key: value for key, value in approved["payload"].items() if key != "package_hash"})
+        approved["envelope"]["content_hash"] = content_hash(approved["envelope"], approved["payload"])
+        started = self.coordinator.begin_event(approved)
+        reviewed = started["reviewed_question_sql"]
+        closure_tests = test_module("agents.220.test_closure")
+        _, first_asset, second_asset = closure_tests.event_results(reviewed)
+        closure_mod = importlib.import_module("east_v5.agents.220.closure")
+        structure = closure_mod.build_event_closure(reviewed, first_asset, second_asset)
+        operation_builder = importlib.import_module("east_v5.agents.230.builder").OperationClosureBuilder(ROOT)
+        operation = operation_builder.build(structure)
+        return started, structure, operation, operation_builder
+
+    def test_event_start_produces_distinct_reviewed_artifact_and_only_220_dispatch(self) -> None:
         approved = dual_review()
         before = copy.deepcopy(approved)
         result = self.coordinator.begin_event(approved)
@@ -92,8 +119,8 @@ class DataStageCoordinatorTests(unittest.TestCase):
         self.assertEqual(approved, before)
         self.assertEqual((reviewed["envelope"]["artifact_type"], reviewed["envelope"]["producer_id"]), ("reviewed_question_sql", "210"))
         self.assertNotEqual(reviewed["envelope"]["artifact_id"], approved["envelope"]["artifact_id"])
-        self.assertEqual([item["target"] for item in result["dispatches"]], ["220", "230"])
-        self.assertEqual(result["dispatches"][1]["question_sql_ref"], artifact_ref(approved["envelope"]))
+        self.assertEqual([item["target"] for item in result["dispatches"]], ["220"])
+        self.assertEqual(result["dispatches"][0]["input_ref"], artifact_ref(reviewed["envelope"]))
 
     def test_event_start_rejects_missing_review_lineage_and_hash_drift(self) -> None:
         missing = dual_review()
@@ -123,7 +150,27 @@ class DataStageCoordinatorTests(unittest.TestCase):
         with self.assertRaisesRegex(ContractError, "210_MANUAL_REVIEW_ATTEMPT_INVALID"):
             self.coordinator.route_feedback(feedback("MANUAL_REVIEW_REQUIRED", "manual", attempt=1))
 
-    def test_real_event_regression_is_joined_and_consumed_by_010_stub(self) -> None:
+    def test_event_is_ordered_220_then_real_230_then_241_251_252_and_260_010(self) -> None:
+        started, structure, operation, operation_builder = self._real_event_closures()
+        reviewed = started["reviewed_question_sql"]
+        self.assertEqual([item["target"] for item in started["dispatches"]], ["220"])
+        operation_dispatch = self.coordinator.dispatch_event_operation(reviewed, structure)
+        self.assertEqual(operation_dispatch["target"], "230")
+        self.assertEqual(operation_dispatch["structure_closure_ref"], artifact_ref(structure["envelope"]))
+        closure_mod = importlib.import_module("east_v5.agents.220.closure")
+        self.assertEqual(closure_mod.consume_downstream_stub("230", structure)["consumer"], "230")
+        branches = self.coordinator.dispatch_event_branches(reviewed, structure, operation)
+        self.assertEqual([item["target"] for item in branches], ["241", "251"])
+        self.assertEqual(operation_builder.consume_downstream_stub("241", operation)["consumer"], "241")
+        data_builder = importlib.import_module("east_v5.agents.241.generator").BoundDataGenerator(ROOT)
+        bound = data_builder.build_bound_data(structure, operation_closure=operation, created_at=TIME)
+        self.assertEqual(bound["payload"]["structure_closure_ref"], artifact_ref(structure["envelope"]))
+        orm_generator = importlib.import_module("east_v5.agents.251.generator").RestrictedOrmGenerator(ROOT)
+        restricted = orm_generator.build(structure, operation)
+        orm_validator = importlib.import_module("east_v5.agents.252.validator").OrmValidator(ROOT)
+        frozen = orm_validator.freeze_orm(restricted, structure, operation)
+        self.assertEqual(frozen["envelope"]["producer_id"], "252")
+
         source = test_module("agents.260.test_regression")
         case = source.EventRegressionTests()
         case.setUp()
@@ -143,6 +190,28 @@ class DataStageCoordinatorTests(unittest.TestCase):
             self.assertIsNone(candidate["payload"]["foundation_regression_report_ref"])
         finally:
             case.tearDown()
+
+    def test_event_rejects_unknown_unbound_and_blocked_manual_closures(self) -> None:
+        started, structure, operation, _ = self._real_event_closures()
+        reviewed = started["reviewed_question_sql"]
+        unknown = copy.deepcopy(structure)
+        unknown["payload"]["unexpected"] = True
+        unknown["envelope"]["content_hash"] = content_hash(unknown["envelope"], unknown["payload"])
+        with self.assertRaisesRegex(ContractError, "210_EVENT_STRUCTURE_REJECTED"):
+            self.coordinator.dispatch_event_operation(reviewed, unknown)
+
+        unbound = copy.deepcopy(operation)
+        unbound["envelope"]["parent_artifact_refs"] = [ref("other-structure", "f")]
+        unbound["envelope"]["input_hashes"] = ["f" * 64]
+        unbound["envelope"]["content_hash"] = content_hash(unbound["envelope"], unbound["payload"])
+        with self.assertRaisesRegex(ContractError, "210_EVENT_OPERATION_LINEAGE_REJECTED"):
+            self.coordinator.dispatch_event_branches(reviewed, structure, unbound)
+
+        blocked = copy.deepcopy(operation)
+        blocked["envelope"]["status"] = "blocked_manual"
+        blocked["envelope"]["content_hash"] = content_hash(blocked["envelope"], blocked["payload"])
+        with self.assertRaisesRegex(ContractError, "210_EVENT_CLOSURE_STATE_REJECTED"):
+            self.coordinator.dispatch_event_branches(reviewed, structure, blocked)
 
     def test_foundation_is_ordered_220_then_real_241_then_260_and_010(self) -> None:
         foundation_tests = test_module("agents.260.test_regression")
@@ -242,6 +311,20 @@ class DataStageCoordinatorTests(unittest.TestCase):
             duplicate_data["envelope"]["content_hash"] = content_hash(duplicate_data["envelope"], duplicate_data["payload"])
             with self.assertRaisesRegex(ContractError, "210_FOUNDATION_REGRESSION_LINEAGE_REJECTED"):
                 self.coordinator.build_foundation_release(case.task, duplicate_data)
+
+            forged_data = copy.deepcopy(report)
+            forged_data["payload"]["validated_data_package_refs"] = [ref("forged-data", "f")]
+            forged_data["payload"]["report_hash"] = sha256({key: value for key, value in forged_data["payload"].items() if key != "report_hash"})
+            forged_data["envelope"]["content_hash"] = content_hash(forged_data["envelope"], forged_data["payload"])
+            with self.assertRaisesRegex(ContractError, "210_FOUNDATION_REGRESSION_LINEAGE_REJECTED"):
+                self.coordinator.build_foundation_release(case.task, forged_data)
+
+            forged_evidence = copy.deepcopy(report)
+            forged_evidence["payload"]["data_validation_evidence_refs"] = [ref("forged-evidence", "e")]
+            forged_evidence["payload"]["report_hash"] = sha256({key: value for key, value in forged_evidence["payload"].items() if key != "report_hash"})
+            forged_evidence["envelope"]["content_hash"] = content_hash(forged_evidence["envelope"], forged_evidence["payload"])
+            with self.assertRaisesRegex(ContractError, "210_FOUNDATION_REGRESSION_LINEAGE_REJECTED"):
+                self.coordinator.build_foundation_release(case.task, forged_evidence)
             copy_db.close(); formal_db.close()
         finally:
             case.tearDown()

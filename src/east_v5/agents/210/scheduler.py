@@ -7,6 +7,7 @@ module must never generate records/ORM/SQL or open a database.
 from __future__ import annotations
 
 import copy
+import importlib
 import json
 from pathlib import Path
 from typing import Any
@@ -153,26 +154,52 @@ class DataStageCoordinator:
         return result
 
     def begin_event(self, approved: dict[str, Any]) -> dict[str, Any]:
-        """Start the event data/ORM forks from one immutable 110 package."""
+        """Start event work with 220; 230 requires its authenticated output."""
         reviewed = self.build_reviewed_question_sql(approved)
         return {
             "reviewed_question_sql": reviewed,
-            "dispatches": [
-                {"target": "220", "kind": "structure_closure", "input_ref": artifact_ref(reviewed["envelope"])},
-                {"target": "230", "kind": "operation_closure", "question_sql_ref": artifact_ref(approved["envelope"]), "business_event_candidates": copy.deepcopy(reviewed["payload"]["approved_business_events"])},
-            ],
+            "dispatches": [{"target": "220", "kind": "structure_closure", "input_ref": artifact_ref(reviewed["envelope"])}],
+        }
+
+    def dispatch_event_operation(self, reviewed: dict[str, Any], structure: dict[str, Any]) -> dict[str, Any]:
+        """After strict 220 authentication, provide its closure to event-only 230."""
+        self._validate(reviewed, "reviewed-question-sql-package.schema.json", "210_REVIEWED_INPUT_REJECTED")
+        closure = importlib.import_module("east_v5.agents.220.closure")
+        try:
+            closure.validate_reviewed_question_sql(reviewed)
+            closure.validate_structure_closure_package(structure)
+        except ContractError as exc:
+            raise ContractError("210_EVENT_STRUCTURE_REJECTED") from exc
+        if structure["envelope"]["mode"] != "event_data" or structure["envelope"]["status"] == "blocked_manual":
+            _fail("210_EVENT_CLOSURE_STATE_REJECTED")
+        if artifact_ref(reviewed["envelope"]) not in structure["envelope"]["parent_artifact_refs"]:
+            _fail("210_EVENT_STRUCTURE_LINEAGE_REJECTED")
+        self._same_context_and_attempt(reviewed, structure)
+        return {
+            "target": "230", "kind": "operation_closure",
+            "reviewed_question_sql_ref": artifact_ref(reviewed["envelope"]),
+            "structure_closure_ref": artifact_ref(structure["envelope"]),
         }
 
     def dispatch_event_branches(self, reviewed: dict[str, Any], structure: dict[str, Any], operation: dict[str, Any]) -> list[dict[str, Any]]:
         """Dispatch 241 and 251 only after both event closures are available."""
         self._validate(reviewed, "reviewed-question-sql-package.schema.json", "210_REVIEWED_INPUT_REJECTED")
-        for package, artifact_type, producer in ((structure, "structure_closure", "220"), (operation, "operation_closure", "230")):
-            if not isinstance(package, dict) or set(package) != _TRANSPORT_KEYS:
-                _fail("210_CLOSURE_TRANSPORT_REJECTED")
-            validate_envelope(self.repo_root, package["envelope"], package["payload"])
-            if (package["envelope"]["artifact_type"], package["envelope"]["producer_id"], package["envelope"]["mode"]) != (artifact_type, producer, "event_data"):
-                _fail("210_CLOSURE_ROUTE_REJECTED")
-        self._same_context(reviewed, structure, operation)
+        closure = importlib.import_module("east_v5.agents.220.closure")
+        operation_builder = importlib.import_module("east_v5.agents.230.builder").OperationClosureBuilder(self.repo_root)
+        try:
+            closure.validate_reviewed_question_sql(reviewed)
+            closure.validate_structure_closure_package(structure)
+            operation_builder.validate_operation_closure_package(operation)
+        except ContractError as exc:
+            raise ContractError("210_EVENT_CLOSURE_REJECTED") from exc
+        structure_ref = artifact_ref(structure["envelope"])
+        if structure["envelope"]["mode"] != "event_data" or operation["envelope"]["status"] == "blocked_manual" or structure["envelope"]["status"] == "blocked_manual":
+            _fail("210_EVENT_CLOSURE_STATE_REJECTED")
+        if artifact_ref(reviewed["envelope"]) not in structure["envelope"]["parent_artifact_refs"]:
+            _fail("210_EVENT_STRUCTURE_LINEAGE_REJECTED")
+        if operation["envelope"]["parent_artifact_refs"] != [structure_ref]:
+            _fail("210_EVENT_OPERATION_LINEAGE_REJECTED")
+        self._same_context_and_attempt(reviewed, structure, operation)
         return [
             {"target": "241", "kind": "bound_data", "structure_closure_ref": artifact_ref(structure["envelope"]), "operation_closure_ref": artifact_ref(operation["envelope"])},
             {"target": "251", "kind": "restricted_orm", "structure_closure_ref": artifact_ref(structure["envelope"]), "operation_closure_ref": artifact_ref(operation["envelope"])},
@@ -285,7 +312,10 @@ class DataStageCoordinator:
         if payload_260["target_database_version"] != task["payload"]["target_database_version"]:
             _fail("210_FOUNDATION_TARGET_DATABASE_VERSION_DRIFT")
         parents = regression["envelope"]["parent_artifact_refs"]
-        if artifact_ref(task["envelope"]) not in parents or payload_260["structure_closure_ref"] not in parents:
+        data_ref = payload_260["validated_data_package_refs"][0]
+        evidence_refs = payload_260["data_validation_evidence_refs"]
+        if (artifact_ref(task["envelope"]) not in parents or payload_260["structure_closure_ref"] not in parents
+                or data_ref not in parents or any(reference not in parents for reference in evidence_refs)):
             _fail("210_FOUNDATION_REGRESSION_LINEAGE_REJECTED")
         batch_hash = sha256({key: payload_260["foundation_write_batch"][key] for key in ("transaction_groups", "sql_statements", "parameter_sets", "execution_order", "expected_write_counts")})
         report_hash = sha256({key: value for key, value in payload_260.items() if key != "report_hash"})
