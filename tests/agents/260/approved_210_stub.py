@@ -4,7 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from jsonschema import Draft202012Validator, ValidationError
+from jsonschema import Draft202012Validator, FormatChecker, ValidationError
 from referencing import Registry, Resource
 
 from east_v5.artifacts import validate_envelope
@@ -14,6 +14,31 @@ from east_v5.governance import ContractError, load_json, sha256
 def _registry(root: Path) -> Registry:
     paths = [root / "contracts/common/common-envelope.schema.json", root / "contracts/v5-runtime-packages.schema.json", *sorted((root / "contracts/packages").glob("*.schema.json"))]
     return Registry().with_resources([(load_json(path)["$id"], Resource.from_contents(load_json(path))) for path in paths])
+
+
+def _sqlite_literal(typed: dict[str, Any]) -> str:
+    """Validate the typed parameter before rendering the non-executable audit SQL."""
+    value, standard_type, is_null = typed["value"], typed["standard_type"], typed["is_null"]
+    if is_null:
+        if standard_type != "NULL" or value is not None:
+            raise ContractError("210_STUB_EXECUTION_FACT_REJECTED")
+        return "NULL"
+    if standard_type == "STRING" and isinstance(value, str):
+        return "'" + value.replace("'", "''") + "'"
+    if standard_type == "INTEGER" and isinstance(value, int) and not isinstance(value, bool):
+        return str(value)
+    if standard_type == "DECIMAL" and isinstance(value, (int, float)) and not isinstance(value, bool):
+        return str(value)
+    if standard_type == "BOOLEAN" and isinstance(value, bool):
+        return "1" if value else "0"
+    raise ContractError("210_STUB_EXECUTION_FACT_REJECTED")
+
+
+def _render_audit_sql(sql: str, values: list[dict[str, Any]]) -> str:
+    pieces = sql.split("?")
+    if len(pieces) != len(values) + 1:
+        raise ContractError("210_STUB_EXECUTION_FACT_REJECTED")
+    return "".join(piece + (_sqlite_literal(values[index]) if index < len(values) else "") for index, piece in enumerate(pieces))
 
 
 def consume(package: dict[str, Any], root: Path) -> dict[str, str]:
@@ -28,7 +53,7 @@ def consume(package: dict[str, Any], root: Path) -> dict[str, str]:
         raise ContractError("210_STUB_SCHEMA_REJECTED")
     try:
         validate_envelope(root, package["envelope"], package["payload"])
-        Draft202012Validator(load_json(root / "contracts/packages" / schema), registry=_registry(root)).validate(package)
+        Draft202012Validator(load_json(root / "contracts/packages" / schema), registry=_registry(root), format_checker=FormatChecker()).validate(package)
     except (ValidationError, ContractError) as exc:
         raise ContractError("210_STUB_SCHEMA_REJECTED") from exc
     if artifact_type == "database_copy_regression":
@@ -84,6 +109,21 @@ def consume(package: dict[str, Any], root: Path) -> dict[str, str]:
             summary_by_table = {table: item["actual_count"] for table, item in payload["table_write_summary"].items()}
             if actual_by_table != delta_by_table or actual_by_table != summary_by_table:
                 raise ContractError("210_STUB_EXECUTION_FACT_REJECTED")
+            if len(write_batch["rendered_sql_for_audit"]) != len(sql) or any(
+                audit != _render_audit_sql(statement["sql"], parameter["values"])
+                for audit, statement, parameter in zip(write_batch["rendered_sql_for_audit"], sql, params)
+            ):
+                raise ContractError("210_STUB_EXECUTION_FACT_REJECTED")
+            distribution = payload["distribution_validation"]
+            for table, expected in distribution["expected"].items():
+                baseline, delta, after, tolerance = (distribution[key].get(table) for key in ("baseline", "delta", "after", "allowed_tolerance"))
+                if not baseline or not delta or not after or not tolerance or set(expected) != set(baseline) != set(delta) != set(after) != set(tolerance):
+                    raise ContractError("210_STUB_EXECUTION_FACT_REJECTED")
+                if any(after[label] != baseline[label] + delta[label] or abs(after[label] - expected[label]) > tolerance[label] for label in expected):
+                    raise ContractError("210_STUB_EXECUTION_FACT_REJECTED")
+                state = payload["database_state_delta"].get(table)
+                if not state or sum(after.values()) != state["after"]:
+                    raise ContractError("210_STUB_EXECUTION_FACT_REJECTED")
         return {"decision": "accepted", "kind": "success"}
     if package["payload"]["route_target"] not in {"210", "manual", "241", "251"}:
         raise ContractError("210_STUB_ROUTE_REJECTED")

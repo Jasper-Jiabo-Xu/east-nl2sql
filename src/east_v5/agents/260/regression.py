@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
-from jsonschema import Draft202012Validator, ValidationError
+from jsonschema import Draft202012Validator, FormatChecker, ValidationError
 from referencing import Registry, Resource
 
 from east_v5.artifacts import artifact_ref, content_hash, validate_envelope
@@ -25,6 +25,7 @@ _closure = importlib.import_module("east_v5.agents.220.closure")
 _PLAN_KEYS = {
     "task_ref", "structure_closure_ref", "verified_data_ref", "verified_validated_hash",
     "snapshot_ref", "snapshot_hash", "baseline_counts", "target_counts", "record_counts", "input_sha256",
+    "baseline_distribution", "delta_distribution", "target_distribution", "after_distribution", "distribution_tolerance",
     "writes_formal_store", "plan_sha256",
 }
 
@@ -50,7 +51,7 @@ def _registry(repo_root: Path) -> Registry:
 
 def _validate_schema(repo_root: Path, package: dict[str, Any], relative: str, label: str) -> None:
     try:
-        Draft202012Validator(load_json(repo_root / relative), registry=_registry(repo_root)).validate(package)
+        Draft202012Validator(load_json(repo_root / relative), registry=_registry(repo_root), format_checker=FormatChecker()).validate(package)
     except ValidationError as exc:
         raise ContractError(f"SCHEMA_VALIDATION_FAILED:{label}") from exc
 
@@ -68,6 +69,34 @@ def _distribution(records: list[dict[str, Any]]) -> dict[str, dict[str, int]]:
         label = labels[0] if labels else "default"
         actual.setdefault(record["table_id"], {})[label] = actual.setdefault(record["table_id"], {}).get(label, 0) + 1
     return actual
+
+
+def _normalise_distribution(actual: dict[str, dict[str, int]], target: dict[str, dict[str, int]]) -> dict[str, dict[str, int]]:
+    """Close a distribution over the task's frozen table/label domain."""
+    if set(actual) - set(target) or any(set(values) - set(target[table]) for table, values in actual.items()):
+        _fail("FOUNDATION_DISTRIBUTION_MISMATCH")
+    return {table: {label: actual.get(table, {}).get(label, 0) for label in labels} for table, labels in target.items()}
+
+
+def _snapshot_distribution(snapshot: dict[str, Any], target: dict[str, dict[str, int]]) -> dict[str, dict[str, int]]:
+    """Authenticate baseline placement without inventing an absent classifier.
+
+    EAS-19's snapshot record contract has no distribution-dimension field. A
+    default-only target is therefore uniquely attributable; any classified
+    target must be rejected rather than silently projected into a bucket.
+    """
+    if any(set(labels) != {"default"} for labels in target.values()):
+        _fail("FOUNDATION_SNAPSHOT_DISTRIBUTION_MAPPING_UNAVAILABLE")
+    baseline = {table: {"default": 0} for table in target}
+    for item in snapshot["object_state_records"]:
+        table = item["record_keys"]["table_id"]
+        if table in baseline:
+            baseline[table]["default"] += 1
+    return baseline
+
+
+def _add_distributions(left: dict[str, dict[str, int]], right: dict[str, dict[str, int]]) -> dict[str, dict[str, int]]:
+    return {table: {label: left[table][label] + right[table][label] for label in left[table]} for table in left}
 
 
 def _hierarchy_refs(closure: dict[str, Any]) -> set[tuple[str, int, str]]:
@@ -103,12 +132,14 @@ def _plan_hash(plan: dict[str, Any]) -> str:
 def _validate_execution_plan(plan: dict[str, Any]) -> None:
     if set(plan) != _PLAN_KEYS:
         _fail("REGRESSION_PLAN_FIELDS_INVALID")
-    if plan["writes_formal_store"] is not False or any(not isinstance(plan[key], dict) for key in ("baseline_counts", "target_counts", "record_counts")):
+    if plan["writes_formal_store"] is not False or any(not isinstance(plan[key], dict) for key in ("baseline_counts", "target_counts", "record_counts", "baseline_distribution", "delta_distribution", "target_distribution", "after_distribution", "distribution_tolerance")):
         _fail("REGRESSION_PLAN_INVALID")
     if set(plan["baseline_counts"]) != set(plan["target_counts"]) or set(plan["record_counts"]) != set(plan["target_counts"]):
         _fail("REGRESSION_PLAN_TABLE_SCOPE_INVALID")
     if any(plan["baseline_counts"][table] + plan["record_counts"][table] != plan["target_counts"][table] for table in plan["target_counts"]):
         _fail("REGRESSION_PLAN_DELTA_INVALID")
+    if plan["after_distribution"] != _add_distributions(plan["baseline_distribution"], plan["delta_distribution"]):
+        _fail("REGRESSION_PLAN_DISTRIBUTION_DELTA_INVALID")
     expected_input = sha256({"task": plan["task_ref"], "closure": plan["structure_closure_ref"], "verified": plan["verified_data_ref"], "snapshot": plan["snapshot_ref"]})
     if plan["input_sha256"] != expected_input:
         _fail("REGRESSION_PLAN_INPUT_DRIFT")
@@ -210,7 +241,12 @@ def validate_foundation_regression_inputs(repo_root: Path, task_package: dict[st
         required_delta[table] = target - baseline_counts[table]
     if actual_counts != required_delta:
         _fail("FOUNDATION_TARGET_COUNT_MISMATCH")
-    if _distribution(records) != task["distribution_targets"]:
+    target_distribution = task["distribution_targets"]
+    baseline_distribution = _snapshot_distribution(snapshot, target_distribution)
+    delta_distribution = _normalise_distribution(_distribution(records), target_distribution)
+    after_distribution = _add_distributions(baseline_distribution, delta_distribution)
+    distribution_tolerance = {table: {label: 0 for label in labels} for table, labels in target_distribution.items()}
+    if any(abs(after_distribution[table][label] - target_distribution[table][label]) > distribution_tolerance[table][label] for table in target_distribution for label in target_distribution[table]):
         _fail("FOUNDATION_DISTRIBUTION_MISMATCH")
     expected_hierarchy = {(ref["artifact_id"], ref["version"], ref["content_hash"]) for ref in task["hierarchy_asset_refs"]}
     if not expected_hierarchy <= _hierarchy_refs(structure_closure):
@@ -225,6 +261,11 @@ def validate_foundation_regression_inputs(repo_root: Path, task_package: dict[st
         "baseline_counts": baseline_counts,
         "target_counts": task["target_counts"],
         "record_counts": actual_counts,
+        "baseline_distribution": baseline_distribution,
+        "delta_distribution": delta_distribution,
+        "target_distribution": target_distribution,
+        "after_distribution": after_distribution,
+        "distribution_tolerance": distribution_tolerance,
         "input_sha256": sha256({"task": task_ref, "closure": artifact_ref(structure_closure["envelope"]), "verified": artifact_ref(envelope), "snapshot": artifact_ref(snapshot_envelope)}),
         "writes_formal_store": False,
     }
@@ -379,6 +420,8 @@ def run_foundation_regression(repo_root: Path, task_package: dict[str, Any], str
     target_actual = {table: result["database_after"].get(table, 0) for table in task["target_counts"]}
     if any(target_actual[table] != expected for table, expected in task["target_counts"].items()):
         return DatabaseCopyRegression(repo_root).feedback(verified_bound_data, None, database_snapshot, "DATA_VALUE_ERROR", "foundation_integrity", "FOUNDATION_TARGET_POST_WRITE_MISMATCH", attempt_no, parents, mode="foundation")
+    if any(sum(plan["after_distribution"][table].values()) != result["database_after"][table] for table in plan["after_distribution"]):
+        return DatabaseCopyRegression(repo_root).feedback(verified_bound_data, None, database_snapshot, "DATA_VALUE_ERROR", "foundation_integrity", "FOUNDATION_DISTRIBUTION_POST_WRITE_MISMATCH", attempt_no, parents, mode="foundation")
     try:
         key_ranges = {table: _key_range(copy_connection, table) for table in result["database_delta"]}
     except ContractError as exc:
@@ -396,12 +439,12 @@ def run_foundation_regression(repo_root: Path, task_package: dict[str, Any], str
         "sandbox_execution_report": {"committed": True, "compiler": "east-foundation-insert-compiler/v1", "transactions": [result["transaction_fact"]], "statements": result["statement_facts"]},
         "table_write_summary": {table: {"planned_count": count, "actual_count": result["database_delta"][table], "key_range": key_ranges[table], "difference": result["database_delta"][table] - count, "passed": result["database_delta"][table] == count} for table, count in plan["record_counts"].items()},
         "target_count_validation": {table: {"target": count, "actual": target_actual[table], "passed": target_actual[table] == count} for table, count in task["target_counts"].items()},
-        "distribution_validation": {"requirements_present": True, "expected": task["distribution_targets"], "actual": _distribution(records), "passed": _distribution(records) == task["distribution_targets"]},
+        "distribution_validation": {"requirements_present": True, "expected": plan["target_distribution"], "baseline": plan["baseline_distribution"], "delta": plan["delta_distribution"], "after": plan["after_distribution"], "allowed_tolerance": plan["distribution_tolerance"], "passed": True},
         "hierarchy_reference_validation": {"requirements_present": True, "expected_refs": hierarchy, "resolved_refs": hierarchy, "invalid_nodes": [], "passed": True},
         "referential_integrity_validation": {"relations": relations, "orphan_records": sum(item["orphan_records"] for item in relations), "passed": all(item["passed"] for item in relations)},
         "prohibited_record_type_validation": {"prohibited_record_types": task["prohibited_record_types"], "hits": [], "passed": True},
         "foundation_scope_validation": {"allowed_tables": sorted(task["target_table_field_scope"]), "written_tables": sorted(result["database_delta"]), "passed": True},
-        "database_state_delta": {table: {"before": result["database_before"][table], "after": result["database_after"][table], "delta": value, "passed": value == plan["record_counts"][table]} for table, value in result["database_delta"].items()}, "regression_status": "passed", "report_hash": "", "regressed_at": verified_bound_data["payload"]["validated_at"],
+        "database_state_delta": {table: {"before": result["database_before"][table], "after": result["database_after"][table], "delta": value, "passed": value == plan["record_counts"][table]} for table, value in result["database_delta"].items()}, "regression_status": "passed", "report_hash": "", "regressed_at": _executed_at(),
     }
     payload["report_hash"] = sha256({key: value for key, value in payload.items() if key != "report_hash"})
     return DatabaseCopyRegression._wrap("database_copy_regression", payload, verified_bound_data["envelope"], parents, attempt_no, "validated", mode="foundation")

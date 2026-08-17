@@ -81,8 +81,15 @@ class FoundationRegressionTests(unittest.TestCase):
         self.assertEqual(package["payload"]["target_count_validation"]["FIXTURE_CUSTOMER"]["actual"], package["payload"]["database_state_delta"]["FIXTURE_CUSTOMER"]["after"])
         self.assertEqual(package["payload"]["table_write_summary"]["FIXTURE_CUSTOMER"]["key_range"]["key_fields"], ["C001"])
         self.assertNotEqual(package["payload"]["sandbox_execution_report"]["transactions"][0]["started_at"], self.verified["payload"]["validated_at"])
+        self.assertNotEqual(package["payload"]["regressed_at"], self.verified["payload"]["validated_at"])
         regression._validate_schema(ROOT, package, "contracts/packages/foundation-regression-report.schema.json", "FOUNDATION_REPORT")
         self.assertEqual(stub_210.consume(package, ROOT)["kind"], "success")
+        invalid_time = copy.deepcopy(package)
+        invalid_time["payload"]["regressed_at"] = "not-a-date-time"
+        invalid_time["payload"]["report_hash"] = sha256({key: value for key, value in invalid_time["payload"].items() if key != "report_hash"})
+        invalid_time["envelope"]["content_hash"] = content_hash(invalid_time["envelope"], invalid_time["payload"])
+        with self.assertRaisesRegex(ContractError, "210_STUB_SCHEMA_REJECTED"):
+            stub_210.consume(invalid_time, ROOT)
         hash_drift = copy.deepcopy(package)
         hash_drift["payload"]["report_hash"] = "f" * 64
         hash_drift["envelope"]["content_hash"] = content_hash(hash_drift["envelope"], hash_drift["payload"])
@@ -113,6 +120,14 @@ class FoundationRegressionTests(unittest.TestCase):
         detached_execution["envelope"]["content_hash"] = content_hash(detached_execution["envelope"], detached_execution["payload"])
         with self.assertRaisesRegex(ContractError, "210_STUB_EXECUTION_FACT_REJECTED"):
             stub_210.consume(detached_execution, ROOT)
+        audit_copy, audit_formal = sqlite3.connect(":memory:"), sqlite3.connect(":memory:")
+        for connection in (audit_copy, audit_formal): connection.execute("CREATE TABLE FIXTURE_CUSTOMER (C001 TEXT PRIMARY KEY, C002 TEXT)")
+        detached_audit = regression.run_foundation_regression(ROOT, self.task, self.closure, self.verified, self.snapshot, audit_copy, audit_formal, set())
+        detached_audit["payload"]["foundation_write_batch"]["rendered_sql_for_audit"][0] = "INSERT INTO WRONG_TABLE (WRONG_FIELD) VALUES ('wrong-value')"
+        detached_audit["payload"]["report_hash"] = sha256({key: value for key, value in detached_audit["payload"].items() if key != "report_hash"})
+        detached_audit["envelope"]["content_hash"] = content_hash(detached_audit["envelope"], detached_audit["payload"])
+        with self.assertRaisesRegex(ContractError, "210_STUB_EXECUTION_FACT_REJECTED"):
+            stub_210.consume(detached_audit, ROOT)
         bad_copy, bad_formal = sqlite3.connect(":memory:"), sqlite3.connect(":memory:")
         for connection in (bad_copy, bad_formal):
             connection.execute("CREATE TABLE FIXTURE_CUSTOMER (C001 TEXT PRIMARY KEY, C002 TEXT)")
@@ -166,7 +181,7 @@ class FoundationRegressionTests(unittest.TestCase):
 
     def test_authenticated_nonempty_expansion_reaches_target_and_210(self):
         payload = copy.deepcopy(self.task["payload"])
-        payload.update({"foundation_task_id": "eas60-expansion-target-two", "foundation_mode": "expansion", "trigger_reason": "sanitized authenticated expansion", "target_counts": {"FIXTURE_CUSTOMER": 2}})
+        payload.update({"foundation_task_id": "eas60-expansion-target-two", "foundation_mode": "expansion", "trigger_reason": "sanitized authenticated expansion", "target_counts": {"FIXTURE_CUSTOMER": 2}, "distribution_targets": {"FIXTURE_CUSTOMER": {"default": 2}}})
         task = producer.build_foundation_task_package(payload, run_id="eas60-test", trace_id="eas60-test", created_at=TIME, parents=[CA_REF, HIERARCHY_REF])
         closure = closure_mod.build_closure(task, [])
         closure["payload"].update({"fields": ["FIXTURE_CUSTOMER.C001", "FIXTURE_CUSTOMER.C002"], "references": [{"type": "hierarchy_asset", "artifact_ref": HIERARCHY_REF}]})
@@ -186,7 +201,14 @@ class FoundationRegressionTests(unittest.TestCase):
         copy_db.execute("INSERT INTO FIXTURE_CUSTOMER VALUES ('preexisting', 'legal')"); copy_db.commit()
         package = regression.run_foundation_regression(ROOT, task, closure, verified, snapshot, copy_db, formal_db, set())
         self.assertEqual(package["payload"]["database_state_delta"]["FIXTURE_CUSTOMER"], {"before": 1, "after": 2, "delta": 1, "passed": True})
+        self.assertEqual(package["payload"]["distribution_validation"], {"requirements_present": True, "expected": {"FIXTURE_CUSTOMER": {"default": 2}}, "baseline": {"FIXTURE_CUSTOMER": {"default": 1}}, "delta": {"FIXTURE_CUSTOMER": {"default": 1}}, "after": {"FIXTURE_CUSTOMER": {"default": 2}}, "allowed_tolerance": {"FIXTURE_CUSTOMER": {"default": 0}}, "passed": True})
         self.assertEqual(stub_210.consume(package, ROOT)["kind"], "success")
+
+    def test_distribution_target_and_snapshot_classification_rejections(self):
+        with self.assertRaisesRegex(ContractError, "FOUNDATION_DISTRIBUTION_MISMATCH"):
+            regression._normalise_distribution({"FIXTURE_CUSTOMER": {"region-east": 1}}, self.task["payload"]["distribution_targets"])
+        with self.assertRaisesRegex(ContractError, "FOUNDATION_SNAPSHOT_DISTRIBUTION_MAPPING_UNAVAILABLE"):
+            regression._snapshot_distribution(self.snapshot["payload"], {"FIXTURE_CUSTOMER": {"region-east": 1}})
 
     def test_schema_profile_hash_version_and_task_ref_rejections(self):
         missing = copy.deepcopy(self.verified); missing["payload"].pop("validated_at"); missing["envelope"]["content_hash"] = content_hash(missing["envelope"], missing["payload"])
