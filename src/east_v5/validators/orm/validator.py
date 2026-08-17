@@ -14,7 +14,7 @@ from east_v5.governance import ContractError, canonical_bytes, load_json, verify
 
 VALIDATOR_VERSION = "v5.orm-validator/v1"
 RULE_VERSION = "v5.orm-rules/v1"
-MANIFEST_HASH = "8b28baa6263fa7935b76675abf57586c00a296615fcdd09dac80dcce64a1fae7"
+MANIFEST_HASH = "21b80e938098e03b500e0128f2ccb76a89a2dac47c7da2ecfc9cad7fa4f4fe97"
 CA_REF = {"artifact_id": "CA-MULTIFIELD-20260812-003", "artifact_type": "constraint_asset_ref", "asset_version": "CA-V0.3.0", "content_hash": "cbcbd79e318f91522393403241b50919a656aa77d71c7f950f43725286b64d3d"}
 TRG_REF = {"artifact_id": "EAS-TYPED-GRAPH-20260812-001", "artifact_type": "typed_reference_graph_ref", "asset_version": "TRG-V1.0.0", "content_hash": "a3480f669bd9e97db78a8fec96fac7e317b43b9ed6f222d5c920bc227eaf3b6a"}
 RULES = {"allowed_api": ["context.transaction", "transaction.insert", "transaction.update", "transaction.delete", "transaction.rollback"], "placeholder_prefix": "slot_", "required_function": "apply", "requires_rollback": True}

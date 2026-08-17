@@ -150,5 +150,9 @@
         "violation_count": {"type": "integer", "minimum": 0}
       }
     }
-  }
+  },
+  "allOf": [
+    {"if": {"properties": {"envelope": {"properties": {"mode": {"const": "foundation"}}}}}, "then": {"properties": {"payload": {"properties": {"validated_data_package": {"required": ["foundation_task_ref"], "properties": {"foundation_task_ref": {"type": "object"}}}}}}}},
+    {"if": {"properties": {"envelope": {"properties": {"mode": {"const": "event_data"}}}}}, "then": {"properties": {"payload": {"properties": {"validated_data_package": {"required": ["foundation_task_ref"], "properties": {"foundation_task_ref": {"const": null}}}}}}}}
+  ]
 }

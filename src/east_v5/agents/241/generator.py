@@ -49,7 +49,8 @@ FOUNDATION_TASK_SCHEMA = "contracts/packages/foundation-task-package.schema.json
 MANIFEST_SCHEMA = "contracts/packages/bound-data-manifest.schema.json"
 RUNTIME_SCHEMA = "contracts/v5-runtime-packages.schema.json"
 
-_RECORD_KEYS = {"record_id", "table_id", "field_values", "existing_record_refs", "temporary_record_refs", "value_provenance", "case_role", "target_condition_refs", "constraint_refs"}
+_RECORD_KEYS = {"record_id", "record_type", "table_id", "field_values", "existing_record_refs", "temporary_record_refs", "value_provenance", "case_role", "target_condition_refs", "constraint_refs"}
+_LEGACY_RECORD_KEYS = _RECORD_KEYS - {"record_type"}
 _FIELD_VALUE_KEYS = {"field_id", "value", "standard_type", "is_null"}
 _EXISTING_REF_KEYS = {"table_id", "record_key"}
 _TEMP_REF_KEYS = {"record_id"}
@@ -201,7 +202,7 @@ class BoundDataGenerator:
             _fail("STANDARD_TYPE_INVALID")
 
     def _validate_record(self, record: dict[str, Any], tables: set[str], fields: set[str], snapshot_keys: set[tuple[str, str]], mode: str, record_ids: set[str]) -> None:
-        if not isinstance(record, dict) or set(record) != _RECORD_KEYS:
+        if not isinstance(record, dict) or set(record) not in (_RECORD_KEYS, _LEGACY_RECORD_KEYS):
             _fail("UNKNOWN_FIELD:RECORD")
         record_id = record["record_id"]
         if not isinstance(record_id, str) or not record_id:

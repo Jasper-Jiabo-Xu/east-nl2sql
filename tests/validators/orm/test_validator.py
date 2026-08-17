@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 
 from east_v5.artifacts.registry import content_hash
-from east_v5.governance import ContractError
+from east_v5.governance import ContractError, governed_manifest
 from east_v5.validators.orm.validator import freeze_orm
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -15,6 +15,13 @@ ROOT = Path(__file__).resolve().parents[3]
 
 def fixtures():
     fixture = json.loads((Path(__file__).parent / "fixtures" / "valid-event-orm.json").read_text(encoding="utf-8"))
+    closure, orm = fixture["operation_closure"], fixture["restricted_orm"]
+    manifest_hash = governed_manifest(ROOT)["content_sha256"]
+    closure["payload"]["governance_manifest_hash"] = manifest_hash
+    closure["envelope"]["content_hash"] = content_hash(closure["envelope"], closure["payload"])
+    orm["payload"]["governance_manifest_hash"] = manifest_hash
+    orm["payload"]["operation_closure_ref"] = {key: closure["envelope"][key] for key in ("artifact_id", "version", "content_hash")}
+    orm["envelope"]["content_hash"] = content_hash(orm["envelope"], orm["payload"])
     return fixture["restricted_orm"], fixture["operation_closure"]
 
 

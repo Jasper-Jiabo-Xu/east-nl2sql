@@ -31,6 +31,10 @@ def verify_architecture(repo_root: Path) -> dict[str, Any]:
         raise ContractError("FOUNDATION_AGENT_BOUNDARY_DRIFT")
     if "operation_closure" not in foundation["forbidden_artifacts"]:
         raise ContractError("FOUNDATION_OPERATION_CLOSURE_FORBIDDEN")
+    if foundation.get("task_package") != {"schema": "v5.foundation-task-package/v1", "producer": "210", "consumers": ["220", "241", "260"], "authoritative_intent": True}:
+        raise ContractError("FOUNDATION_TASK_AUTHORITY_DRIFT")
+    if foundation.get("profile_compatibility") != {"schema": "v5.foundation-profile/v1", "consumers": ["220", "241"], "projection_of": "foundation_task_package", "retirement_condition": "all_approved_consumers_read_foundation_task_package"}:
+        raise ContractError("FOUNDATION_PROFILE_COMPATIBILITY_DRIFT")
     fan_out = architecture["fan_out"]
     if fan_out != {"producer": "230", "artifact": "operation_closure", "consumers": ["241", "251"], "mode": "event"}:
         raise ContractError("OPERATION_CLOSURE_FANOUT_DRIFT")

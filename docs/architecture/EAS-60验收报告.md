@@ -22,4 +22,13 @@
 - `git diff --check`：通过。
 - 全文残留扫描确认不存在允许 260 直接消费 `foundation_profile` 的有效合同。
 
-260 输入门禁还拒绝 scope 外表字段、目标数量不符、操作闭包、快照引用或数据库版本/哈希漂移、禁止记录类型以及不完整层次/分布资产。固定 INSERT 编译器仍仅用于数据库 copy，且门禁结果标识 `writes_formal_store=false`。
+### 返工闭环（Sol 清单）
+
+- `structure_closure`、`bound_data`、`verified_bound_data` package Schema 现以 `if/then` 按 mode 强制：Foundation 必须携带任务三元组，event_data 必须显式为 `null` 或不含闭包字段；260 以独立 Schema validator 检查完整 242 包与完整受控快照。
+- 210 已有机器生产端：完整任务包生产后再投影 profile；`config/v5-architecture.json` 固定权威入口、兼容消费者与废止条件，`governance-manifest.json` 纳入任务包合同定位。
+- 260 对记录逐项比较 target counts、distribution、hierarchy asset refs、表字段范围、禁止类型和临时/快照/记录链接引用完整性；快照 hash、verified data hash、任务/闭包/快照引用漂移均拒绝。
+- 固定 `east-foundation-insert-compiler/v1` 只执行在传入的 SQLite copy。测试验证初始铺底和 expansion 完整链路、实际 delta、参数化 batch、下游 copy 冲突回滚，且 formal SQLite dump 的 SHA-256 不变。
+
+新增返工测试：`tests/agents/210/test_foundation.py`、`tests/agents/260/test_regression.py`。后者覆盖 initial_seed、expansion、完整 242/快照 Schema、缺失字段、profile 直输、任务/数据库漂移、分布、层次、范围、禁止类型、引用完整性、copy 回滚与 formal-store 不变。
+
+返工后机器哈希：`contracts/packages/bound-data-package.schema.json`=`58949326557fa46e58676f5e47705b2a54a94ffed1125fe1b283ca938e26dc4b`；`contracts/packages/verified-bound-data-package.schema.json`=`2cdbdb7f2426ffeb8d8e62fffc1a0d9bf83b08d4440d84d2a0a53fbeb48adf8d`；`governance-manifest.json`=`88b078f6abf650e74a1112f64a6c43842efcf83a3f7061d1c8c139bb21c3a536`。
