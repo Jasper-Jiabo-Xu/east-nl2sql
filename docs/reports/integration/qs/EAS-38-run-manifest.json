@@ -4,7 +4,8 @@
     "key": "EAS-38",
     "id": "bdf5dc86-82d2-4b03-a6b6-2e3d7b02779d",
     "base_sha": "4b83d9d513f01484c71b811512339fd7fe8943ec",
-    "head_sha": "0dfadf6393972d6e422384f8a127844c8e59072d"
+    "implementation_parent_sha": "0dfadf6393972d6e422384f8a127844c8e59072d",
+    "delivery_head_binding": "external_delivery_receipt"
   },
   "run": {
     "run_id": "run-qs",
@@ -25,7 +26,6 @@
         "skill_bindings": []
       },
       "repo_component_identity": {
-        "commit_sha": "0dfadf6393972d6e422384f8a127844c8e59072d",
         "algorithm": "sha256",
         "code_files": [
           {
@@ -38,7 +38,8 @@
             "relative_path": "agents/120/prompt.md",
             "sha256": "5cd0c78b5e2003ee330b48711ccfbd77e1565e4bf0e3ac03fe78acbca9bd5858"
           }
-        ]
+        ],
+        "source_commit_sha": "0dfadf6393972d6e422384f8a127844c8e59072d"
       },
       "execution_mode": "in_process_component_or_stub"
     },
@@ -59,7 +60,6 @@
         ]
       },
       "repo_component_identity": {
-        "commit_sha": "0dfadf6393972d6e422384f8a127844c8e59072d",
         "algorithm": "sha256",
         "code_files": [
           {
@@ -72,7 +72,8 @@
             "relative_path": "agents/130/prompt.md",
             "sha256": "4bfd81c24127b523cba29f6df5a07c7b55dbc9bf76f4a7755b63c03e91b0e734"
           }
-        ]
+        ],
+        "source_commit_sha": "0dfadf6393972d6e422384f8a127844c8e59072d"
       },
       "execution_mode": "in_process_component_or_stub"
     },
@@ -85,7 +86,6 @@
         "not_applicable_reason": "not_applicable_no_platform_agent_record"
       },
       "repo_component_identity": {
-        "commit_sha": "0dfadf6393972d6e422384f8a127844c8e59072d",
         "algorithm": "sha256",
         "code_files": [
           {
@@ -120,7 +120,8 @@
             "relative_path": "contracts/packages/constraint-asset-package.schema.json",
             "sha256": "228b992a91310598ca0f9258f7d7eec183803d882496ca995134477c28179ed7"
           }
-        ]
+        ],
+        "source_commit_sha": "0dfadf6393972d6e422384f8a127844c8e59072d"
       },
       "execution_mode": "in_process_component_or_stub"
     },
@@ -141,7 +142,6 @@
         ]
       },
       "repo_component_identity": {
-        "commit_sha": "0dfadf6393972d6e422384f8a127844c8e59072d",
         "algorithm": "sha256",
         "code_files": [
           {
@@ -154,7 +154,8 @@
             "relative_path": "agents/140/prompt.md",
             "sha256": "c456c9129eef347c41b7e62b1ab0d941191b73d67df0ded280db88a6022a202d"
           }
-        ]
+        ],
+        "source_commit_sha": "0dfadf6393972d6e422384f8a127844c8e59072d"
       },
       "execution_mode": "in_process_component_or_stub"
     },
@@ -175,7 +176,6 @@
         ]
       },
       "repo_component_identity": {
-        "commit_sha": "0dfadf6393972d6e422384f8a127844c8e59072d",
         "algorithm": "sha256",
         "code_files": [
           {
@@ -188,7 +188,8 @@
             "relative_path": "agents/150/prompt.md",
             "sha256": "a62333adf83992f8f55906a7aa90410af8142aeb6c3696fde0c2fc854c1098d7"
           }
-        ]
+        ],
+        "source_commit_sha": "0dfadf6393972d6e422384f8a127844c8e59072d"
       },
       "execution_mode": "in_process_component_or_stub"
     },
@@ -209,7 +210,6 @@
         ]
       },
       "repo_component_identity": {
-        "commit_sha": "0dfadf6393972d6e422384f8a127844c8e59072d",
         "algorithm": "sha256",
         "code_files": [
           {
@@ -222,7 +222,8 @@
             "relative_path": "agents/160/prompt.md",
             "sha256": "df4aac8b2fadf4afc5f3a6bc99df72fdbe993bb4289e8423cd8fb6a39c3c98ea"
           }
-        ]
+        ],
+        "source_commit_sha": "0dfadf6393972d6e422384f8a127844c8e59072d"
       },
       "execution_mode": "in_process_component_or_stub"
     },
@@ -243,7 +244,6 @@
         ]
       },
       "repo_component_identity": {
-        "commit_sha": "0dfadf6393972d6e422384f8a127844c8e59072d",
         "algorithm": "sha256",
         "code_files": [
           {
@@ -256,7 +256,8 @@
             "relative_path": "agents/170/prompt.md",
             "sha256": "8765ac30768cbdb8ad71dbb7de6421496d444d0296b0a5057324b4932df1709f"
           }
-        ]
+        ],
+        "source_commit_sha": "0dfadf6393972d6e422384f8a127844c8e59072d"
       },
       "execution_mode": "in_process_component_or_stub"
     },
@@ -270,7 +271,6 @@
         "skill_bindings": []
       },
       "repo_component_identity": {
-        "commit_sha": "0dfadf6393972d6e422384f8a127844c8e59072d",
         "algorithm": "sha256",
         "code_files": [
           {
@@ -283,7 +283,8 @@
             "relative_path": "agents/180/prompt.md",
             "sha256": "903cad042204b73817df837bd0de009605374d013e7c79e2fdb0ac5a697646d1"
           }
-        ]
+        ],
+        "source_commit_sha": "0dfadf6393972d6e422384f8a127844c8e59072d"
       },
       "execution_mode": "in_process_component_or_stub"
     },
@@ -304,7 +305,6 @@
         ]
       },
       "repo_component_identity": {
-        "commit_sha": "0dfadf6393972d6e422384f8a127844c8e59072d",
         "algorithm": "sha256",
         "code_files": [
           {
@@ -317,7 +317,8 @@
             "relative_path": "agents/110/prompt.md",
             "sha256": "4811e415c671b4b7cbec18fb3343f35fe735cdd66552037b16e22fcd5263f286"
           }
-        ]
+        ],
+        "source_commit_sha": "0dfadf6393972d6e422384f8a127844c8e59072d"
       },
       "execution_mode": "in_process_component_or_stub"
     },
@@ -331,7 +332,6 @@
         "skill_bindings": []
       },
       "repo_component_identity": {
-        "commit_sha": "0dfadf6393972d6e422384f8a127844c8e59072d",
         "algorithm": "sha256",
         "code_files": [
           {
@@ -344,7 +344,8 @@
             "relative_path": "agents/210/prompt.md",
             "sha256": "2a7cba19e4061ab1f95ea1e5529f3b6ff160de52ffd378ebdbdce370d69dd4b5"
           }
-        ]
+        ],
+        "source_commit_sha": "0dfadf6393972d6e422384f8a127844c8e59072d"
       },
       "execution_mode": "in_process_component_or_stub"
     },
@@ -358,7 +359,6 @@
         "skill_bindings": []
       },
       "repo_component_identity": {
-        "commit_sha": "0dfadf6393972d6e422384f8a127844c8e59072d",
         "algorithm": "sha256",
         "code_files": [
           {
@@ -371,7 +371,8 @@
             "relative_path": "agents/220/prompt.md",
             "sha256": "41ce3c3f32be4ddb513273dd57e6e9c93fc41501ff3ab0c1dca203034a561f56"
           }
-        ]
+        ],
+        "source_commit_sha": "0dfadf6393972d6e422384f8a127844c8e59072d"
       },
       "execution_mode": "in_process_component_or_stub"
     }
@@ -668,5 +669,5 @@
     "divergence": "180 的 ERROR_ROUTE 将 QUESTION_FACT_OMISSION 映射为 120（审核建议），而 110（唯一最终调度权威）与 170 均映射为 150（最终修复目标）。EAS-38 未修改已验收的 180。",
     "governance_before": "EAS-41"
   },
-  "content_sha256": "5e78bc8d4c24a2ea3aa688a4687ea579a66c4d9b2fd35df8733ec85a2c5accd8"
+  "content_sha256": "cac12ef989dfa4ee4b859e92276008f82b302bbe3662d734b72551c12fafd286"
 }

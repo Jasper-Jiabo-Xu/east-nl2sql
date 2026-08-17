@@ -30,7 +30,8 @@ MANIFEST_PATH = ROOT / "docs" / "reports" / "integration" / "qs" / "EAS-38-run-m
 SCHEMA_PATH = ROOT / "fixtures" / "integration" / "qs" / "run-manifest.schema.json"
 
 BASE = "4b83d9d513f01484c71b811512339fd7fe8943ec"
-HEAD = "0dfadf6393972d6e422384f8a127844c8e59072d"
+# 实现父提交：仅绑定未变的代码/Prompt/合同来源；最终 delivery head 由外部 DELIVERY-RECEIPT 绑定。
+IMPLEMENTATION_PARENT_SHA = "0dfadf6393972d6e422384f8a127844c8e59072d"
 
 # Sol 冻结映射：agent_id -> Multica Agent UUID（workspace 持久化记录权威）。
 FROZEN_AGENT_UUIDS = {
@@ -83,12 +84,21 @@ class RunManifestTests(unittest.TestCase):
         self.assertEqual(self.manifest["content_sha256"], sha256(body))
 
     def test_issue_and_run_identity(self):
-        self.assertEqual(self.manifest["issue"]["key"], "EAS-38")
-        self.assertEqual(self.manifest["issue"]["base_sha"], BASE)
-        self.assertEqual(self.manifest["issue"]["head_sha"], HEAD)
+        issue = self.manifest["issue"]
+        self.assertEqual(issue["key"], "EAS-38")
+        self.assertEqual(issue["base_sha"], BASE)
+        self.assertEqual(issue["implementation_parent_sha"], IMPLEMENTATION_PARENT_SHA)
+        self.assertEqual(issue["delivery_head_binding"], "external_delivery_receipt")
         run = self.manifest["run"]
         self.assertEqual((run["run_id"], run["qa_id"], run["trace_id"]), ("run-qs", "QA-QS", "trace-qs"))
         self.assertEqual((run["attempt_no"], run["mode"]), (1, "question_sql"))
+
+    def test_no_self_referencing_delivery_head(self):
+        """最终 delivery head 不得写入 Git 文件内（会形成不可收敛自引用）。"""
+        issue = self.manifest["issue"]
+        self.assertNotIn("head_sha", issue)
+        self.assertNotIn("delivery_head_sha", issue)
+        self.assertEqual(issue["delivery_head_binding"], "external_delivery_receipt")
 
     def test_all_topology_edges_recorded(self):
         edges = self.manifest["edges"]
@@ -158,7 +168,9 @@ class RunManifestTests(unittest.TestCase):
             participant = self.by_id[pid]
             repo = participant["repo_component_identity"]
             self.assertEqual(repo["algorithm"], "sha256")
-            self.assertEqual(repo["commit_sha"], HEAD)
+            # 仅绑定未变的代码/Prompt 来源实现父提交；不得伪装为最终 delivery head。
+            self.assertEqual(repo["source_commit_sha"], IMPLEMENTATION_PARENT_SHA)
+            self.assertNotIn("commit_sha", repo)
             code_hashes = {item["relative_path"]: item["sha256"] for item in repo["code_files"]}
             self.assertEqual(code_hashes[code_rel], _file_sha(ROOT / code_rel), pid)
             prompt_hashes = {item["relative_path"]: item["sha256"] for item in repo["prompt_files"]}

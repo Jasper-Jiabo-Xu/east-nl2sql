@@ -23,7 +23,7 @@ workspace 持久化记录为权威；000 登记为 `fixed_component`；Skill 采
 
 ## 范围与边界
 
-- 冻结基线：`base=4b83d9d513f01484c71b811512339fd7fe8943ec`；返工基于可获取 PR head `0dfadf6393972d6e422384f8a127844c8e59072d`（PR #36）。
+- 冻结基线：`base=4b83d9d513f01484c71b811512339fd7fe8943ec`；实现父提交 `implementation_parent_sha=0dfadf6393972d6e422384f8a127844c8e59072d`（仅绑定未变的代码/Prompt/合同来源）；最终 delivery head 由 Issue 内 DELIVERY-RECEIPT 外部绑定（`delivery_head_binding=external_delivery_receipt`），不在 Git 文件内伪称。
 - 仅新增本 Issue 指定路径：`tests/integration/qs/`、`fixtures/integration/qs/`、`docs/reports/integration/qs/`。
 - 未修改任何已验证上游 Agent、合同、Schema、Fixture（含已验收的 180）；未写正式库；未外发原始/可复原数据。
 - 000 以经冻结 Schema 校验的最小脱敏 `constraint-asset-package` 形式消费（不触碰真实 CoreBank SQLite）。
@@ -46,7 +46,7 @@ workspace 持久化记录为权威；000 登记为 `fixed_component`；Skill 采
 
 ## 输入输出哈希（冻结 Fixture，一键复现）
 
-正常路径确定性哈希（`TIME=2026-08-17T00:00:00+00:00`，`run-qs/QA-QS/trace-qs`，head `0dfadf63`）：
+正常路径确定性哈希（`TIME=2026-08-17T00:00:00+00:00`，`run-qs/QA-QS/trace-qs`，实现父提交 `0dfadf6…`，最终 delivery head 由 DELIVERY-RECEIPT 绑定）：
 
 | 包 | artifact_id | version | content_hash |
 |----|-------------|---------|--------------|
@@ -64,7 +64,7 @@ workspace 持久化记录为权威；000 登记为 `fixed_component`；Skill 采
 
 ## 测试摘要
 
-实际复跑记录（head `0dfadf63`，全绿）：
+实际复跑记录（实现父提交 `0dfadf6…`，全绿）：
 
 ```
 PYTHONPATH=src python3 -m pytest tests/integration/qs/test_question_sql_e2e.py -q   # 15 passed in 0.56s
@@ -101,9 +101,9 @@ git diff --check   # 干净
 ## 身份登记（SOL-BLOCKER-DECISION 已回填，无未决）
 
 - Multica Agent UUID 以 workspace 持久化记录为权威（110/120/130/140/150/160/170/180/210/220 全链已映射）。
-- 000 登记为 `fixed_component`（`agent_uuid=null`、`not_applicable_no_platform_agent_record`），组件身份由冻结 head 上 `src/east_v5/agents/east_000/` 逐文件 SHA-256 与约束合同哈希确定。
+- 000 登记为 `fixed_component`（`agent_uuid=null`、`not_applicable_no_platform_agent_record`），组件身份由源提交 `source_commit_sha=0dfadf6…` 上 `src/east_v5/agents/east_000/` 逐文件 SHA-256 与约束合同哈希确定。
 - Skill 采用 Skill UUID `e4b03e06-c351-449c-9211-e48dae737874`（`east-v5-test-driven-development`，绑定集 110/130/140/150/160/170；120/180/210/220 无绑定；000 不适用）。
-- 代码/Prompt 哈希由冻结 head 仓库文件逐字节复算（记录相对路径、commit SHA、算法 sha256），仅证明 Git 控制面内容，不宣称证明真实调用 Multica Agent；清单明确 `execution_mode=in_process_component_or_stub`。
+- 代码/Prompt 哈希由源提交 `source_commit_sha=0dfadf6…` 仓库文件逐字节复算（记录相对路径、commit SHA、算法 sha256），仅证明 Git 控制面内容，不宣称证明真实调用 Multica Agent；清单明确 `execution_mode=in_process_component_or_stub`。最终 delivery head 由 Issue 内 DELIVERY-RECEIPT 外部绑定（`delivery_head_binding=external_delivery_receipt`），不在 Git 文件内伪称。
 
 ## 风险
 
@@ -112,13 +112,14 @@ git diff --check   # 干净
 
 ## 一键复现
 
-返工后实际复跑（可获取 PR head，含本次全部新增文件）：
+获取 PR #36 的实际 head 后复跑（最终 delivery head 由 DELIVERY-RECEIPT 外部绑定，不 checkout 实现父提交）：
 
 ```
-git clone https://github.com/Jasper-Jiabo-Xu/east-nl2sql && cd east-nl2sql
-git checkout 0dfadf6393972d6e422384f8a127844c8e59072d   # PR #36 head；助理复核后以新 head 更新
-PYTHONPATH=src python3 -m pytest tests/integration/qs/test_question_sql_e2e.py -q   # 15 passed
-PYTHONPATH=src python3 -m pytest tests/integration/qs/test_run_manifest.py -q       # 12 passed（清单合同/自哈希/身份/哈希一致性）
+gh pr checkout 36 --repo Jasper-Jiabo-Xu/east-nl2sql
+git rev-parse HEAD   # 必须与最新 DELIVERY-RECEIPT 的 head_sha 相等
+PYTHONPATH=src python3 -m pytest tests/integration/qs/ -q   # 27 passed（15 联调 + 12 清单）
+# 链上单测（9 文件逐一运行）→ 198 passed
+git diff --check   # 干净
 ```
 
-所有输入均来自 `fixtures/integration/qs/`（`penalty-source-sanitized.json`、`constraint-asset-approved.json`、`error-type-failure-reports.json`），测试过程不改动任何已验证输入（`test_reproducible_and_no_input_mutation` 断言输入深拷贝前后一致）。
+所有输入均来自 `fixtures/integration/qs/`（`penalty-source-sanitized.json`、`constraint-asset-approved.json`、`error-type-failure-reports.json`），测试过程不改动任何已验证输入（`test_reproducible_and_no_input_mutation` 断言输入深拷贝前后一致）。清单的 `implementation_parent_sha`/`source_commit_sha` 只绑定未变的代码/Prompt/合同来源；本轮新增/修改文件由 manifest 自哈希、各 output content hash 与 Issue 内 DELIVERY-RECEIPT 共同绑定。
