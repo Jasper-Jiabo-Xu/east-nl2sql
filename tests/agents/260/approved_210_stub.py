@@ -43,6 +43,14 @@ def consume(package: dict[str, Any], root: Path) -> dict[str, str]:
             hashed = {key: write_batch[key] for key in ("transaction_groups", "sql_statements", "parameter_sets", "execution_order", "expected_write_counts")}
             if payload["foundation_write_batch_hash"] != sha256(hashed) or payload["report_hash"] != sha256({key: value for key, value in payload.items() if key != "report_hash"}):
                 raise ContractError("210_STUB_HASH_REJECTED")
+            for table, target in payload["target_count_validation"].items():
+                delta = payload["database_state_delta"].get(table)
+                if not delta or target["actual"] != delta["after"] or target["target"] != target["actual"] or not target["passed"]:
+                    raise ContractError("210_STUB_EXECUTION_FACT_REJECTED")
+            if any(summary["key_range"]["minimum"] is None or summary["key_range"]["maximum"] is None for summary in payload["table_write_summary"].values()):
+                raise ContractError("210_STUB_EXECUTION_FACT_REJECTED")
+            if any(relation["relation_type"] == "temporary_or_existing" for relation in payload["referential_integrity_validation"]["relations"]):
+                raise ContractError("210_STUB_EXECUTION_FACT_REJECTED")
         return {"decision": "accepted", "kind": "success"}
     if package["payload"]["route_target"] not in {"210", "manual", "241", "251"}:
         raise ContractError("210_STUB_ROUTE_REJECTED")

@@ -63,7 +63,7 @@ class FoundationRegressionTests(unittest.TestCase):
         plan = self.plan()
         copy_db, formal_db = sqlite3.connect(":memory:"), sqlite3.connect(":memory:")
         for connection in (copy_db, formal_db):
-            connection.execute("CREATE TABLE FIXTURE_CUSTOMER (C001 TEXT, C002 TEXT)")
+            connection.execute("CREATE TABLE FIXTURE_CUSTOMER (C001 TEXT PRIMARY KEY, C002 TEXT)")
         result = regression.run_database_copy_regression(ROOT, plan, self.verified, copy_db, formal_db, set())
         self.assertEqual(result["database_delta"], {"FIXTURE_CUSTOMER": 1})
         self.assertEqual(formal_db.execute("SELECT COUNT(*) FROM FIXTURE_CUSTOMER").fetchone()[0], 0)
@@ -72,12 +72,15 @@ class FoundationRegressionTests(unittest.TestCase):
     def test_foundation_formal_report_and_feedback_are_consumed_by_210(self):
         copy_db, formal_db = sqlite3.connect(":memory:"), sqlite3.connect(":memory:")
         for connection in (copy_db, formal_db):
-            connection.execute("CREATE TABLE FIXTURE_CUSTOMER (C001 TEXT, C002 TEXT)")
+            connection.execute("CREATE TABLE FIXTURE_CUSTOMER (C001 TEXT PRIMARY KEY, C002 TEXT)")
         package = regression.run_foundation_regression(ROOT, self.task, self.closure, self.verified, self.snapshot, copy_db, formal_db, set())
         self.assertEqual(package["payload"]["regression_status"], "passed")
         batch = package["payload"]["foundation_write_batch"]
         self.assertTrue(all("?" not in statement for statement in batch["rendered_sql_for_audit"]))
         self.assertEqual(package["payload"]["foundation_write_batch_hash"], sha256({key: batch[key] for key in ("transaction_groups", "sql_statements", "parameter_sets", "execution_order", "expected_write_counts")}))
+        self.assertEqual(package["payload"]["target_count_validation"]["FIXTURE_CUSTOMER"]["actual"], package["payload"]["database_state_delta"]["FIXTURE_CUSTOMER"]["after"])
+        self.assertEqual(package["payload"]["table_write_summary"]["FIXTURE_CUSTOMER"]["key_range"]["key_fields"], ["C001"])
+        self.assertNotEqual(package["payload"]["sandbox_execution_report"]["transactions"][0]["started_at"], self.verified["payload"]["validated_at"])
         regression._validate_schema(ROOT, package, "contracts/packages/foundation-regression-report.schema.json", "FOUNDATION_REPORT")
         self.assertEqual(stub_210.consume(package, ROOT)["kind"], "success")
         hash_drift = copy.deepcopy(package)
@@ -85,6 +88,12 @@ class FoundationRegressionTests(unittest.TestCase):
         hash_drift["envelope"]["content_hash"] = content_hash(hash_drift["envelope"], hash_drift["payload"])
         with self.assertRaisesRegex(ContractError, "210_STUB_HASH_REJECTED"):
             stub_210.consume(hash_drift, ROOT)
+        contradictory = copy.deepcopy(package)
+        contradictory["payload"]["database_state_delta"]["FIXTURE_CUSTOMER"]["after"] = 2
+        contradictory["payload"]["report_hash"] = sha256({key: value for key, value in contradictory["payload"].items() if key != "report_hash"})
+        contradictory["envelope"]["content_hash"] = content_hash(contradictory["envelope"], contradictory["payload"])
+        with self.assertRaisesRegex(ContractError, "210_STUB_EXECUTION_FACT_REJECTED"):
+            stub_210.consume(contradictory, ROOT)
         missing = copy.deepcopy(package)
         missing["payload"].pop("target_count_validation")
         missing["envelope"]["content_hash"] = content_hash(missing["envelope"], missing["payload"])
@@ -111,9 +120,18 @@ class FoundationRegressionTests(unittest.TestCase):
         task = copy.deepcopy(self.task)
         task["envelope"]["content_hash"] = "0" * 64
         copy_db, formal_db = sqlite3.connect(":memory:"), sqlite3.connect(":memory:")
-        for connection in (copy_db, formal_db): connection.execute("CREATE TABLE FIXTURE_CUSTOMER (C001 TEXT, C002 TEXT)")
+        for connection in (copy_db, formal_db): connection.execute("CREATE TABLE FIXTURE_CUSTOMER (C001 TEXT PRIMARY KEY, C002 TEXT)")
         with self.assertRaisesRegex(ContractError, "CONTENT_HASH_DRIFT"):
             regression.run_foundation_regression(ROOT, task, self.closure, self.verified, self.snapshot, copy_db, formal_db, set())
+
+    def test_nonempty_copy_expansion_is_rejected_from_post_write_actual_count(self):
+        copy_db, formal_db = sqlite3.connect(":memory:"), sqlite3.connect(":memory:")
+        for connection in (copy_db, formal_db):
+            connection.execute("CREATE TABLE FIXTURE_CUSTOMER (C001 TEXT PRIMARY KEY, C002 TEXT)")
+        copy_db.execute("INSERT INTO FIXTURE_CUSTOMER VALUES ('preexisting', 'legal')"); copy_db.commit()
+        feedback = regression.run_foundation_regression(ROOT, self.task, self.closure, self.verified, self.snapshot, copy_db, formal_db, set())
+        self.assertEqual(feedback["payload"]["route_target"], "241")
+        self.assertEqual(stub_210.consume(feedback, ROOT)["kind"], "feedback")
 
     def test_expansion_mode_uses_same_machine_path(self):
         payload = copy.deepcopy(self.task["payload"])
@@ -190,7 +208,7 @@ class FoundationRegressionTests(unittest.TestCase):
         swapped["envelope"]["content_hash"] = content_hash(swapped["envelope"], swapped["payload"])
         copy_db, formal_db = sqlite3.connect(":memory:"), sqlite3.connect(":memory:")
         for connection in (copy_db, formal_db):
-            connection.execute("CREATE TABLE FIXTURE_CUSTOMER (C001 TEXT, C002 TEXT)")
+            connection.execute("CREATE TABLE FIXTURE_CUSTOMER (C001 TEXT PRIMARY KEY, C002 TEXT)")
         with self.assertRaisesRegex(ContractError, "EXECUTION_VERIFIED_REF_DRIFT"):
             regression.run_database_copy_regression(ROOT, plan, swapped, copy_db, formal_db, set())
         self.assertEqual(copy_db.execute("SELECT COUNT(*) FROM FIXTURE_CUSTOMER").fetchone()[0], 0)
@@ -202,7 +220,7 @@ class FoundationRegressionTests(unittest.TestCase):
     def test_rejects_nonisolated_copy_before_any_write(self):
         plan = self.plan()
         same = sqlite3.connect(":memory:")
-        same.execute("CREATE TABLE FIXTURE_CUSTOMER (C001 TEXT, C002 TEXT)")
+        same.execute("CREATE TABLE FIXTURE_CUSTOMER (C001 TEXT PRIMARY KEY, C002 TEXT)")
         with self.assertRaisesRegex(ContractError, "DATABASE_COPY_FORMAL_NOT_ISOLATED"):
             regression.run_database_copy_regression(ROOT, plan, self.verified, same, same, set())
         self.assertEqual(same.execute("SELECT COUNT(*) FROM FIXTURE_CUSTOMER").fetchone()[0], 0)
@@ -210,7 +228,7 @@ class FoundationRegressionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             database = Path(directory) / "shared.sqlite"
             seed = sqlite3.connect(database)
-            seed.execute("CREATE TABLE FIXTURE_CUSTOMER (C001 TEXT, C002 TEXT)")
+            seed.execute("CREATE TABLE FIXTURE_CUSTOMER (C001 TEXT PRIMARY KEY, C002 TEXT)")
             seed.commit()
             seed.close()
             copy_db, formal_db = sqlite3.connect(database), sqlite3.connect(database)
@@ -224,7 +242,7 @@ class FoundationRegressionTests(unittest.TestCase):
         plan = self.plan()
         copy_db, formal_db = sqlite3.connect(":memory:"), sqlite3.connect(":memory:")
         for connection in (copy_db, formal_db):
-            connection.execute("CREATE TABLE FIXTURE_CUSTOMER (C001 TEXT, C002 TEXT)")
+            connection.execute("CREATE TABLE FIXTURE_CUSTOMER (C001 TEXT PRIMARY KEY, C002 TEXT)")
         copy_db.execute("CREATE TRIGGER duplicate_foundation_row AFTER INSERT ON FIXTURE_CUSTOMER BEGIN INSERT INTO FIXTURE_CUSTOMER VALUES ('trigger-row', 'unexpected'); END")
         copy_db.commit()
         with self.assertRaisesRegex(ContractError, "DATABASE_DELTA_MISMATCH"):

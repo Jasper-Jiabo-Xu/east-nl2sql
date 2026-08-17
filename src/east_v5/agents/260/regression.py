@@ -7,7 +7,9 @@ import sqlite3
 import copy
 import shutil
 import tempfile
+import json
 from contextlib import contextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
@@ -29,6 +31,10 @@ _PLAN_KEYS = {
 
 def _fail(code: str) -> None:
     raise ContractError(code)
+
+
+def _executed_at() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="microseconds")
 
 
 def _registry(repo_root: Path) -> Registry:
@@ -220,10 +226,14 @@ def run_database_copy_regression(repo_root: Path, plan: dict[str, Any], verified
     batch = compile_insert_batch({"schema_version": "v5.foundation-verified-data/v1", "mode": "foundation", "base_database_version": "copy-bound", "constraint_asset_version": "CA-V0.3.0", "graph_version": "TRG-V1.0.0", "records": records}, event_owned_tables)
     before = {table: copy_connection.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0] for table in plan["record_counts"]}
     committed = False
+    transaction_started = _executed_at()
+    statement_facts: list[dict[str, Any]] = []
     try:
         copy_connection.execute("BEGIN IMMEDIATE")
         for operation in batch["operations"]:
-            copy_connection.execute(operation["sql"], operation["parameters"])
+            started = _executed_at()
+            cursor = copy_connection.execute(operation["sql"], operation["parameters"])
+            statement_facts.append({"statement_id": f"foundation-statement-{operation['index']}", "started_at": started, "ended_at": _executed_at(), "affected_rows": cursor.rowcount, "error": None})
         delta = {table: copy_connection.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0] - before[table] for table in before}
         if delta != plan["record_counts"]:
             _fail("DATABASE_DELTA_MISMATCH")
@@ -238,7 +248,7 @@ def run_database_copy_regression(repo_root: Path, plan: dict[str, Any], verified
     if not committed:
         _fail("DATABASE_COPY_COMMIT_FAILED")
     after = {table: before[table] + delta[table] for table in before}
-    return {"batch": batch, "database_before": before, "database_after": after, "database_delta": delta, "rollback_verified": False, "formal_store_sha256": hashlib.sha256(formal_after).hexdigest()}
+    return {"batch": batch, "database_before": before, "database_after": after, "database_delta": delta, "transaction_fact": {"transaction_id": "foundation-copy-transaction-1", "started_at": transaction_started, "ended_at": _executed_at(), "committed": True, "error": None}, "statement_facts": statement_facts, "rollback_verified": False, "formal_store_sha256": hashlib.sha256(formal_after).hexdigest()}
 
 
 def _typed_value(value: Any) -> dict[str, Any]:
@@ -286,6 +296,42 @@ def _foundation_authentication_error(exc: ContractError) -> bool:
     return any(marker in code for marker in ("SCHEMA_", "CONTENT_HASH", "_DRIFT", "ENVELOPE", "TRANSPORT", "VERSION", "PACKAGE_HASH", "PARENT_REFERENCE", "REFERENCE_MISMATCH"))
 
 
+def _frozen_key_fields(connection: sqlite3.Connection, table: str) -> list[str]:
+    columns = connection.execute(f'PRAGMA table_info("{table}")').fetchall()
+    primary = [row[1] for row in sorted((row for row in columns if row[5]), key=lambda row: row[5])]
+    if primary:
+        return primary
+    for index in connection.execute(f'PRAGMA index_list("{table}")').fetchall():
+        if index[2]:
+            fields = [row[2] for row in connection.execute(f'PRAGMA index_info("{index[1]}")').fetchall()]
+            if fields:
+                return fields
+    _fail("FOUNDATION_KEY_RANGE_UNVERIFIABLE")
+
+
+def _key_range(connection: sqlite3.Connection, table: str) -> dict[str, Any]:
+    fields = _frozen_key_fields(connection, table)
+    columns = ", ".join(f'"{field}"' for field in fields)
+    ordering = ", ".join(f'"{field}"' for field in fields)
+    rows = connection.execute(f'SELECT {columns} FROM "{table}" ORDER BY {ordering}').fetchall()
+    if not rows:
+        _fail("FOUNDATION_KEY_RANGE_EMPTY")
+    encode = lambda row: row[0] if len(fields) == 1 else json.dumps(list(row), ensure_ascii=False, separators=(",", ":"))
+    return {"key_fields": fields, "minimum": encode(rows[0]), "maximum": encode(rows[-1])}
+
+
+def _foundation_relations(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    by_id = {record["record_id"]: record for record in records}
+    evidence: list[dict[str, Any]] = []
+    for record in records:
+        for reference in record["temporary_record_refs"]:
+            parent = by_id.get(reference["record_id"])
+            evidence.append({"relation_type": f"temporary:{parent['table_id'] if parent else 'missing'}->{record['table_id']}", "parent_records": 1 if parent else 0, "child_records": 1, "orphan_records": 0 if parent else 1, "passed": parent is not None})
+        for reference in record["existing_record_refs"]:
+            evidence.append({"relation_type": f"existing:{reference['table_id']}->{record['table_id']}", "parent_records": 1, "child_records": 1, "orphan_records": 0, "passed": True})
+    return evidence
+
+
 def run_foundation_regression(repo_root: Path, task_package: dict[str, Any], structure_closure: dict[str, Any], verified_bound_data: dict[str, Any], database_snapshot: dict[str, Any], copy_connection: sqlite3.Connection, formal_connection: sqlite3.Connection, event_owned_tables: set[str], *, attempt_no: int = 1) -> dict[str, Any]:
     """Run and package the Foundation copy gate; failures are first-class 260 feedback."""
     if attempt_no not in (1, 2, 3):
@@ -302,9 +348,16 @@ def run_foundation_regression(repo_root: Path, task_package: dict[str, Any], str
     except (ContractError, sqlite3.Error) as exc:
         return DatabaseCopyRegression(repo_root).feedback(verified_bound_data, None, database_snapshot, "DATA_VALUE_ERROR", "foundation_integrity", str(exc), attempt_no, parents, mode="foundation")
     task, records = task_package["payload"], _records(verified_bound_data)
+    target_actual = {table: result["database_after"].get(table, 0) for table in task["target_counts"]}
+    if any(target_actual[table] != expected for table, expected in task["target_counts"].items()):
+        return DatabaseCopyRegression(repo_root).feedback(verified_bound_data, None, database_snapshot, "DATA_VALUE_ERROR", "foundation_integrity", "FOUNDATION_TARGET_POST_WRITE_MISMATCH", attempt_no, parents, mode="foundation")
+    try:
+        key_ranges = {table: _key_range(copy_connection, table) for table in result["database_delta"]}
+    except ContractError as exc:
+        return DatabaseCopyRegression(repo_root).feedback(verified_bound_data, None, database_snapshot, "DATA_VALUE_ERROR", "foundation_integrity", str(exc), attempt_no, parents, mode="foundation")
     write_batch = _foundation_write_batch(result["batch"], verified_bound_data)
     hierarchy = task["hierarchy_asset_refs"]
-    relation_count = sum(len(record["temporary_record_refs"]) + len(record["existing_record_refs"]) for record in records)
+    relations = _foundation_relations(records)
     payload = {
         "schema_version": "v5.foundation-regression-report/v1",
         "foundation_regression_report_id": f"foundation-regression-{task_package['envelope']['artifact_id']}",
@@ -312,12 +365,12 @@ def run_foundation_regression(repo_root: Path, task_package: dict[str, Any], str
         "validated_data_package_refs": [plan["verified_data_ref"]], "data_validation_evidence_refs": [plan["verified_data_ref"]],
         "target_database_version": task["target_database_version"], "sandbox_snapshot_id": database_snapshot["payload"]["snapshot_id"],
         "foundation_write_batch": write_batch, "foundation_write_batch_hash": _foundation_batch_hash(write_batch),
-        "sandbox_execution_report": {"committed": True, "compiler": "east-foundation-insert-compiler/v1", "transactions": [{"transaction_id": "foundation-copy-transaction-1", "started_at": verified_bound_data["payload"]["validated_at"], "ended_at": verified_bound_data["payload"]["validated_at"], "committed": True, "error": None}], "statements": [{"statement_id": f"foundation-statement-{operation['index']}", "started_at": verified_bound_data["payload"]["validated_at"], "ended_at": verified_bound_data["payload"]["validated_at"], "affected_rows": 1, "error": None} for operation in result["batch"]["operations"]]},
-        "table_write_summary": {table: {"planned_count": count, "actual_count": result["database_delta"][table], "key_range": {"minimum": None, "maximum": None}, "difference": result["database_delta"][table] - count, "passed": result["database_delta"][table] == count} for table, count in plan["record_counts"].items()},
-        "target_count_validation": {table: {"target": count, "actual": plan["record_counts"][table], "passed": plan["record_counts"][table] == count} for table, count in task["target_counts"].items()},
+        "sandbox_execution_report": {"committed": True, "compiler": "east-foundation-insert-compiler/v1", "transactions": [result["transaction_fact"]], "statements": result["statement_facts"]},
+        "table_write_summary": {table: {"planned_count": count, "actual_count": result["database_delta"][table], "key_range": key_ranges[table], "difference": result["database_delta"][table] - count, "passed": result["database_delta"][table] == count} for table, count in plan["record_counts"].items()},
+        "target_count_validation": {table: {"target": count, "actual": target_actual[table], "passed": target_actual[table] == count} for table, count in task["target_counts"].items()},
         "distribution_validation": {"requirements_present": True, "expected": task["distribution_targets"], "actual": _distribution(records), "passed": _distribution(records) == task["distribution_targets"]},
         "hierarchy_reference_validation": {"requirements_present": True, "expected_refs": hierarchy, "resolved_refs": hierarchy, "invalid_nodes": [], "passed": True},
-        "referential_integrity_validation": {"relations": [{"relation_type": "temporary_or_existing", "parent_records": relation_count, "child_records": relation_count, "orphan_records": 0, "passed": True}], "orphan_records": 0, "passed": True},
+        "referential_integrity_validation": {"relations": relations, "orphan_records": sum(item["orphan_records"] for item in relations), "passed": all(item["passed"] for item in relations)},
         "prohibited_record_type_validation": {"prohibited_record_types": task["prohibited_record_types"], "hits": [], "passed": True},
         "foundation_scope_validation": {"allowed_tables": sorted(task["target_table_field_scope"]), "written_tables": sorted(result["database_delta"]), "passed": True},
         "database_state_delta": {table: {"before": result["database_before"][table], "after": result["database_after"][table], "delta": value, "passed": value == plan["record_counts"][table]} for table, value in result["database_delta"].items()}, "regression_status": "passed", "report_hash": "", "regressed_at": verified_bound_data["payload"]["validated_at"],
