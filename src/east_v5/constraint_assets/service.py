@@ -8,9 +8,11 @@ before a query is made.
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import sqlite3
 import base64
+import secrets
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -181,21 +183,25 @@ def _normalized_json_text(value: Any) -> str:
         raise ContractError("ASSET_RECORD_NORMALIZATION_FAILED") from exc
 
 
-def _decode_cursor(cursor: str) -> dict[str, Any]:
+def _mac(key: bytes, value: Any) -> str:
+    return hmac.new(key, _canonical(value).encode("utf-8"), hashlib.sha256).hexdigest()
+
+
+def _decode_cursor(cursor: str, key: bytes) -> dict[str, Any]:
     try:
         padding = "=" * (-len(cursor) % 4)
         decoded = json.loads(base64.urlsafe_b64decode((cursor + padding).encode("ascii")))
         signature = decoded.pop("signature")
     except (ValueError, UnicodeError, json.JSONDecodeError, AttributeError) as exc:
         raise ContractError("ASSET_QUERY_CURSOR_INVALID") from exc
-    if not isinstance(decoded, dict) or not isinstance(signature, str) or signature != _digest(decoded):
+    if not isinstance(decoded, dict) or not isinstance(signature, str) or not hmac.compare_digest(signature, _mac(key, decoded)):
         _fail("ASSET_QUERY_CURSOR_INVALID")
     return decoded
 
 
-def _encode_cursor(payload: dict[str, Any]) -> str:
+def _encode_cursor(payload: dict[str, Any], key: bytes) -> str:
     signed = dict(payload)
-    signed["signature"] = _digest(payload)
+    signed["signature"] = _mac(key, payload)
     return base64.urlsafe_b64encode(_canonical(signed).encode("utf-8")).decode("ascii").rstrip("=")
 
 
@@ -209,6 +215,7 @@ def _result(
     total: int = 0,
     cursor: str | None = None,
     next_cursor: str | None = None,
+    service_proof: str = "0" * 64,
 ) -> dict[str, Any]:
     materialized = list(records)
     source = {key: entry[key] for key in ("artifact_type", "artifact_id", "asset_version", "content_hash")}
@@ -226,9 +233,10 @@ def _result(
         "source_hash": _digest(source),
         "records_hash": _digest(materialized),
         "receipt_hash": "0" * 64,
+        "service_proof": service_proof,
         "records": materialized,
     }
-    result["receipt_hash"] = _digest({key: value for key, value in result.items() if key != "receipt_hash"})
+    result["receipt_hash"] = _digest({key: value for key, value in result.items() if key not in {"receipt_hash", "service_proof"}})
     try:
         Draft202012Validator(load_json(Path(__file__).resolve().parents[3] / RESULT_SCHEMA_PATH)).validate(result)
     except ValidationError as exc:
@@ -236,14 +244,18 @@ def _result(
     return result
 
 
-def verify_query_receipt(
+def validate_query_receipt_contract(
     result: dict[str, Any],
     *,
     query_method: str | None = None,
     table_code: str | None = None,
-    source_entry: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Reject a forged or mismatched service receipt before a downstream use."""
+    """Validate public receipt shape and hashes, without proving service origin.
+
+    This is deliberately only a fixture/schema helper.  Production consumers
+    must use :func:`consume_complete_table`, which binds a live service instance
+    and verifies its private capability proof plus the full cursor chain.
+    """
     try:
         Draft202012Validator(load_json(Path(__file__).resolve().parents[3] / RESULT_SCHEMA_PATH)).validate(result)
     except (ValidationError, OSError, json.JSONDecodeError) as exc:
@@ -252,7 +264,7 @@ def verify_query_receipt(
         _fail("ASSET_QUERY_RECEIPT_INVALID")
     if result["complete"] != (result["next_cursor"] is None):
         _fail("ASSET_QUERY_RECEIPT_INVALID")
-    if result["receipt_hash"] != _digest({key: value for key, value in result.items() if key != "receipt_hash"}):
+    if result["receipt_hash"] != _digest({key: value for key, value in result.items() if key not in {"receipt_hash", "service_proof"}}):
         _fail("ASSET_QUERY_RECEIPT_INVALID")
     source = {key: result[key] for key in ("artifact_type", "artifact_id", "asset_version", "content_hash")}
     if result["source_hash"] != _digest(source):
@@ -261,8 +273,6 @@ def verify_query_receipt(
         _fail("ASSET_QUERY_RECEIPT_METHOD_MISMATCH")
     if table_code is not None and result["table_code"] != table_code:
         _fail("ASSET_QUERY_RECEIPT_TABLE_MISMATCH")
-    if source_entry is not None and source != {key: source_entry[key] for key in source}:
-        _fail("ASSET_QUERY_RECEIPT_SOURCE_MISMATCH")
     return result
 
 
@@ -274,6 +284,11 @@ class ConstraintAssetService:
         self.roots = roots
         self.manifest_path = manifest_path
         self.control_path = control_path
+        # This private, process-local capability is intentionally absent from
+        # every receipt and cursor.  Public SHA-256 values aid auditability but
+        # are not authority proofs; only this live, validated service can issue
+        # or continue a query chain.
+        self._capability = secrets.token_bytes(32)
         self.entries = validate_runtime_manifest(self.repo_root, roots, manifest_path, control_path=control_path)
         self.control = _control_index(self.repo_root, control_path)
         validate_reconciliation_manifest(self.repo_root)
@@ -300,7 +315,22 @@ class ConstraintAssetService:
     def asset_ref(self, asset_version: str) -> dict[str, Any]:
         if asset_version not in self.entries:
             _fail("ASSET_VERSION_UNSUPPORTED")
-        return _result(self.entries[asset_version], [], total=0)
+        return self._issue_receipt(_result(self.entries[asset_version], [], total=0))
+
+    def _issue_receipt(self, result: dict[str, Any]) -> dict[str, Any]:
+        result["service_proof"] = _mac(self._capability, {key: value for key, value in result.items() if key != "service_proof"})
+        return result
+
+    def _verify_service_receipt(self, result: dict[str, Any], *, query_method: str, table_code: str) -> dict[str, Any]:
+        validate_query_receipt_contract(result, query_method=query_method, table_code=table_code)
+        source = {key: result[key] for key in ("artifact_type", "artifact_id", "asset_version", "content_hash")}
+        entry = self.entries.get(result["asset_version"])
+        if entry is None or source != {key: entry[key] for key in source}:
+            _fail("ASSET_QUERY_RECEIPT_SOURCE_MISMATCH")
+        expected = _mac(self._capability, {key: value for key, value in result.items() if key != "service_proof"})
+        if not hmac.compare_digest(result["service_proof"], expected):
+            _fail("ASSET_QUERY_RECEIPT_ORIGIN_INVALID")
+        return result
 
     @staticmethod
     def _request(table_code: str, limit: int, cursor: str | None) -> None:
@@ -309,12 +339,11 @@ class ConstraintAssetService:
         if cursor is not None and (not isinstance(cursor, str) or not cursor):
             _fail("ASSET_QUERY_INVALID")
 
-    @staticmethod
-    def _page(entry: dict[str, Any], method: str, table_code: str, records: list[dict[str, Any]], limit: int, cursor: str | None) -> dict[str, Any]:
+    def _page(self, entry: dict[str, Any], method: str, table_code: str, records: list[dict[str, Any]], limit: int, cursor: str | None) -> dict[str, Any]:
         binding = _digest({"query_method": method, "table_code": table_code, "page_size": limit, "source": {key: entry[key] for key in ("artifact_id", "asset_version", "content_hash")}})
         offset = 0
         if cursor is not None:
-            decoded = _decode_cursor(cursor)
+            decoded = _decode_cursor(cursor, self._capability)
             if set(decoded) != {"binding", "offset", "total"} or decoded["binding"] != binding or not isinstance(decoded["offset"], int) or not isinstance(decoded["total"], int):
                 _fail("ASSET_QUERY_CURSOR_INVALID")
             if decoded["total"] != len(records):
@@ -325,8 +354,58 @@ class ConstraintAssetService:
         page = records[offset:offset + limit]
         next_cursor = None
         if offset + len(page) < len(records):
-            next_cursor = _encode_cursor({"binding": binding, "offset": offset + len(page), "total": len(records)})
-        return verify_query_receipt(_result(entry, page, query_method=method, table_code=table_code, page_size=limit, total=len(records), cursor=cursor, next_cursor=next_cursor), query_method=method, table_code=table_code, source_entry=entry)
+            next_cursor = _encode_cursor({"binding": binding, "offset": offset + len(page), "total": len(records)}, self._capability)
+        return self._verify_service_receipt(self._issue_receipt(_result(entry, page, query_method=method, table_code=table_code, page_size=limit, total=len(records), cursor=cursor, next_cursor=next_cursor)), query_method=method, table_code=table_code)
+
+    def complete_table_query(self, query_method: str, table_code: str, *, page_size: int = 100) -> dict[str, Any]:
+        """Read a complete, contiguous query through this live service only."""
+        queries = {
+            "constraints_for_table": self.constraints_for_table,
+            "field_rules_for_table": self.field_rules_for_table,
+            "graph_edges_for_table": self.graph_edges_for_table,
+        }
+        query = queries.get(query_method)
+        if query is None:
+            _fail("ASSET_QUERY_METHOD_UNSUPPORTED")
+        expected_cursor: str | None = None
+        expected_total: int | None = None
+        expected_source: dict[str, Any] | None = None
+        records: list[dict[str, Any]] = []
+        seen_records: set[str] = set()
+        page_receipt_hashes: list[str] = []
+        while True:
+            page = query(table_code, limit=page_size, cursor=expected_cursor)
+            self._verify_service_receipt(page, query_method=query_method, table_code=table_code)
+            if page["cursor"] != expected_cursor:
+                _fail("ASSET_QUERY_CHAIN_GAP")
+            source = {key: page[key] for key in ("artifact_type", "artifact_id", "asset_version", "content_hash")}
+            if expected_total is None:
+                expected_total, expected_source = page["total"], source
+            elif page["total"] != expected_total or source != expected_source:
+                _fail("ASSET_QUERY_CHAIN_DRIFT")
+            for record in page["records"]:
+                fingerprint = _digest(record)
+                if fingerprint in seen_records:
+                    _fail("ASSET_QUERY_CHAIN_DUPLICATE")
+                seen_records.add(fingerprint)
+                records.append(record)
+            page_receipt_hashes.append(page["receipt_hash"])
+            if page["complete"]:
+                if page["next_cursor"] is not None or len(records) != expected_total:
+                    _fail("ASSET_QUERY_CHAIN_INCOMPLETE")
+                return {
+                    "query_method": query_method,
+                    "table_code": table_code,
+                    "total": expected_total,
+                    "returned_count": len(records),
+                    "complete": True,
+                    "source": expected_source,
+                    "records": records,
+                    "page_receipt_hashes": page_receipt_hashes,
+                }
+            if not page["next_cursor"] or page["next_cursor"] == expected_cursor:
+                _fail("ASSET_QUERY_CHAIN_GAP")
+            expected_cursor = page["next_cursor"]
 
     def constraints_for_table(self, table_code: str, *, limit: int = 100, cursor: str | None = None) -> dict[str, Any]:
         self._request(table_code, limit, cursor)
@@ -411,3 +490,10 @@ class ConstraintAssetService:
             raise ContractError("ASSET_GRAPH_QUERY_FAILED") from exc
         records.sort(key=lambda record: (record["provider_table_code"], record["consumer_table_code"], record["edge_type"], record["canonical_edge_hash"]))
         return self._page(graph, "graph_edges_for_table", table_code, records, limit, cursor)
+
+
+def consume_complete_table(service: ConstraintAssetService, query_method: str, table_code: str, *, page_size: int = 100) -> dict[str, Any]:
+    """Production-only consumer boundary: no Protocol or fixture may stand in."""
+    if type(service) is not ConstraintAssetService:
+        _fail("ASSET_QUERY_SERVICE_REQUIRED")
+    return service.complete_table_query(query_method, table_code, page_size=page_size)

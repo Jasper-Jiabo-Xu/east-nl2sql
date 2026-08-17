@@ -11,7 +11,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 
-from east_v5.constraint_assets import ConstraintAssetService, validate_reconciliation_manifest, validate_runtime_manifest, verify_query_receipt
+from east_v5.constraint_assets import ConstraintAssetService, consume_complete_table, validate_query_receipt_contract, validate_reconciliation_manifest, validate_runtime_manifest
 from east_v5.governance import ContractError
 
 
@@ -220,19 +220,50 @@ class ConstraintAssetServiceTests(unittest.TestCase):
 
     def test_receipt_and_runtime_drift_fail_closed(self) -> None:
         service = self.service()
-        result = service.constraints_for_table("CHILD", limit=2)
-        verify_query_receipt(result, query_method="constraints_for_table", table_code="CHILD", source_entry=service.ca)
-        for key, value, code in (("total", 99, "ASSET_QUERY_RECEIPT_INVALID"), ("table_code", "OTHER", "ASSET_QUERY_RECEIPT_TABLE_MISMATCH"), ("query_method", "graph_edges_for_table", "ASSET_QUERY_RECEIPT_METHOD_MISMATCH")):
-            forged = dict(result)
-            forged[key] = value
-            if key in {"table_code", "query_method"}:
-                forged["receipt_hash"] = hashlib.sha256(json.dumps({name: item for name, item in forged.items() if name != "receipt_hash"}, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
-            with self.assertRaisesRegex(ContractError, code):
-                verify_query_receipt(forged, query_method="constraints_for_table", table_code="CHILD", source_entry=service.ca)
+        result = service.constraints_for_table("CHILD", limit=100)
+        validate_query_receipt_contract(result, query_method="constraints_for_table", table_code="CHILD")
+        forged = dict(result)
+        forged.update({"total": 100, "complete": True, "next_cursor": None})
+        # This models an adapter that recomputes every *public* checksum.  The
+        # structural helper accepts it by design; only the live service proof is
+        # authoritative and must reject it.
+        forged["receipt_hash"] = hashlib.sha256(json.dumps({name: item for name, item in forged.items() if name not in {"receipt_hash", "service_proof"}}, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+        validate_query_receipt_contract(forged, query_method="constraints_for_table", table_code="CHILD")
+        with self.assertRaisesRegex(ContractError, "ASSET_QUERY_RECEIPT_ORIGIN_INVALID"):
+            service._verify_service_receipt(forged, query_method="constraints_for_table", table_code="CHILD")
+        completed = consume_complete_table(service, "constraints_for_table", "CHILD", page_size=100)
+        self.assertEqual((completed["total"], completed["returned_count"], len(completed["records"])), (122, 122, 122))
+        with self.assertRaisesRegex(ContractError, "ASSET_QUERY_SERVICE_REQUIRED"):
+            consume_complete_table(object(), "constraints_for_table", "CHILD")
         with sqlite3.connect(self.sqlite) as con:
             con.execute("DELETE FROM multifield_constraint WHERE constraint_id = 'MFC-002'")
         with self.assertRaisesRegex(ContractError, "ASSET_PAYLOAD_HASH_DRIFT"):
             service.constraints_for_table("CHILD")
+
+    def test_cursor_tamper_skip_and_production_chain_replay_are_rejected(self) -> None:
+        import base64
+
+        service = self.service()
+        first = service.constraints_for_table("CHILD", limit=100)
+        padded = first["next_cursor"] + "=" * (-len(first["next_cursor"]) % 4)
+        cursor = json.loads(base64.urlsafe_b64decode(padded.encode("ascii")))
+        cursor["offset"] = 120
+        unsigned = {key: value for key, value in cursor.items() if key != "signature"}
+        # A caller can recreate the old public SHA-256 format, but it is no
+        # longer a valid cursor capability.
+        cursor["signature"] = hashlib.sha256(json.dumps(unsigned, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+        tampered = base64.urlsafe_b64encode(json.dumps(cursor, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")).decode("ascii").rstrip("=")
+        with self.assertRaisesRegex(ContractError, "ASSET_QUERY_CURSOR_INVALID"):
+            service.constraints_for_table("CHILD", limit=100, cursor=tampered)
+        self.assertEqual(consume_complete_table(service, "constraints_for_table", "CHILD", page_size=100)["returned_count"], 122)
+        original_query = service.constraints_for_table
+
+        def replay_page(table_code: str, *, limit: int = 100, cursor: str | None = None) -> dict[str, object]:
+            return first if cursor is not None else original_query(table_code, limit=limit, cursor=cursor)
+
+        service.constraints_for_table = replay_page  # type: ignore[method-assign]
+        with self.assertRaisesRegex(ContractError, "ASSET_QUERY_CHAIN_GAP"):
+            consume_complete_table(service, "constraints_for_table", "CHILD", page_size=100)
 
 
 if __name__ == "__main__":
