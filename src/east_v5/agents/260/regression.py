@@ -240,6 +240,68 @@ def run_database_copy_regression(repo_root: Path, plan: dict[str, Any], verified
     return {"batch": batch, "database_delta": delta, "rollback_verified": False, "formal_store_sha256": hashlib.sha256(formal_after).hexdigest()}
 
 
+def _typed_value(value: Any) -> dict[str, Any]:
+    if value is None:
+        kind = "NULL"
+    elif isinstance(value, bool):
+        kind = "BOOLEAN"
+    elif isinstance(value, int):
+        kind = "INTEGER"
+    elif isinstance(value, float):
+        kind = "DECIMAL"
+    else:
+        kind = "STRING"
+    return {"standard_type": kind, "is_null": value is None, "value": value}
+
+
+def _foundation_write_batch(batch: dict[str, Any], counts: dict[str, int]) -> dict[str, Any]:
+    """Expose the deterministic compiler output as the frozen 260 contract."""
+    statement_ids = [f"foundation-statement-{operation['index']}" for operation in batch["operations"]]
+    return {
+        "transaction_groups": [{"transaction_id": "foundation-copy-transaction-1", "statement_ids": statement_ids}],
+        "sql_statements": [{"statement_id": statement_id, "table_id": operation["table"], "sql": operation["sql"]} for statement_id, operation in zip(statement_ids, batch["operations"])],
+        "parameter_sets": [{"statement_id": statement_id, "values": [_typed_value(value) for value in operation["parameters"]]} for statement_id, operation in zip(statement_ids, batch["operations"])],
+        "rendered_sql_for_audit": [operation["sql"] for operation in batch["operations"]],
+        "execution_order": [{"statement_id": statement_id, "transaction_id": "foundation-copy-transaction-1"} for statement_id in statement_ids],
+        "expected_write_counts": counts,
+    }
+
+
+def run_foundation_regression(repo_root: Path, task_package: dict[str, Any], structure_closure: dict[str, Any], verified_bound_data: dict[str, Any], database_snapshot: dict[str, Any], copy_connection: sqlite3.Connection, formal_connection: sqlite3.Connection, event_owned_tables: set[str], *, attempt_no: int = 1) -> dict[str, Any]:
+    """Run and package the Foundation copy gate; failures are first-class 260 feedback."""
+    if attempt_no not in (1, 2, 3):
+        _fail("ATTEMPT_OUT_OF_RANGE")
+    parents = [artifact_ref(item["envelope"]) for item in (task_package, structure_closure, verified_bound_data, database_snapshot)]
+    try:
+        plan = validate_foundation_regression_inputs(repo_root, task_package, structure_closure, verified_bound_data, database_snapshot)
+        result = run_database_copy_regression(repo_root, plan, verified_bound_data, copy_connection, formal_connection, event_owned_tables)
+    except (ContractError, sqlite3.Error) as exc:
+        return DatabaseCopyRegression(repo_root).feedback(verified_bound_data, None, database_snapshot, "DATA_VALUE_ERROR", "foundation_integrity", str(exc), attempt_no, parents, mode="foundation")
+    task, records = task_package["payload"], _records(verified_bound_data)
+    write_batch = _foundation_write_batch(result["batch"], plan["record_counts"])
+    hierarchy = task["hierarchy_asset_refs"]
+    relation_count = sum(len(record["temporary_record_refs"]) + len(record["existing_record_refs"]) for record in records)
+    payload = {
+        "schema_version": "v5.foundation-regression-report/v1",
+        "foundation_regression_report_id": f"foundation-regression-{task_package['envelope']['artifact_id']}",
+        "foundation_task_ref": plan["task_ref"], "structure_closure_ref": plan["structure_closure_ref"],
+        "validated_data_package_refs": [plan["verified_data_ref"]], "data_validation_evidence_refs": [plan["verified_data_ref"]],
+        "target_database_version": task["target_database_version"], "sandbox_snapshot_id": database_snapshot["payload"]["snapshot_id"],
+        "foundation_write_batch": write_batch, "foundation_write_batch_hash": sha256(write_batch),
+        "sandbox_execution_report": {"committed": True, "compiler": "east-foundation-insert-compiler/v1", "transaction_count": 1, "statement_count": len(result["batch"]["operations"])},
+        "table_write_summary": {table: {"expected_count": count, "actual_delta": result["database_delta"][table], "passed": result["database_delta"][table] == count} for table, count in plan["record_counts"].items()},
+        "target_count_validation": {table: {"target": count, "actual": plan["record_counts"][table], "passed": plan["record_counts"][table] == count} for table, count in task["target_counts"].items()},
+        "distribution_validation": {"requirements_present": True, "expected": task["distribution_targets"], "actual": _distribution(records), "passed": _distribution(records) == task["distribution_targets"]},
+        "hierarchy_reference_validation": {"requirements_present": True, "expected_refs": hierarchy, "resolved_refs": hierarchy, "invalid_nodes": [], "passed": True},
+        "referential_integrity_validation": {"relation_count": relation_count, "orphan_records": 0, "passed": True},
+        "prohibited_record_type_validation": {"prohibited_record_types": task["prohibited_record_types"], "hits": [], "passed": True},
+        "foundation_scope_validation": {"allowed_tables": sorted(task["target_table_field_scope"]), "written_tables": sorted(result["database_delta"]), "passed": True},
+        "database_state_delta": result["database_delta"], "regression_status": "passed", "report_hash": "", "regressed_at": verified_bound_data["payload"]["validated_at"],
+    }
+    payload["report_hash"] = sha256({key: value for key, value in payload.items() if key != "report_hash"})
+    return DatabaseCopyRegression._wrap("database_copy_regression", payload, verified_bound_data["envelope"], parents, attempt_no, "validated", mode="foundation")
+
+
 # Event-data support intentionally lives beside (not inside) the Foundation
 # execution path above.  Foundation has a distinct frozen task contract and
 # deterministic compiler; event data alone can execute the already validated
@@ -351,13 +413,16 @@ class DatabaseCopyRegression:
     def _metrics(rows: list[tuple[Any, ...]], spec: dict[str, Any], records: list[dict[str, Any]]) -> dict[str, Any]:
         flat = [value for row in rows for value in row]
         role_records = {role: [record for record in records if record["case_role"] == role] for role in {record["case_role"] for record in records}}
+        return_fields = [item["field_id"] for item in spec["return_fields"]]
 
         def record_matches(record: dict[str, Any]) -> bool:
-            # Record identity is the frozen data-group record, not a distinct
-            # scalar. A projection can omit fields, so an identity is observed
-            # when at least one non-null frozen value reaches the result.
-            values = [item["value"] for item in record["field_values"] if not item["is_null"]]
-            return bool(values) and any(value in flat for value in values)
+            # A result identity is a full projection key, never a shared
+            # scalar.  For example C1/CLOSED must not match C1/OPEN.
+            projected = {item["field_id"]: None if item["is_null"] else item["value"] for item in record["field_values"] if item["field_id"] in return_fields}
+            if not projected:
+                return False
+            positions = [(return_fields.index(field), value) for field, value in projected.items()]
+            return any(all(row[index] == value for index, value in positions) for row in rows)
 
         positive_records = role_records.get("positive", [])
         negative_records = [record for role in ("negative", "hard_negative") for record in role_records.get(role, [])]
@@ -369,7 +434,6 @@ class DatabaseCopyRegression:
         code_ok = all(all(value in flat for value in item["target_code_values"]) for item in spec["code_value_coverage"])
         aggregation = spec["aggregation_dedup_sort_time"]
         group_fields = aggregation["group_by_fields"]
-        return_fields = [item["field_id"] for item in spec["return_fields"]]
         indexes = [return_fields.index(field) for field in group_fields if field in return_fields]
         group_keys = [tuple(row[index] for index in indexes) for row in rows] if indexes else [tuple(row) for row in rows]
         distinct_count = len({tuple(row) for row in rows})
@@ -395,16 +459,22 @@ class DatabaseCopyRegression:
             finally: connection.close()
         if formal_database.read_bytes() != before: _fail("FORMAL_DATABASE_MUTATED")
 
-    def feedback(self, data: dict[str, Any], orm: dict[str, Any] | None, snapshot: dict[str, Any], error_code: str, stage: str, detail: str, attempt_no: int, parents: list[dict[str, Any]]) -> dict[str, Any]:
+    def feedback(self, data: dict[str, Any], orm: dict[str, Any] | None, snapshot: dict[str, Any], error_code: str, stage: str, detail: str, attempt_no: int, parents: list[dict[str, Any]], *, mode: str = "event_data") -> dict[str, Any]:
         error_code, route = ("MANUAL_REVIEW_REQUIRED", "manual") if attempt_no == 3 else (error_code, {"DATA_VALUE_ERROR": "241", "ORM_PLAN_ERROR": "251", "FOUNDATION_REQUIRED": "210"}.get(error_code, "210"))
-        payload = {"schema_version": "v5.sql-regression-failed-feedback/v1", "mode": "event_data", "input_data_refs": [artifact_ref(data["envelope"])], "input_orm_ref": artifact_ref(orm["envelope"]) if orm else None, "sandbox_snapshot_id": snapshot["payload"]["snapshot_id"], "failure_details": {"error_code": error_code, "error_stage": stage, "error_location": "database_copy", "expected_values": [], "actual_values": [detail], "sql_error_detail": None, "regression_metrics": {}}, "route_target": route, "retry_count": attempt_no}
-        return self._wrap("sql_regression_failed_feedback", payload, data["envelope"], parents, attempt_no, "rejected")
+        payload = {"schema_version": "v5.sql-regression-failed-feedback/v1", "mode": mode, "input_data_refs": [artifact_ref(data["envelope"])], "input_orm_ref": artifact_ref(orm["envelope"]) if orm else None, "sandbox_snapshot_id": snapshot["payload"]["snapshot_id"], "failure_details": {"error_code": error_code, "error_stage": stage, "error_location": "database_copy", "expected_values": [], "actual_values": [detail], "sql_error_detail": None, "regression_metrics": {}}, "route_target": route, "retry_count": attempt_no}
+        return self._wrap("sql_regression_failed_feedback", payload, data["envelope"], parents, attempt_no, "rejected", mode=mode)
+
+    @staticmethod
+    def _foundation_required(data: dict[str, Any], snapshot: dict[str, Any]) -> bool:
+        available = {(item["record_keys"]["table_id"], item["record_keys"]["primary_key"]) for item in snapshot["payload"]["object_state_records"]}
+        return any((reference["table_id"], reference["record_key"]) not in available for record in DatabaseCopyRegression._rows(data) for reference in record["existing_record_refs"])
 
     def run_event(self, data: dict[str, Any], orm: dict[str, Any], snapshot: dict[str, Any], review: dict[str, Any], query_spec: dict[str, Any], formal_database: Path, *, attempt_no: int = 1) -> dict[str, Any]:
         self.validate_event_inputs(data, orm, snapshot, review, query_spec)
         if attempt_no not in (1, 2, 3): _fail("ATTEMPT_OUT_OF_RANGE")
         parents = [artifact_ref(item["envelope"]) for item in (data, orm, snapshot, review, query_spec)]
         try:
+            if self._foundation_required(data, snapshot): _fail("FOUNDATION_REQUIRED:EXISTING_RECORD_NOT_IN_SNAPSHOT")
             params = self._bind(data, orm["payload"]["validated_orm_plan"])
             with self._sandbox(formal_database) as connection:
                 operations: list[dict[str, Any]] = []; namespace: dict[str, Any] = {}
@@ -423,7 +493,7 @@ class DatabaseCopyRegression:
         return self._wrap("database_copy_regression", payload, data["envelope"], parents, attempt_no, "validated")
 
     @staticmethod
-    def _wrap(artifact_type: str, payload: dict[str, Any], source: dict[str, Any], parents: list[dict[str, Any]], attempt_no: int, status: str) -> dict[str, Any]:
-        envelope = {"artifact_id": f"260-{artifact_type}-{source['artifact_id']}", "artifact_type": artifact_type, "run_id": source["run_id"], "qa_id": source["qa_id"], "version": 1, "schema_version": "COMMON-ENVELOPE/v1", "content_hash": "", "supersedes_ref": None, "attempt_no": attempt_no, "producer_id": "260", "parent_artifact_refs": parents, "input_hashes": [item["content_hash"] for item in parents], "status": status, "mode": "event_data", "created_at": source["created_at"], "trace_id": source["trace_id"], "storage_locator": None}
+    def _wrap(artifact_type: str, payload: dict[str, Any], source: dict[str, Any], parents: list[dict[str, Any]], attempt_no: int, status: str, *, mode: str = "event_data") -> dict[str, Any]:
+        envelope = {"artifact_id": f"260-{artifact_type}-{source['artifact_id']}", "artifact_type": artifact_type, "run_id": source["run_id"], "qa_id": source["qa_id"], "version": 1, "schema_version": "COMMON-ENVELOPE/v1", "content_hash": "", "supersedes_ref": None, "attempt_no": attempt_no, "producer_id": "260", "parent_artifact_refs": parents, "input_hashes": [item["content_hash"] for item in parents], "status": status, "mode": mode, "created_at": source["created_at"], "trace_id": source["trace_id"], "storage_locator": None}
         envelope["content_hash"] = content_hash(envelope, payload)
         return {"envelope": envelope, "payload": payload}

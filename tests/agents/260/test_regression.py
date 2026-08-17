@@ -68,6 +68,41 @@ class FoundationRegressionTests(unittest.TestCase):
         self.assertEqual(formal_db.execute("SELECT COUNT(*) FROM FIXTURE_CUSTOMER").fetchone()[0], 0)
         self.assertFalse(result["rollback_verified"])
 
+    def test_foundation_formal_report_and_feedback_are_consumed_by_210(self):
+        copy_db, formal_db = sqlite3.connect(":memory:"), sqlite3.connect(":memory:")
+        for connection in (copy_db, formal_db):
+            connection.execute("CREATE TABLE FIXTURE_CUSTOMER (C001 TEXT, C002 TEXT)")
+        package = regression.run_foundation_regression(ROOT, self.task, self.closure, self.verified, self.snapshot, copy_db, formal_db, set())
+        self.assertEqual(package["payload"]["regression_status"], "passed")
+        regression._validate_schema(ROOT, package, "contracts/packages/foundation-regression-report.schema.json", "FOUNDATION_REPORT")
+        self.assertEqual(stub_210.consume(package, ROOT)["kind"], "success")
+        hash_drift = copy.deepcopy(package)
+        hash_drift["payload"]["report_hash"] = "f" * 64
+        hash_drift["envelope"]["content_hash"] = content_hash(hash_drift["envelope"], hash_drift["payload"])
+        with self.assertRaisesRegex(ContractError, "210_STUB_HASH_REJECTED"):
+            stub_210.consume(hash_drift, ROOT)
+        missing = copy.deepcopy(package)
+        missing["payload"].pop("target_count_validation")
+        missing["envelope"]["content_hash"] = content_hash(missing["envelope"], missing["payload"])
+        with self.assertRaisesRegex(ContractError, "210_STUB_SCHEMA_REJECTED"):
+            stub_210.consume(missing, ROOT)
+        package["payload"]["foundation_write_batch"]["unexpected"] = True
+        package["envelope"]["content_hash"] = content_hash(package["envelope"], package["payload"])
+        with self.assertRaisesRegex(ContractError, "210_STUB_SCHEMA_REJECTED"):
+            stub_210.consume(package, ROOT)
+        bad_copy, bad_formal = sqlite3.connect(":memory:"), sqlite3.connect(":memory:")
+        for connection in (bad_copy, bad_formal):
+            connection.execute("CREATE TABLE FIXTURE_CUSTOMER (C001 TEXT PRIMARY KEY, C002 TEXT)")
+        value = self.verified["payload"]["validated_data_package"]["data_groups"][0]["records"][0]["field_values"][0]["value"]
+        bad_copy.execute("INSERT INTO FIXTURE_CUSTOMER VALUES (?, 'taken')", (value,)); bad_copy.commit()
+        retry_feedback = regression.run_foundation_regression(ROOT, self.task, self.closure, self.verified, self.snapshot, bad_copy, bad_formal, set())
+        self.assertEqual(retry_feedback["payload"]["route_target"], "241")
+        self.assertEqual(stub_210.consume(retry_feedback, ROOT)["kind"], "feedback")
+        feedback = regression.run_foundation_regression(ROOT, self.task, self.closure, self.verified, self.snapshot, bad_copy, bad_formal, set(), attempt_no=3)
+        self.assertEqual(feedback["payload"]["mode"], "foundation")
+        self.assertEqual(feedback["payload"]["route_target"], "manual")
+        self.assertEqual(stub_210.consume(feedback, ROOT)["kind"], "feedback")
+
     def test_expansion_mode_uses_same_machine_path(self):
         payload = copy.deepcopy(self.task["payload"])
         payload.update({"foundation_task_id": "eas60-expansion", "foundation_mode": "expansion", "trigger_reason": "sanitized expansion"})
@@ -226,6 +261,8 @@ class EventRegressionTests(unittest.TestCase):
         review_payload = {"schema_version":"v5.question-sql-dual-review-passed/v1","candidate_ref":{"artifact_id":"candidate","version":1,"content_hash":"3"*64},"candidate_content":{"clear_question":"open accounts","sql_gold":"SELECT CUSTOMER_ID, STATUS FROM FIXTURE_ACCOUNT WHERE STATUS = 'OPEN'","sql_explanation":{"select":"s","from_join":"f","where":"w","aggregation":"","sort":"","business_meaning":"b"},"business_event_candidates":[{"event_name":"open","objective":"o","objects":["account"],"state_changes":[]}],"specification_mapping":[{"spec_item":"open","question_fragment":"open","sql_fragment":"STATUS"}]},"query_specification_package":artifact_ref(self.spec["envelope"]),"penalty_fact_package":{"artifact_id":"penalty","version":1,"content_hash":"1"*64},"observable_fact_package":{"artifact_id":"observable","version":1,"content_hash":"2"*64},"constraint_evidence_summary":{"tables":["FIXTURE_ACCOUNT"],"fields":["STATUS"],"data_elements":[],"relationships":[],"source_refs":["CA-V0.3.0"]},"precheck_report":{"decision":"pass","report_hash":"4"*64},"deepseek_review":{"decision":"pass","issue_level":"none","reason":"ok","review_hash":"5"*64},"glm_review":{"decision":"pass","issue_level":"none","reason":"ok","review_hash":"6"*64},"adjudication":{"decision":"pass","report_hash":"7"*64},"review_round":1,"package_hash":""}
         review_payload["package_hash"] = sha256({key:value for key,value in review_payload.items() if key != "package_hash"})
         self.review = wrap("question_sql_dual_review_passed", "review-260", review_payload, "110", "event_data", parents=[artifact_ref(self.spec["envelope"])], status="validated"); self.review["envelope"]["qa_id"] = "QA-260"; self.review["envelope"]["content_hash"] = content_hash(self.review["envelope"], self.review["payload"])
+        self.spec["payload"]["minimum_positive_count"] = 1
+        self.refresh_query_refs()
 
     def tearDown(self): self.temp.cleanup()
 
@@ -255,6 +292,14 @@ class EventRegressionTests(unittest.TestCase):
         feedback = self.worker.run_event(self.data, self.orm, self.snapshot, self.review, self.spec, self.db)
         self.assertEqual(feedback["payload"]["route_target"], "241")
 
+    def test_shared_grain_different_condition_is_excluded_by_full_projection_key(self):
+        negative = self.data["payload"]["validated_data_package"]["data_groups"][0]["records"][2]
+        negative["field_values"][0]["value"] = "C1"
+        self.data["payload"]["validated_hash"] = sha256(self.data["payload"]["validated_data_package"])
+        self.data["envelope"]["content_hash"] = content_hash(self.data["envelope"], self.data["payload"])
+        package = self.worker.run_event(self.data, self.orm, self.snapshot, self.review, self.spec, self.db)
+        self.assertEqual(package["payload"]["regression_status"], "passed")
+
     def test_row_count_and_join_are_independent_gates(self):
         self.spec["payload"]["expected_row_group_count"].update({"target": 2, "tolerance_range": {"low": 0, "high": 0}}); self.refresh_query_refs()
         self.assertEqual(self.worker.run_event(self.data, self.orm, self.snapshot, self.review, self.spec, self.db)["payload"]["route_target"], "241")
@@ -271,6 +316,19 @@ class EventRegressionTests(unittest.TestCase):
         package["envelope"]["content_hash"] = content_hash(package["envelope"], package["payload"])
         with self.assertRaisesRegex(ContractError, "210_STUB_SCHEMA_REJECTED"):
             stub_210.consume(package, ROOT)
+
+    def test_stub_rejects_hash_drift_and_foundation_required_is_reachable(self):
+        package = self.worker.run_event(self.data, self.orm, self.snapshot, self.review, self.spec, self.db)
+        package["payload"]["executable_package_hash"] = "f" * 64
+        with self.assertRaisesRegex(ContractError, "210_STUB_SCHEMA_REJECTED"):
+            stub_210.consume(package, ROOT)
+        record = self.data["payload"]["validated_data_package"]["data_groups"][0]["records"][0]
+        record["existing_record_refs"] = [{"table_id": "FIXTURE_CUSTOMER", "record_key": "not-in-snapshot"}]
+        self.data["payload"]["validated_hash"] = sha256(self.data["payload"]["validated_data_package"])
+        self.data["envelope"]["content_hash"] = content_hash(self.data["envelope"], self.data["payload"])
+        feedback = self.worker.run_event(self.data, self.orm, self.snapshot, self.review, self.spec, self.db)
+        self.assertEqual(feedback["payload"]["failure_details"]["error_code"], "FOUNDATION_REQUIRED")
+        self.assertEqual(feedback["payload"]["route_target"], "210")
 
     def test_110_unknown_field_and_schema_drift_are_rejected(self):
         self.review["payload"]["unexpected"] = True; self.review["envelope"]["content_hash"] = content_hash(self.review["envelope"], self.review["payload"])
