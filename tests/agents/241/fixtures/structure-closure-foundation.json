@@ -25,5 +25,6 @@
     "tables": ["FIXTURE_CUSTOMER"],
     "fields": ["FIXTURE_CUSTOMER.C001", "FIXTURE_CUSTOMER.C002"],
     "references": []
+    ,"foundation_task_ref": {"artifact_id": "foundation-task-fixture", "version": 1, "content_hash": "c3053411a077f17df8995b5e835eaab5fbcc6eddb277554e69cf341752db3a45"}
   }
 }

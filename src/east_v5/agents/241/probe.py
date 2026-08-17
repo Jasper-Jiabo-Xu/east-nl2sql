@@ -45,11 +45,24 @@ def _event_structure_closure() -> dict[str, Any]:
     return _wrap("structure_closure", "eas31-structure", payload, producer="220", mode="event_data", qa_id="QA-EAS31")
 
 
-def _foundation_structure_closure() -> dict[str, Any]:
+def _foundation_task() -> dict[str, Any]:
+    payload = {
+        "schema_version": "v5.foundation-task-package/v1", "foundation_task_id": "eas31-foundation-task",
+        "foundation_mode": "initial_seed", "trigger_reason": "sanitized fixture", "target_database_version": "fixture-db-v1",
+        "target_object_types": ["FIXTURE_CUSTOMER"], "target_table_field_scope": {"FIXTURE_CUSTOMER": ["C001", "C002"]},
+        "target_counts": {"FIXTURE_CUSTOMER": 1}, "distribution_targets": {"FIXTURE_CUSTOMER": {"default": 1}},
+        "hierarchy_asset_refs": [{"artifact_id": "TRG-V1.0.0", "version": 1, "content_hash": "b" * 64}],
+        "prohibited_record_types": ["EVENT_OWNED"], "resume_qa_ref": None,
+        "constraint_asset_version": "CA-V0.3.0", "graph_version": "TRG-V1.0.0",
+    }
+    return _wrap("foundation_task_package", "eas31-foundation-task", payload, producer="210", mode="foundation", qa_id=None)
+
+
+def _foundation_structure_closure(task: dict[str, Any]) -> dict[str, Any]:
     payload = {
         "schema_version": "v5.structure-closure/v1", "constraint_asset_version": "CA-V0.3.0",
         "graph_version": "TRG-V1.0.0", "tables": ["FIXTURE_CUSTOMER"],
-        "fields": ["FIXTURE_CUSTOMER.C001", "FIXTURE_CUSTOMER.C002"], "references": [],
+        "fields": ["FIXTURE_CUSTOMER.C001", "FIXTURE_CUSTOMER.C002"], "references": [], "foundation_task_ref": artifact_ref(task["envelope"]),
     }
     return _wrap("structure_closure", "eas31-foundation-structure", payload, producer="220", mode="foundation", qa_id=None)
 
@@ -62,13 +75,13 @@ def _operation_closure() -> dict[str, Any]:
     return _wrap("operation_closure", "eas31-operation", payload, producer="230", mode="event_data", qa_id="QA-EAS31")
 
 
-def _foundation_profile() -> dict[str, Any]:
+def _foundation_profile(task: dict[str, Any]) -> dict[str, Any]:
     payload = {
-        "schema_version": "v5.foundation-profile/v1", "base_database_version": "fixture-db-v1",
+        "schema_version": "v5.foundation-profile/v1", "foundation_task_ref": artifact_ref(task["envelope"]), "base_database_version": "fixture-db-v1",
         "target_classes": ["FIXTURE_CUSTOMER"], "target_counts": {"FIXTURE_CUSTOMER": 1},
         "constraint_asset_version": "CA-V0.3.0", "graph_version": "TRG-V1.0.0",
     }
-    return _wrap("foundation_profile", "eas31-profile", payload, producer="210", mode="foundation", qa_id=None)
+    return _wrap("foundation_profile", "eas31-profile", payload, producer="210", mode="foundation", qa_id=None, parents=[artifact_ref(task["envelope"])])
 
 
 def _snapshot(mode: str) -> dict[str, Any]:
@@ -142,9 +155,10 @@ def run_sanitized_probe(repo_root: Path) -> dict[str, Any]:
     event = builder.build_bound_data(event_closure, operation_closure=operation, snapshot=event_snapshot, created_at=FIXED_TIME)
     builder.validate_bound_data(event)
 
-    foundation_closure = _foundation_structure_closure()
-    profile = _foundation_profile()
-    foundation = builder.build_bound_data(foundation_closure, foundation_profile=profile, created_at=FIXED_TIME)
+    task = _foundation_task()
+    foundation_closure = _foundation_structure_closure(task)
+    profile = _foundation_profile(task)
+    foundation = builder.build_bound_data(foundation_closure, foundation_task_package=task, foundation_profile=profile, created_at=FIXED_TIME)
     builder.validate_bound_data(foundation)
 
     feedback = _validation_feedback(event)
@@ -172,7 +186,7 @@ def run_sanitized_probe(repo_root: Path) -> dict[str, Any]:
 
     foundation_no_operation = False
     try:
-        builder.build_bound_data(foundation_closure, foundation_profile=profile, operation_closure=operation, created_at=FIXED_TIME)
+        builder.build_bound_data(foundation_closure, foundation_task_package=task, foundation_profile=profile, operation_closure=operation, created_at=FIXED_TIME)
     except ContractError as exc:
         foundation_no_operation = str(exc) == "FOUNDATION_OPERATION_CLOSURE_FORBIDDEN"
     if not foundation_no_operation:

@@ -34,6 +34,8 @@ flowchart LR
 
 Foundation 固定为 `210 -> 220 -> 241 -> 242 -> 260 -> 210 -> 010`，明确不调用 230/251/252，不使用 ORM、操作闭包或独立 ODS 资产。260 只能调用版本化的 `east-foundation-insert-compiler/v1`，生成参数化 INSERT 批次后在正式库 copy 中执行；编译器本身不连接数据库、不执行 SQL。
 
+Foundation 的唯一完整意图包是 `foundation_task_package/v1`。210 产出它，220、241、260 是固定消费者；220 闭包、241 数据、242 冻结数据均保留相同的 `{artifact_id, version, content_hash}` `foundation_task_ref`。旧 `foundation_profile/v1` 仅是完整包的可复算兼容投影（数据库版本、对象类、数量、CA/TRG 与父引用），260 拒绝把 profile 当作输入。260 在 copy 上同时校验任务包、闭包、242 数据和快照版本/哈希，任何漂移输出精确拒绝而不猜测目标。
+
 ## 责任边界
 
 - 241 负责生成或修改绑定业务数据。事件模式同时消费结构闭包、230 操作闭包和只读数据库快照；Foundation 模式消费任务画像、结构闭包、CA-V0.3.0、TRG-V1.0.0 与只读快照。

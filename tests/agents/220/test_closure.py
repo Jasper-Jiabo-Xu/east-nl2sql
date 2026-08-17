@@ -20,7 +20,7 @@ def event_fixture(name: str) -> dict:
 
 
 def foundation_fixture() -> dict:
-    return json.loads((ROOT / "fixtures" / "artifacts" / "foundation-profile-valid.json").read_text(encoding="utf-8"))
+    return json.loads((ROOT / "fixtures" / "artifacts" / "foundation-task-package-valid.json").read_text(encoding="utf-8"))
 
 
 def rehash(package: dict) -> None:
@@ -116,7 +116,7 @@ class ClosureTests(unittest.TestCase):
             lambda p: p["envelope"].update({"producer_id": "010"}),
         ):
             invalid = foundation_fixture(); mutation(invalid); rehash(invalid)
-            with self.assertRaisesRegex(ContractError, "FOUNDATION_PROFILE_SCHEMA_INVALID"):
+            with self.assertRaisesRegex(ContractError, "FOUNDATION_TASK_PACKAGE_SCHEMA_INVALID"):
                 mod.build_closure(invalid, [])
         bad_run = copy.deepcopy(result); bad_run["envelope"]["run_id"] = "other-run"; rehash(bad_run)
         with self.assertRaisesRegex(ContractError, "ASSET_RESULT_LINEAGE_MISMATCH"):

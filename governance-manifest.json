@@ -1,7 +1,8 @@
 {
   "artifact_layout": "config/artifact-layout.json",
-  "content_sha256": "8b28baa6263fa7935b76675abf57586c00a296615fcdd09dac80dcce64a1fae7",
+  "content_sha256": "21b80e938098e03b500e0128f2ccb76a89a2dac47c7da2ecfc9cad7fa4f4fe97",
   "downstream_contract": "config/downstream-contract.json",
+  "foundation_task_contract": "contracts/packages/foundation-task-package.schema.json",
   "input_lock": "config/input-lock.json",
   "migration_map": "config/migration-map.json",
   "root_contract": "config/root-contract.json",

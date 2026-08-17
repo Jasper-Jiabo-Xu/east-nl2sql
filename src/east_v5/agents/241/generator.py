@@ -31,11 +31,12 @@ REPO_ROOT = Path(__file__).resolve().parents[4]
 
 TRANSPORT_KEYS = {"envelope", "payload"}
 STRUCTURE_FIELDS = {"schema_version", "constraint_asset_version", "graph_version", "tables", "fields", "references"}
+FOUNDATION_STRUCTURE_FIELDS = STRUCTURE_FIELDS | {"foundation_task_ref"}
 OPERATION_FIELDS = {"schema_version", "mode", "operations", "consumers"}
 CASE_ROLES = {"positive", "hard_negative", "background", "foundation"}
 STANDARD_TYPES = {"STRING", "INTEGER", "NUMBER", "DECIMAL", "BOOLEAN", "DATE", "DATETIME", "CODE"}
 PROVENANCE_TYPES = {
-    "structure_closure_constraint", "distribution", "database_record", "hierarchy_asset", "foundation_profile",
+    "structure_closure_constraint", "distribution", "database_record", "hierarchy_asset", "foundation_task_package", "foundation_profile",
 }
 FIELD_PATH = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)$")
 
@@ -44,10 +45,12 @@ VALIDATION_FEEDBACK_SCHEMA = "contracts/packages/data-validation-failed-feedback
 REGRESSION_FEEDBACK_SCHEMA = "contracts/packages/sql-regression-failed-feedback.schema.json"
 SNAPSHOT_SCHEMA = "contracts/packages/database-read-snapshot.schema.json"
 FOUNDATION_PROFILE_SCHEMA = "contracts/packages/foundation-profile-package.schema.json"
+FOUNDATION_TASK_SCHEMA = "contracts/packages/foundation-task-package.schema.json"
 MANIFEST_SCHEMA = "contracts/packages/bound-data-manifest.schema.json"
 RUNTIME_SCHEMA = "contracts/v5-runtime-packages.schema.json"
 
-_RECORD_KEYS = {"record_id", "table_id", "field_values", "existing_record_refs", "temporary_record_refs", "value_provenance", "case_role", "target_condition_refs", "constraint_refs"}
+_RECORD_KEYS = {"record_id", "record_type", "table_id", "field_values", "existing_record_refs", "temporary_record_refs", "value_provenance", "case_role", "target_condition_refs", "constraint_refs"}
+_LEGACY_RECORD_KEYS = _RECORD_KEYS - {"record_type"}
 _FIELD_VALUE_KEYS = {"field_id", "value", "standard_type", "is_null"}
 _EXISTING_REF_KEYS = {"table_id", "record_key"}
 _TEMP_REF_KEYS = {"record_id"}
@@ -116,7 +119,8 @@ class BoundDataGenerator:
         validate_envelope(self.repo_root, envelope, payload)
         if (envelope["artifact_type"], envelope["producer_id"]) != ("structure_closure", "220"):
             _fail("STRUCTURE_CLOSURE_ENVELOPE_INVALID")
-        if not isinstance(payload, dict) or set(payload) != STRUCTURE_FIELDS:
+        expected = FOUNDATION_STRUCTURE_FIELDS if envelope["mode"] == "foundation" else STRUCTURE_FIELDS
+        if not isinstance(payload, dict) or set(payload) != expected:
             _fail("UNKNOWN_FIELD:STRUCTURE_CLOSURE")
         self._validate_runtime_def(payload, "structure_closure", "STRUCTURE_CLOSURE")
 
@@ -133,6 +137,14 @@ class BoundDataGenerator:
 
     def validate_foundation_profile(self, package: dict[str, Any]) -> None:
         self._validate_transport(package, "foundation_profile", FOUNDATION_PROFILE_SCHEMA)
+
+    def validate_foundation_task_package(self, package: dict[str, Any]) -> None:
+        self._validate_transport(package, "foundation_task_package", FOUNDATION_TASK_SCHEMA)
+        envelope, payload = package["envelope"], package["payload"]
+        if envelope["producer_id"] != "210" or envelope["mode"] != "foundation":
+            _fail("FOUNDATION_TASK_ENVELOPE_INVALID")
+        if envelope["artifact_id"] != payload["foundation_task_id"]:
+            _fail("FOUNDATION_TASK_IDENTITY_MISMATCH")
 
     def validate_snapshot(self, package: dict[str, Any]) -> None:
         self._validate_transport(package, "database_read_snapshot", SNAPSHOT_SCHEMA)
@@ -190,7 +202,7 @@ class BoundDataGenerator:
             _fail("STANDARD_TYPE_INVALID")
 
     def _validate_record(self, record: dict[str, Any], tables: set[str], fields: set[str], snapshot_keys: set[tuple[str, str]], mode: str, record_ids: set[str]) -> None:
-        if not isinstance(record, dict) or set(record) != _RECORD_KEYS:
+        if not isinstance(record, dict) or set(record) not in (_RECORD_KEYS, _LEGACY_RECORD_KEYS):
             _fail("UNKNOWN_FIELD:RECORD")
         record_id = record["record_id"]
         if not isinstance(record_id, str) or not record_id:
@@ -333,7 +345,7 @@ class BoundDataGenerator:
                 "existing_record_refs": [],
                 "temporary_record_refs": [],
                 "value_provenance": [
-                    {"source_type": "foundation_profile" if mode == "foundation" else "structure_closure_constraint", "source_ref": "CA-V0.3.0"},
+                    {"source_type": "foundation_task_package" if mode == "foundation" else "structure_closure_constraint", "source_ref": "CA-V0.3.0"},
                 ],
                 "case_role": role,
                 "target_condition_refs": [],
@@ -401,7 +413,7 @@ class BoundDataGenerator:
 
     def build_bound_data(
         self, structure_closure: dict[str, Any], *, operation_closure: dict[str, Any] | None = None,
-        foundation_profile: dict[str, Any] | None = None, snapshot: dict[str, Any] | None = None,
+        foundation_profile: dict[str, Any] | None = None, foundation_task_package: dict[str, Any] | None = None, snapshot: dict[str, Any] | None = None,
         proposed_data_groups: list[dict[str, Any]] | None = None,
         version: int = 1, attempt_no: int = 1, status: str = "candidate",
         created_at: str | None = None,
@@ -409,17 +421,31 @@ class BoundDataGenerator:
         """Task 1: generate a schema-valid bound_data package from frozen inputs."""
         self.validate_structure_closure(structure_closure)
         closure = structure_closure["payload"]
-        mode = "foundation" if foundation_profile is not None else "event_data"
+        mode = structure_closure["envelope"]["mode"]
         if mode == "event_data":
             if operation_closure is None:
                 _fail("OPERATION_CLOSURE_REQUIRED")
             self.validate_operation_closure(operation_closure)
-            if foundation_profile is not None:
+            if foundation_profile is not None or foundation_task_package is not None:
                 _fail("FOUNDATION_PROFILE_IN_EVENT_MODE")
         else:
             if operation_closure is not None:
                 _fail("FOUNDATION_OPERATION_CLOSURE_FORBIDDEN")
-            self.validate_foundation_profile(foundation_profile)
+            self.validate_foundation_task_package(foundation_task_package)
+            task_ref = artifact_ref(foundation_task_package["envelope"])
+            if closure["foundation_task_ref"] != task_ref:
+                _fail("FOUNDATION_TASK_REF_DRIFT")
+            if foundation_profile is not None:
+                self.validate_foundation_profile(foundation_profile)
+                expected_profile = {
+                    "schema_version": "v5.foundation-profile/v1", "foundation_task_ref": task_ref,
+                    "base_database_version": foundation_task_package["payload"]["target_database_version"],
+                    "target_classes": foundation_task_package["payload"]["target_object_types"],
+                    "target_counts": foundation_task_package["payload"]["target_counts"],
+                    "constraint_asset_version": "CA-V0.3.0", "graph_version": "TRG-V1.0.0",
+                }
+                if foundation_profile["payload"] != expected_profile:
+                    _fail("FOUNDATION_PROFILE_PROJECTION_DRIFT")
         if snapshot is not None:
             self.validate_snapshot(snapshot)
 
@@ -435,7 +461,9 @@ class BoundDataGenerator:
         if mode == "event_data":
             parents.append(artifact_ref(operation_closure["envelope"]))
         else:
-            parents.append(artifact_ref(foundation_profile["envelope"]))
+            parents.append(artifact_ref(foundation_task_package["envelope"]))
+            if foundation_profile is not None:
+                parents.append(artifact_ref(foundation_profile["envelope"]))
         if snapshot is not None:
             parents.append(artifact_ref(snapshot["envelope"]))
 
@@ -445,6 +473,7 @@ class BoundDataGenerator:
             "structure_closure_ref": artifact_ref(source),
             "operation_closure_ref": artifact_ref(operation_closure["envelope"]) if mode == "event_data" else None,
             "database_snapshot_ref": artifact_ref(snapshot["envelope"]) if snapshot is not None else None,
+            "foundation_task_ref": artifact_ref(foundation_task_package["envelope"]) if mode == "foundation" else None,
             "data_groups": data_groups,
         }
         return self._wrap(

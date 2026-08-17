@@ -15,7 +15,7 @@
 ## 合同和边界
 
 - 输入、输出、反馈均为 `{envelope,payload}` 传输包；先校验 COMMON-ENVELOPE（内容哈希、父引用、input_hashes、attempt、mode），再校验业务 Schema。
-- 事件模式消费 220 `structure_closure`、230 `operation_closure`、只读快照；Foundation 消费 210 `foundation_profile`、220 `structure_closure`、CA-V0.3.0、TRG-V1.0.0 与快照，不读操作闭包、不出现 230/251/252。
+- 事件模式消费 220 `structure_closure`、230 `operation_closure`、只读快照；Foundation 消费 210 完整 `foundation_task_package`、可选兼容 `foundation_profile`、220 同一任务引用的 `structure_closure`、CA-V0.3.0、TRG-V1.0.0 与快照，不读操作闭包、不出现 230/251/252。
 - 唯一输出 `bound_data`（`payload.schema_version=v5.bound-data/v1`），字段逐条对应 DATA-PENDING-VALIDATION；`case_role` 仅取 `positive|hard_negative|background|foundation`。
 - 242/260 反馈只能修改数据并生成新版本（`version+1`、`supersedes_ref` 指向上版三元组、`attempt_no+1`），旧包不可覆盖；第 3 次仍失败输出 `blocked_manual`。
 - 硬代码校验记录边界、类型、引用、值血缘、目标条件与包 Schema；LLM 只通过 `proposed_data_groups` 提候选值。

@@ -71,7 +71,7 @@ class FoundationProfilePackageTests(unittest.TestCase):
         package = foundation_profile_package()
         before = copy.deepcopy(package)
         self.assertEqual(consume_220_stub(package), ("FIXTURE_CUSTOMER",))
-        self.assertEqual(consume_241_stub(package), {"FIXTURE_CUSTOMER": 2})
+        self.assertEqual(consume_241_stub(package), {"FIXTURE_CUSTOMER": 1})
         self.assertEqual(package, before)
 
     def test_rejects_unregistered_legacy_type_before_write(self) -> None:

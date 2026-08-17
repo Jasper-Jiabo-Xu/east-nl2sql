@@ -19,7 +19,7 @@
   },
   "agents": {
     "010": {"role": "fixed_release_committer", "writes_formal_store": true},
-    "210": {"role": "release_candidate_assembler", "writes_formal_store": false},
+    "210": {"role": "foundation_task_package_producer_and_release_candidate_assembler", "writes_formal_store": false},
     "220": {"role": "structure_closure", "writes_formal_store": false},
     "230": {"role": "operation_closure_event_only", "writes_formal_store": false},
     "241": {"role": "bound_data_generator", "writes_formal_store": false},
@@ -32,6 +32,8 @@
     "forbidden_agents": ["230", "251", "252"],
     "forbidden_artifacts": ["operation_closure", "orm_code", "independent_ods_asset"],
     "compiler": "east-foundation-insert-compiler/v1",
+    "task_package": {"schema": "v5.foundation-task-package/v1", "producer": "210", "consumers": ["220", "241", "260"], "authoritative_intent": true},
+    "profile_compatibility": {"schema": "v5.foundation-profile/v1", "consumers": ["220", "241"], "projection_of": "foundation_task_package", "retirement_condition": "all_approved_consumers_read_foundation_task_package"},
     "initial_seed_classes": 17,
     "initial_seed_records": 18,
     "on_demand_only_classes": 12,

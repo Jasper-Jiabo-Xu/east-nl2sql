@@ -55,8 +55,10 @@ CROSS_TABLE_VALIDATOR = "east_v5.validators.cross_table"
 _COLUMN_KINDS = frozenset({"UNIQUE", "PRIMARY_KEY"})
 
 TRANSPORT_KEYS = {"envelope", "payload"}
-BOUND_DATA_PAYLOAD_KEYS = {"schema_version", "data_package_id", "structure_closure_ref", "operation_closure_ref", "database_snapshot_ref", "data_groups"}
+BOUND_DATA_PAYLOAD_KEYS = {"schema_version", "data_package_id", "structure_closure_ref", "operation_closure_ref", "database_snapshot_ref", "foundation_task_ref", "data_groups"}
+LEGACY_BOUND_DATA_PAYLOAD_KEYS = BOUND_DATA_PAYLOAD_KEYS - {"foundation_task_ref"}
 STRUCTURE_FIELDS = {"schema_version", "constraint_asset_version", "graph_version", "tables", "fields", "references"}
+FOUNDATION_STRUCTURE_FIELDS = STRUCTURE_FIELDS | {"foundation_task_ref"}
 
 BOUND_DATA_SCHEMA = "contracts/packages/bound-data-package.schema.json"
 VERIFIED_SCHEMA = "contracts/packages/verified-bound-data-package.schema.json"
@@ -120,7 +122,8 @@ class DataValidator:
         validate_envelope(self.repo_root, envelope, payload)
         if (envelope["artifact_type"], envelope["producer_id"]) != ("structure_closure", "220"):
             _fail("STRUCTURE_CLOSURE_ENVELOPE_INVALID")
-        if not isinstance(payload, dict) or set(payload) != STRUCTURE_FIELDS:
+        expected = FOUNDATION_STRUCTURE_FIELDS if envelope["mode"] == "foundation" else STRUCTURE_FIELDS
+        if not isinstance(payload, dict) or set(payload) != expected:
             _fail("UNKNOWN_FIELD:STRUCTURE_CLOSURE")
 
     def validate_bound_data(self, package: dict[str, Any], structure_closure: dict[str, Any]) -> None:
@@ -134,7 +137,7 @@ class DataValidator:
         if not isinstance(package, dict) or set(package) != TRANSPORT_KEYS:
             _fail("TRANSPORT_PACKAGE_INVALID")
         envelope, payload = package["envelope"], package["payload"]
-        if not isinstance(payload, dict) or set(payload) != BOUND_DATA_PAYLOAD_KEYS:
+        if not isinstance(payload, dict) or set(payload) not in (BOUND_DATA_PAYLOAD_KEYS, LEGACY_BOUND_DATA_PAYLOAD_KEYS):
             _fail("UNKNOWN_FIELD:BOUND_DATA")
         validate_envelope(self.repo_root, envelope, payload)
         if (envelope["artifact_type"], envelope["producer_id"]) != ("bound_data", "241"):
@@ -148,6 +151,13 @@ class DataValidator:
             _fail("STRUCTURE_CLOSURE_REFERENCE_MISMATCH")
         if envelope["mode"] == "foundation" and payload["operation_closure_ref"] is not None:
             _fail("FOUNDATION_OPERATION_CLOSURE_FORBIDDEN")
+        if envelope["mode"] == "foundation":
+            if payload.get("foundation_task_ref") is None:
+                _fail("FOUNDATION_TASK_REF_REQUIRED")
+            if payload.get("foundation_task_ref") != structure_closure["payload"].get("foundation_task_ref"):
+                _fail("FOUNDATION_TASK_REF_DRIFT")
+        elif payload.get("foundation_task_ref") is not None:
+            _fail("FOUNDATION_TASK_REF_FORBIDDEN")
         if envelope["mode"] == "event_data" and payload["operation_closure_ref"] is None:
             _fail("OPERATION_CLOSURE_REQUIRED")
         self._validate_schema(package, BOUND_DATA_SCHEMA, "BOUND_DATA")

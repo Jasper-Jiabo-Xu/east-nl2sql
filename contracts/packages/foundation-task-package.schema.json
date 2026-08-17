@@ -1,0 +1,12 @@
+{
+  "$id": "https://east.example/contracts/packages/foundation-task-package/v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Frozen Foundation task package",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["envelope", "payload"],
+  "properties": {
+    "envelope": {"allOf": [{"$ref": "https://east.example/contracts/common-envelope/v1"}, {"type": "object", "properties": {"artifact_type": {"const": "foundation_task_package"}, "producer_id": {"const": "210"}, "mode": {"const": "foundation"}}}]},
+    "payload": {"$ref": "https://east.example/contracts/v5-runtime-packages/v1#/$defs/foundation_task_package"}
+  }
+}

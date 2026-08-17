@@ -5,7 +5,7 @@
 ## 输入（按 mode 二选一）
 
 - 事件模式（`event_data`）：同时消费 220 的 `structure_closure`、230 的 `operation_closure` 与只读数据库快照。
-- Foundation 模式（`foundation`）：消费 210 的 `foundation_profile`、220 的 `structure_closure`、CA-V0.3.0、TRG-V1.0.0 与只读快照；不读操作闭包，不出现 230/251/252。
+- Foundation 模式（`foundation`）：消费 210 的完整 `foundation_task_package`、220 的同一 `foundation_task_ref` 的 `structure_closure`、CA-V0.3.0、TRG-V1.0.0 与只读快照；profile 仅可作为复算兼容投影，不读操作闭包，不出现 230/251/252。
 
 每个输入包先校验 COMMON-ENVELOPE（内容哈希、父引用、input_hashes、attempt、mode），再校验各自业务 Schema；失败必须拒绝，不得猜测或修复上游数据。
 

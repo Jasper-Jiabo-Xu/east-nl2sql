@@ -17,8 +17,13 @@
         "graph_version": {"const": "TRG-V1.0.0"},
         "tables": {"type": "array"},
         "fields": {"type": "array"},
-        "references": {"type": "array"}
+        "references": {"type": "array"},
+        "foundation_task_ref": {"type": "object", "additionalProperties": false, "required": ["artifact_id", "version", "content_hash"], "properties": {"artifact_id": {"type": "string", "minLength": 1}, "version": {"type": "integer", "minimum": 1}, "content_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}}
       }
     }
-  }
+  },
+  "allOf": [
+    {"if": {"properties": {"envelope": {"properties": {"mode": {"const": "foundation"}}}}}, "then": {"properties": {"payload": {"required": ["foundation_task_ref"]}}}},
+    {"if": {"properties": {"envelope": {"properties": {"mode": {"const": "event_data"}}}}}, "then": {"properties": {"payload": {"not": {"required": ["foundation_task_ref"]}}}}}
+  ]
 }
