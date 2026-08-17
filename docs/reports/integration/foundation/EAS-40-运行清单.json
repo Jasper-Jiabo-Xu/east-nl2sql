@@ -21,16 +21,16 @@
       "foundation_task_ref": {"artifact_id": "eas40-foundation-initial", "version": 1, "content_hash": "77857982be4d3bc6b5c6da17dff637a393f318f7ac430e14fa954516754a2f6e"},
       "foundation_profile_ref": {"artifact_id": "eas40-foundation-initial:profile", "version": 1, "content_hash": "20adf9fcd098ce07dd4ca5e63a31696e066d6189b5b5b9134488d8c8fbcdc435"},
       "structure_closure_ref": {"artifact_id": "eas40-foundation-initial:structure-closure", "version": 1, "content_hash": "9f3e4c51feeac16c8e8dd14528d6da76922780a8eb4dba796efdd94917e66c81"},
-      "bound_data_ref": {"artifact_id": "bound-data-eas40-e2e", "version": 1, "content_hash": "0af7387c515dae8a5ef23e77f3c19fbc5aaa43332b5d8248595b434d494d0bcd"},
-      "verified_bound_data_ref": {"artifact_id": "bound-data-eas40-e2e:verified-bound-data", "version": 1, "content_hash": "a85196ce73ec038eb82daec523405b63a95f9681f8013fe749f60d4e6cbe37d9"},
+      "bound_data_ref": {"artifact_id": "bound-data-eas40-e2e", "version": 1, "content_hash": "3d63334e5809219cd38d750ee325db4ab736a80743c0f4e695d17064827d85c8"},
+      "verified_bound_data_ref": {"artifact_id": "bound-data-eas40-e2e:verified-bound-data", "version": 1, "content_hash": "a436b48c0e0a8ae949c92d0a51210b9da1e0c2dee88386da3ea4461872cc8376"},
       "foundation_write_batch_hash": "d0f8a4670d1cee5ba326e922445127aae4f2382cdef1dcd4a4e5a0e174fc05b0"
     },
     "expansion": {
       "foundation_task_ref": {"artifact_id": "eas40-foundation-expansion", "version": 1, "content_hash": "6728dfe87f2c8d96eea49a958e2db7a4ef2a5fb5ef41f3757b0f45ac6cea8d20"},
       "foundation_profile_ref": {"artifact_id": "eas40-foundation-expansion:profile", "version": 1, "content_hash": "1344fe9ac0bf914cafe4fcb030ceebd27da5e9ba998474ba760b630d2408ce39"},
       "structure_closure_ref": {"artifact_id": "eas40-foundation-expansion:structure-closure", "version": 1, "content_hash": "154048d49f86eeb7b5c76e2d74d8aca516bc4d9a6f31d8da1fd4851f5f18d7f6"},
-      "bound_data_ref": {"artifact_id": "bound-data-eas40-e2e", "version": 1, "content_hash": "832329bb12ebf6a182f23f25b67a820cc3a13bb40fb77920df953169b635e71d"},
-      "verified_bound_data_ref": {"artifact_id": "bound-data-eas40-e2e:verified-bound-data", "version": 1, "content_hash": "8efe386bc92a9a382705835006c414aa8e99819f251ec87cdbb6be5b43a20308"},
+      "bound_data_ref": {"artifact_id": "bound-data-eas40-e2e", "version": 1, "content_hash": "024638979c51e41723ebed634121940fe842cf9a288feae66cfe1c396fbdb669"},
+      "verified_bound_data_ref": {"artifact_id": "bound-data-eas40-e2e:verified-bound-data", "version": 1, "content_hash": "91959c42b725cda8583e4a50d13f3ed10b8e7d4eccd6a8830faa60d5a7b2751b"},
       "foundation_write_batch_hash": "d0f8a4670d1cee5ba326e922445127aae4f2382cdef1dcd4a4e5a0e174fc05b0"
     }
   },

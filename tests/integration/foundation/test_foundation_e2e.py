@@ -21,6 +21,7 @@ model response or log is read or produced.
 from __future__ import annotations
 
 import copy
+import hashlib
 import importlib
 import json
 import sqlite3
@@ -311,6 +312,35 @@ class FoundationE2ETests(unittest.TestCase):
         mutated["envelope"]["content_hash"] = content_hash(mutated["envelope"], mutated["payload"])
         with self.assertRaisesRegex(ContractError, "RELEASE_CANDIDATE_STUB_REJECTED"):
             _consume_stub_010(mutated)
+
+    def test_manifest_is_recomputable_from_frozen_fixtures(self) -> None:
+        """The machine-readable manifest is reproducible, not hand-authored.
+
+        Every fixture SHA-256 and every deterministic_outputs entry must be
+        recomputed from the frozen inputs on this exact head; any drift fails.
+        """
+        manifest_path = ROOT / "docs" / "reports" / "integration" / "foundation" / "EAS-40-运行清单.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+
+        for name, expected in manifest["frozen_inputs"]["fixtures"].items():
+            actual = hashlib.sha256((FIXTURE_DIR / name).read_bytes()).hexdigest()
+            self.assertEqual(actual, expected, f"fixture sha256 drift: {name}")
+
+        cases = [
+            ("initial_seed", "foundation-task-initial.json", False),
+            ("expansion", "foundation-task-expansion.json", True),
+        ]
+        for mode, fixture_name, preexisting in cases:
+            task = _build_task(_load_task_fixture(fixture_name))
+            records = [{"record_keys": {"table_id": "FIXTURE_CUSTOMER", "primary_key": "preexisting"}, "data": {"C001": "preexisting", "C002": "legal"}}] if preexisting else []
+            result = _run_pipeline(task, self.resolver, _build_snapshot("fixture-db-v1", records))
+            expected = manifest["deterministic_outputs"][mode]
+            self.assertEqual(artifact_ref(result["task"]["envelope"]), expected["foundation_task_ref"])
+            self.assertEqual(artifact_ref(result["profile"]["envelope"]), expected["foundation_profile_ref"])
+            self.assertEqual(artifact_ref(result["closure"]["envelope"]), expected["structure_closure_ref"])
+            self.assertEqual(artifact_ref(result["bound"]["envelope"]), expected["bound_data_ref"])
+            self.assertEqual(artifact_ref(result["verified"]["envelope"]), expected["verified_bound_data_ref"])
+            self.assertEqual(result["regression"]["payload"]["foundation_write_batch_hash"], expected["foundation_write_batch_hash"])
 
     # ------------------------------------------------------------------ helpers
 

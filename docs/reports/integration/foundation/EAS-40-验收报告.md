@@ -14,13 +14,13 @@ Foundation 铺底端到端链路可一键复现、全绿。initial/expansion 两
 
 其余边界不变：230/251/252 及旧生成器/装配器调用数为零；禁止类型在编译与回归两层被拒绝；260 以确定性参数化 SQL 批次在正式库物理隔离 copy 上回归、正式库字节级不变；initial `null` 正例与裸字符串拒绝保留。
 
-本版本为 Sol 返工裁决后的重做 head：expansion Fixture 改非空三元组、event 闭环由「预构造任务」改为「由 `feedback_ref` 真实构造」，非空正例不再基于 `initial_seed` 冒充 expansion。
+本版本为 Sol 返工裁决后的重做 head：expansion Fixture 改非空三元组、event 闭环由「预构造任务」改为「由 `feedback_ref` 真实构造」，非空正例不再基于 `initial_seed` 冒充 expansion。运行清单新增机器可复算闸门：集成测试加载清单并逐项复算 Fixture SHA-256 与 initial/expansion 的 task/profile/closure/bound/verified/write-batch refs/hash，任何漂移即失败。
 
 ## 范围与交付物
 
 | 路径 | 内容 |
 | --- | --- |
-| `tests/integration/foundation/test_foundation_e2e.py` | 端到端集成测试（7 例全过） |
+| `tests/integration/foundation/test_foundation_e2e.py` | 端到端集成测试（8 例全过） |
 | `fixtures/integration/foundation/foundation-task-initial.json` | initial_seed 最小冻结输入（`resume_qa_ref=null`） |
 | `fixtures/integration/foundation/foundation-task-expansion.json` | expansion 最小冻结输入（`resume_qa_ref` 非空三元组） |
 | `docs/reports/integration/foundation/EAS-40-运行清单.json` | 机器可读运行清单（输入/输出哈希、血缘） |
@@ -70,6 +70,11 @@ Foundation 铺底端到端链路可一键复现、全绿。initial/expansion 两
   - `resume_qa_ref` 经 `build_foundation_release` **原值保留**（同一对象引用，无序列化/ID 提取）；同输入两次装配幂等；010 Stub 严格消费；
   - 反例：`resume_qa_ref` 退化为裸字符串被 010 Stub 拒绝（`RELEASE_CANDIDATE_STUB_REJECTED`）。
 
+## 运行清单可复算闸门
+
+- `test_manifest_is_recomputable_from_frozen_fixtures`：加载 `EAS-40-运行清单.json`，复算两份 Fixture SHA-256 及 initial/expansion 的 `foundation_task_ref`/`foundation_profile_ref`/`structure_closure_ref`/`bound_data_ref`/`verified_bound_data_ref`/`foundation_write_batch_hash`，逐项与清单一致；任何漂移使测试失败。
+- 本闸门修复了上一 head 的 bound/verified 四级哈希漂移（根因：清单生成脚本的 snapshot `status` 误用 `candidate`，而测试链路固定 `validated`）；现四个引用哈希已由冻结输入在本 head 重算，并与 Sol 独立复算值完全一致。
+
 ## 未解析项
 
 无。
@@ -82,4 +87,4 @@ python3 scripts/v5.py check
 git diff --check
 ```
 
-结果：定向 E2E `7 passed`；`scripts/v5.py check` 349 项全过；`git diff --check` 零输出。
+结果：定向 E2E `8 passed`；`scripts/v5.py check` 349 项全过；`git diff --check` 零输出。
