@@ -27,7 +27,7 @@
         "idempotency_key": {"type": "string", "minLength": 1},
         "expected_write_summary": {"type": "object", "minProperties": 1},
         "package_hashes": {"type": "object"},
-        "resume_qa_ref": {"type": ["string", "null"]}
+        "resume_qa_ref": {"$ref": "#/$defs/artifact_ref_or_null"}
       },
       "allOf": [
         {

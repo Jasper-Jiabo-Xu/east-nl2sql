@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import importlib
+import json
 import sys
 import unittest
 from pathlib import Path
@@ -9,7 +10,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "src"))
 
-from east_v5.artifacts import artifact_ref, content_hash
+from east_v5.artifacts import artifact_ref, content_hash, validate_envelope
 from east_v5.governance import ContractError, sha256
 
 DataStageCoordinator = importlib.import_module("east_v5.agents.210.scheduler").DataStageCoordinator
@@ -342,6 +343,61 @@ class DataStageCoordinatorTests(unittest.TestCase):
             consumer = test_module("contracts.test_stage10_package_contracts")
             self.assertTrue(consumer.consume_stub("release_candidate", "010", candidate))
             self.assertIsNone(candidate["payload"]["event_regression_passed_ref"])
+            copy_db.close(); formal_db.close()
+        finally:
+            case.tearDown()
+
+    def test_foundation_expansion_preserves_resume_qa_reference_for_010(self) -> None:
+        """A non-null QA reference retains all identity fields through 210 to 010."""
+        foundation_tests = test_module("agents.260.test_regression")
+        case = foundation_tests.FoundationRegressionTests()
+        case.setUp()
+        try:
+            fixture = json.loads((ROOT / "fixtures/artifacts/foundation-task-package-expansion-resume-qa-valid.json").read_text(encoding="utf-8"))
+            validate_envelope(ROOT, fixture["envelope"], fixture["payload"])
+            foundation_tests.closure_mod.validate_foundation_task_package(fixture)
+            task = foundation_tests.producer.build_foundation_task_package(
+                copy.deepcopy(fixture["payload"]),
+                run_id=case.task["envelope"]["run_id"],
+                trace_id=case.task["envelope"]["trace_id"],
+                created_at=TIME,
+                parents=case.task["envelope"]["parent_artifact_refs"],
+            )
+            profile = foundation_tests.producer.build_foundation_profile(task)
+            closure = foundation_tests.closure_mod.build_closure(task, [])
+            closure["payload"].update({
+                "fields": ["FIXTURE_CUSTOMER.C001", "FIXTURE_CUSTOMER.C002"],
+                "references": [{"type": "hierarchy_asset", "artifact_ref": foundation_tests.HIERARCHY_REF}],
+            })
+            closure["envelope"]["content_hash"] = content_hash(closure["envelope"], closure["payload"])
+            bound = foundation_tests.generator_mod.BoundDataGenerator(ROOT).build_bound_data(
+                closure, foundation_task_package=task, foundation_profile=profile, snapshot=case.snapshot, created_at=TIME,
+            )
+            verified = foundation_tests.validator_mod.DataValidator(ROOT).freeze_bound_data(bound, closure, case.resolver)
+            import sqlite3
+            copy_db, formal_db = sqlite3.connect(":memory:"), sqlite3.connect(":memory:")
+            for connection in (copy_db, formal_db):
+                connection.execute("CREATE TABLE FIXTURE_CUSTOMER (C001 TEXT PRIMARY KEY, C002 TEXT)")
+            report = foundation_tests.regression.run_foundation_regression(ROOT, task, closure, verified, case.snapshot, copy_db, formal_db, set())
+            candidate = self.coordinator.build_foundation_release(task, report)
+            candidate_again = self.coordinator.build_foundation_release(task, report)
+            consumer = test_module("contracts.test_stage10_package_contracts")
+
+            self.assertIs(candidate["payload"]["resume_qa_ref"], task["payload"]["resume_qa_ref"])
+            self.assertEqual(candidate["payload"]["resume_qa_ref"], fixture["payload"]["resume_qa_ref"])
+            self.assertEqual(candidate, candidate_again)
+            self.assertEqual(consumer.consume_stub("release_candidate", "010", candidate), candidate["envelope"]["content_hash"])
+
+            hash_drift = copy.deepcopy(task)
+            hash_drift["payload"]["resume_qa_ref"]["content_hash"] = "f" * 64
+            with self.assertRaises(ContractError):
+                self.coordinator.build_foundation_release(hash_drift, report)
+
+            unknown = copy.deepcopy(task)
+            unknown["payload"]["resume_qa_ref"]["storage_locator"] = "forbidden"
+            unknown["envelope"]["content_hash"] = content_hash(unknown["envelope"], unknown["payload"])
+            with self.assertRaises(ContractError):
+                self.coordinator.build_foundation_release(unknown, report)
             copy_db.close(); formal_db.close()
         finally:
             case.tearDown()

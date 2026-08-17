@@ -102,7 +102,7 @@ def reviewed_question_sql() -> dict[str, object]:
     return fixture
 
 
-def release_candidate(mode: str = "event_data") -> dict[str, object]:
+def release_candidate(mode: str = "event_data", *, resume_qa_ref: dict[str, object] | None = None) -> dict[str, object]:
     event = mode == "event_data"
     payload = {
         "release_candidate_id": f"release-{mode}", "release_mode": mode,
@@ -112,7 +112,7 @@ def release_candidate(mode: str = "event_data") -> dict[str, object]:
         "target_database_version": "fixture-db-v1", "target_question_dataset_version": "fixture-question-v1" if event else None,
         "idempotency_key": f"stage10-{mode}-1", "expected_write_summary": {"T1": {"insert": 1, "update": 0}},
         "package_hashes": ({"question_sql": "6" * 64, "data": "7" * 64, "orm": "8" * 64, "regression": "9" * 64} if event else {"foundation_task": "a" * 64, "data": "b" * 64, "write_batch": "c" * 64, "regression_report": "d" * 64}),
-        "resume_qa_ref": None,
+        "resume_qa_ref": resume_qa_ref,
     }
     return package("release_candidate", payload, producer="210", mode=mode)
 
@@ -167,6 +167,32 @@ class Stage10PackageContractTests(unittest.TestCase):
         leaked["envelope"]["content_hash"] = content_hash(leaked["envelope"], leaked["payload"])
         with self.assertRaisesRegex(ContractError, "RELEASE_CANDIDATE_STUB_REJECTED"):
             consume_stub("release_candidate", "010", leaked)
+
+    def test_resume_qa_ref_is_a_strict_artifact_reference_or_null(self) -> None:
+        expansion = release_candidate("foundation", resume_qa_ref=ref("resume-qa", "e"))
+        self.assertEqual(consume_stub("release_candidate", "010", expansion), expansion["envelope"]["content_hash"])
+        self.assertTrue(consume_stub("release_candidate", "010", release_candidate("foundation")))
+
+        cases = [
+            ("legacy_string", lambda payload: payload.update({"resume_qa_ref": "legacy-qa-id"})),
+            ("missing_field", lambda payload: payload.pop("resume_qa_ref")),
+            ("unknown_field", lambda payload: payload.update({"resume_qa_ref": {**ref("resume-qa", "e"), "storage_locator": "forbidden"}})),
+            ("invalid_version", lambda payload: payload.update({"resume_qa_ref": {**ref("resume-qa", "e"), "version": 0}})),
+            ("invalid_hash", lambda payload: payload.update({"resume_qa_ref": {**ref("resume-qa", "e"), "content_hash": "not-a-hash"}})),
+        ]
+        for name, mutate in cases:
+            with self.subTest(name=name):
+                candidate = release_candidate("foundation", resume_qa_ref=ref("resume-qa", "e"))
+                mutate(candidate["payload"])
+                candidate["envelope"]["content_hash"] = content_hash(candidate["envelope"], candidate["payload"])
+                with self.assertRaisesRegex(ContractError, "RELEASE_CANDIDATE_STUB_REJECTED"):
+                    consume_stub("release_candidate", "010", candidate)
+
+        event = release_candidate()
+        event["payload"]["resume_qa_ref"] = ref("resume-qa", "e")
+        event["envelope"]["content_hash"] = content_hash(event["envelope"], event["payload"])
+        with self.assertRaisesRegex(ContractError, "RELEASE_CANDIDATE_STUB_REJECTED"):
+            consume_stub("release_candidate", "010", event)
 
 
 if __name__ == "__main__":

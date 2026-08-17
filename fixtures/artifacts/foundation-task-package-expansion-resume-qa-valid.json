@@ -1,0 +1,45 @@
+{
+  "envelope": {
+    "artifact_id": "foundation-task-expansion-resume-qa-fixture",
+    "artifact_type": "foundation_task_package",
+    "attempt_no": 1,
+    "content_hash": "411f5ea3369d72041fbd2c550cb8ca21ba219a51d99f12a9a28469a110eec951",
+    "created_at": "2026-08-18T00:00:00+00:00",
+    "input_hashes": [
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    ],
+    "mode": "foundation",
+    "parent_artifact_refs": [
+      {"artifact_id": "CA-V0.3.0", "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "version": 1},
+      {"artifact_id": "TRG-V1.0.0", "content_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "version": 1}
+    ],
+    "producer_id": "210",
+    "qa_id": null,
+    "run_id": "foundation-expansion-resume-qa-fixture",
+    "schema_version": "COMMON-ENVELOPE/v1",
+    "status": "candidate",
+    "storage_locator": null,
+    "supersedes_ref": null,
+    "trace_id": "foundation-expansion-resume-qa-fixture",
+    "version": 1
+  },
+  "payload": {
+    "constraint_asset_version": "CA-V0.3.0",
+    "distribution_targets": {"FIXTURE_CUSTOMER": {"default": 1}},
+    "foundation_mode": "expansion",
+    "foundation_task_id": "foundation-task-expansion-resume-qa-fixture",
+    "graph_version": "TRG-V1.0.0",
+    "hierarchy_asset_refs": [
+      {"artifact_id": "TRG-V1.0.0", "content_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "version": 1}
+    ],
+    "prohibited_record_types": ["EVENT_OWNED", "transaction", "contract"],
+    "resume_qa_ref": {"artifact_id": "resume-qa-fixture", "content_hash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd", "version": 1},
+    "schema_version": "v5.foundation-task-package/v1",
+    "target_counts": {"FIXTURE_CUSTOMER": 1},
+    "target_database_version": "fixture-db-v1",
+    "target_object_types": ["FIXTURE_CUSTOMER"],
+    "target_table_field_scope": {"FIXTURE_CUSTOMER": ["C001", "C002"]},
+    "trigger_reason": "sanitized expansion resume QA fixture"
+  }
+}
