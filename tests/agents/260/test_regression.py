@@ -103,6 +103,16 @@ class FoundationRegressionTests(unittest.TestCase):
         package["envelope"]["content_hash"] = content_hash(package["envelope"], package["payload"])
         with self.assertRaisesRegex(ContractError, "210_STUB_SCHEMA_REJECTED"):
             stub_210.consume(package, ROOT)
+        # Use a fresh successful package so the rejection is semantic rather
+        # than a transport/schema artefact.
+        detached_copy, detached_formal = sqlite3.connect(":memory:"), sqlite3.connect(":memory:")
+        for connection in (detached_copy, detached_formal): connection.execute("CREATE TABLE FIXTURE_CUSTOMER (C001 TEXT PRIMARY KEY, C002 TEXT)")
+        detached_execution = regression.run_foundation_regression(ROOT, self.task, self.closure, self.verified, self.snapshot, detached_copy, detached_formal, set())
+        detached_execution["payload"]["sandbox_execution_report"]["statements"][0]["statement_id"] = "not-in-foundation-write-batch"
+        detached_execution["payload"]["report_hash"] = sha256({key: value for key, value in detached_execution["payload"].items() if key != "report_hash"})
+        detached_execution["envelope"]["content_hash"] = content_hash(detached_execution["envelope"], detached_execution["payload"])
+        with self.assertRaisesRegex(ContractError, "210_STUB_EXECUTION_FACT_REJECTED"):
+            stub_210.consume(detached_execution, ROOT)
         bad_copy, bad_formal = sqlite3.connect(":memory:"), sqlite3.connect(":memory:")
         for connection in (bad_copy, bad_formal):
             connection.execute("CREATE TABLE FIXTURE_CUSTOMER (C001 TEXT PRIMARY KEY, C002 TEXT)")
@@ -115,6 +125,15 @@ class FoundationRegressionTests(unittest.TestCase):
         self.assertEqual(feedback["payload"]["mode"], "foundation")
         self.assertEqual(feedback["payload"]["route_target"], "manual")
         self.assertEqual(stub_210.consume(feedback, ROOT)["kind"], "feedback")
+
+    def test_compiler_order_preserves_record_to_group_binding(self):
+        batch = {"operations": [
+            {"index": 1, "record_id": "r2", "table": "FIXTURE_CUSTOMER", "sql": "INSERT INTO \"FIXTURE_CUSTOMER\" (\"C001\") VALUES (?)", "parameters": ["second"]},
+            {"index": 2, "record_id": "r1", "table": "FIXTURE_CUSTOMER", "sql": "INSERT INTO \"FIXTURE_CUSTOMER\" (\"C001\") VALUES (?)", "parameters": ["first"]},
+        ]}
+        frozen = regression._foundation_write_batch(batch, {"r1": "source-group-one", "r2": "source-group-two"})
+        self.assertEqual([item["data_group_id"] for item in frozen["parameter_sets"]], ["source-group-two", "source-group-one"])
+        self.assertEqual([item["source_record_id"] for item in frozen["sql_statements"]], ["r2", "r1"])
 
     def test_foundation_transport_hash_drift_is_hard_rejected_before_feedback(self):
         task = copy.deepcopy(self.task)
@@ -144,6 +163,30 @@ class FoundationRegressionTests(unittest.TestCase):
         bound = generator_mod.BoundDataGenerator(ROOT).build_bound_data(closure, foundation_task_package=task, foundation_profile=profile, snapshot=self.snapshot, created_at=TIME)
         verified = validator_mod.DataValidator(ROOT).freeze_bound_data(bound, closure, self.resolver)
         self.assertEqual(regression.validate_foundation_regression_inputs(ROOT, task, closure, verified, self.snapshot)["record_counts"], {"FIXTURE_CUSTOMER": 1})
+
+    def test_authenticated_nonempty_expansion_reaches_target_and_210(self):
+        payload = copy.deepcopy(self.task["payload"])
+        payload.update({"foundation_task_id": "eas60-expansion-target-two", "foundation_mode": "expansion", "trigger_reason": "sanitized authenticated expansion", "target_counts": {"FIXTURE_CUSTOMER": 2}})
+        task = producer.build_foundation_task_package(payload, run_id="eas60-test", trace_id="eas60-test", created_at=TIME, parents=[CA_REF, HIERARCHY_REF])
+        closure = closure_mod.build_closure(task, [])
+        closure["payload"].update({"fields": ["FIXTURE_CUSTOMER.C001", "FIXTURE_CUSTOMER.C002"], "references": [{"type": "hierarchy_asset", "artifact_ref": HIERARCHY_REF}]})
+        closure["envelope"]["content_hash"] = content_hash(closure["envelope"], closure["payload"])
+        snapshot = copy.deepcopy(self.snapshot)
+        snapshot["payload"]["object_state_records"] = [{"record_keys": {"table_id": "FIXTURE_CUSTOMER", "primary_key": "preexisting"}, "data": {"C001": "preexisting", "C002": "legal"}}]
+        snapshot["payload"]["snapshot_hash"] = sha256({key: value for key, value in snapshot["payload"].items() if key != "snapshot_hash"})
+        snapshot["envelope"]["content_hash"] = content_hash(snapshot["envelope"], snapshot["payload"])
+        profile = producer.build_foundation_profile(task)
+        bound = generator_mod.BoundDataGenerator(ROOT).build_bound_data(closure, foundation_task_package=task, foundation_profile=profile, snapshot=snapshot, created_at=TIME)
+        verified = validator_mod.DataValidator(ROOT).freeze_bound_data(bound, closure, self.resolver)
+        plan = regression.validate_foundation_regression_inputs(ROOT, task, closure, verified, snapshot)
+        self.assertEqual(plan["baseline_counts"], {"FIXTURE_CUSTOMER": 1})
+        self.assertEqual(plan["record_counts"], {"FIXTURE_CUSTOMER": 1})
+        copy_db, formal_db = sqlite3.connect(":memory:"), sqlite3.connect(":memory:")
+        for connection in (copy_db, formal_db): connection.execute("CREATE TABLE FIXTURE_CUSTOMER (C001 TEXT PRIMARY KEY, C002 TEXT)")
+        copy_db.execute("INSERT INTO FIXTURE_CUSTOMER VALUES ('preexisting', 'legal')"); copy_db.commit()
+        package = regression.run_foundation_regression(ROOT, task, closure, verified, snapshot, copy_db, formal_db, set())
+        self.assertEqual(package["payload"]["database_state_delta"]["FIXTURE_CUSTOMER"], {"before": 1, "after": 2, "delta": 1, "passed": True})
+        self.assertEqual(stub_210.consume(package, ROOT)["kind"], "success")
 
     def test_schema_profile_hash_version_and_task_ref_rejections(self):
         missing = copy.deepcopy(self.verified); missing["payload"].pop("validated_at"); missing["envelope"]["content_hash"] = content_hash(missing["envelope"], missing["payload"])
@@ -258,7 +301,7 @@ class FoundationRegressionTests(unittest.TestCase):
         values = self.verified["payload"]["validated_data_package"]["data_groups"][0]["records"][0]["field_values"]
         copy_db.execute("INSERT INTO FIXTURE_CUSTOMER VALUES (?, 'taken')", (values[0]["value"],))
         copy_db.commit()
-        with self.assertRaises(sqlite3.IntegrityError):
+        with self.assertRaisesRegex(ContractError, "DATABASE_COPY_SNAPSHOT_BASELINE_MISMATCH"):
             regression.run_database_copy_regression(ROOT, plan, self.verified, copy_db, formal_db, set())
         self.assertEqual(copy_db.execute("SELECT COUNT(*) FROM FIXTURE_CUSTOMER").fetchone()[0], 1)
         self.assertEqual(formal_db.execute("SELECT COUNT(*) FROM FIXTURE_CUSTOMER").fetchone()[0], 0)

@@ -24,7 +24,7 @@ _closure = importlib.import_module("east_v5.agents.220.closure")
 
 _PLAN_KEYS = {
     "task_ref", "structure_closure_ref", "verified_data_ref", "verified_validated_hash",
-    "snapshot_ref", "snapshot_hash", "record_counts", "input_sha256",
+    "snapshot_ref", "snapshot_hash", "baseline_counts", "target_counts", "record_counts", "input_sha256",
     "writes_formal_store", "plan_sha256",
 }
 
@@ -103,8 +103,12 @@ def _plan_hash(plan: dict[str, Any]) -> str:
 def _validate_execution_plan(plan: dict[str, Any]) -> None:
     if set(plan) != _PLAN_KEYS:
         _fail("REGRESSION_PLAN_FIELDS_INVALID")
-    if plan["writes_formal_store"] is not False or not isinstance(plan["record_counts"], dict):
+    if plan["writes_formal_store"] is not False or any(not isinstance(plan[key], dict) for key in ("baseline_counts", "target_counts", "record_counts")):
         _fail("REGRESSION_PLAN_INVALID")
+    if set(plan["baseline_counts"]) != set(plan["target_counts"]) or set(plan["record_counts"]) != set(plan["target_counts"]):
+        _fail("REGRESSION_PLAN_TABLE_SCOPE_INVALID")
+    if any(plan["baseline_counts"][table] + plan["record_counts"][table] != plan["target_counts"][table] for table in plan["target_counts"]):
+        _fail("REGRESSION_PLAN_DELTA_INVALID")
     expected_input = sha256({"task": plan["task_ref"], "closure": plan["structure_closure_ref"], "verified": plan["verified_data_ref"], "snapshot": plan["snapshot_ref"]})
     if plan["input_sha256"] != expected_input:
         _fail("REGRESSION_PLAN_INPUT_DRIFT")
@@ -192,7 +196,19 @@ def validate_foundation_regression_inputs(repo_root: Path, task_package: dict[st
         if not {value["field_id"] for value in record["field_values"]} <= set(task["target_table_field_scope"][table]):
             _fail("FOUNDATION_SCOPE_OUT_OF_BOUNDS")
         actual_counts[table] = actual_counts.get(table, 0) + 1
-    if actual_counts != task["target_counts"]:
+    # target_counts is the desired post-write database state.  The frozen
+    # snapshot is therefore the authenticated baseline, not merely lineage.
+    baseline_counts = {table: 0 for table in task["target_counts"]}
+    for item in snapshot["object_state_records"]:
+        table = item["record_keys"]["table_id"]
+        if table in baseline_counts:
+            baseline_counts[table] += 1
+    required_delta = {}
+    for table, target in task["target_counts"].items():
+        if baseline_counts[table] > target:
+            _fail("FOUNDATION_TARGET_BELOW_SNAPSHOT_BASELINE")
+        required_delta[table] = target - baseline_counts[table]
+    if actual_counts != required_delta:
         _fail("FOUNDATION_TARGET_COUNT_MISMATCH")
     if _distribution(records) != task["distribution_targets"]:
         _fail("FOUNDATION_DISTRIBUTION_MISMATCH")
@@ -206,6 +222,8 @@ def validate_foundation_regression_inputs(repo_root: Path, task_package: dict[st
         "verified_validated_hash": payload["validated_hash"],
         "snapshot_ref": artifact_ref(snapshot_envelope),
         "snapshot_hash": snapshot["snapshot_hash"],
+        "baseline_counts": baseline_counts,
+        "target_counts": task["target_counts"],
         "record_counts": actual_counts,
         "input_sha256": sha256({"task": task_ref, "closure": artifact_ref(structure_closure["envelope"]), "verified": artifact_ref(envelope), "snapshot": artifact_ref(snapshot_envelope)}),
         "writes_formal_store": False,
@@ -221,10 +239,17 @@ def run_database_copy_regression(repo_root: Path, plan: dict[str, Any], verified
     _assert_copy_formal_isolated(copy_connection, formal_connection)
     formal_before = "\n".join(formal_connection.iterdump()).encode()
     source_records = _records(verified_bound_data)
+    record_id_to_group = {
+        record["record_id"]: group["data_group_id"]
+        for group in verified_bound_data["payload"]["validated_data_package"]["data_groups"]
+        for record in group["records"]
+    }
     ids = {record["record_id"]: f"r{index}" for index, record in enumerate(source_records, start=1)}
     records = [{"record_id": ids[record["record_id"]], "table": record["table_id"], "values": {value["field_id"]: None if value["is_null"] else value["value"] for value in record["field_values"]}, "depends_on": [ids[item["record_id"]] for item in record["temporary_record_refs"]]} for record in source_records]
     batch = compile_insert_batch({"schema_version": "v5.foundation-verified-data/v1", "mode": "foundation", "base_database_version": "copy-bound", "constraint_asset_version": "CA-V0.3.0", "graph_version": "TRG-V1.0.0", "records": records}, event_owned_tables)
     before = {table: copy_connection.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0] for table in plan["record_counts"]}
+    if before != plan["baseline_counts"]:
+        _fail("DATABASE_COPY_SNAPSHOT_BASELINE_MISMATCH")
     committed = False
     transaction_started = _executed_at()
     statement_facts: list[dict[str, Any]] = []
@@ -233,7 +258,7 @@ def run_database_copy_regression(repo_root: Path, plan: dict[str, Any], verified
         for operation in batch["operations"]:
             started = _executed_at()
             cursor = copy_connection.execute(operation["sql"], operation["parameters"])
-            statement_facts.append({"statement_id": f"foundation-statement-{operation['index']}", "started_at": started, "ended_at": _executed_at(), "affected_rows": cursor.rowcount, "error": None})
+            statement_facts.append({"statement_id": f"foundation-statement-{operation['index']}", "table_id": operation["table"], "started_at": started, "ended_at": _executed_at(), "affected_rows": cursor.rowcount, "error": None})
         delta = {table: copy_connection.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0] - before[table] for table in before}
         if delta != plan["record_counts"]:
             _fail("DATABASE_DELTA_MISMATCH")
@@ -248,7 +273,9 @@ def run_database_copy_regression(repo_root: Path, plan: dict[str, Any], verified
     if not committed:
         _fail("DATABASE_COPY_COMMIT_FAILED")
     after = {table: before[table] + delta[table] for table in before}
-    return {"batch": batch, "database_before": before, "database_after": after, "database_delta": delta, "transaction_fact": {"transaction_id": "foundation-copy-transaction-1", "started_at": transaction_started, "ended_at": _executed_at(), "committed": True, "error": None}, "statement_facts": statement_facts, "rollback_verified": False, "formal_store_sha256": hashlib.sha256(formal_after).hexdigest()}
+    if after != plan["target_counts"]:
+        _fail("FOUNDATION_TARGET_POST_WRITE_MISMATCH")
+    return {"batch": batch, "record_id_to_group": {ids[record_id]: group_id for record_id, group_id in record_id_to_group.items()}, "database_before": before, "database_after": after, "database_delta": delta, "transaction_fact": {"transaction_id": "foundation-copy-transaction-1", "started_at": transaction_started, "ended_at": _executed_at(), "committed": True, "error": None}, "statement_facts": statement_facts, "rollback_verified": False, "formal_store_sha256": hashlib.sha256(formal_after).hexdigest()}
 
 
 def _typed_value(value: Any) -> dict[str, Any]:
@@ -272,15 +299,16 @@ def _sqlite_literal(value: Any) -> str:
     return "'" + str(value).replace("'", "''") + "'"
 
 
-def _foundation_write_batch(batch: dict[str, Any], verified_bound_data: dict[str, Any]) -> dict[str, Any]:
+def _foundation_write_batch(batch: dict[str, Any], record_id_to_group: dict[str, str]) -> dict[str, Any]:
     """Expose the deterministic compiler output as the frozen 260 contract."""
     statement_ids = [f"foundation-statement-{operation['index']}" for operation in batch["operations"]]
-    groups = [group["data_group_id"] for group in verified_bound_data["payload"]["validated_data_package"]["data_groups"] for _ in group["records"]]
+    if any(operation["record_id"] not in record_id_to_group for operation in batch["operations"]):
+        _fail("FOUNDATION_OPERATION_GROUP_BINDING_MISSING")
     expected = [{"statement_id": statement_id, "table_id": operation["table"], "expected_rowcount": 1} for statement_id, operation in zip(statement_ids, batch["operations"])]
     return {
         "transaction_groups": [{"transaction_id": "foundation-copy-transaction-1", "statement_ids": statement_ids, "begin_boundary": "BEGIN IMMEDIATE", "commit_boundary": "COMMIT", "rollback_scope": "all_statements"}],
-        "sql_statements": [{"statement_id": statement_id, "table_id": operation["table"], "sql": operation["sql"]} for statement_id, operation in zip(statement_ids, batch["operations"])],
-        "parameter_sets": [{"statement_id": statement_id, "data_group_id": group_id, "values": [_typed_value(value) for value in operation["parameters"]]} for statement_id, group_id, operation in zip(statement_ids, groups, batch["operations"])],
+        "sql_statements": [{"statement_id": statement_id, "table_id": operation["table"], "source_record_id": operation["record_id"], "sql": operation["sql"]} for statement_id, operation in zip(statement_ids, batch["operations"])],
+        "parameter_sets": [{"statement_id": statement_id, "source_record_id": operation["record_id"], "data_group_id": record_id_to_group[operation["record_id"]], "values": [_typed_value(value) for value in operation["parameters"]]} for statement_id, operation in zip(statement_ids, batch["operations"])],
         "rendered_sql_for_audit": [operation["sql"].replace("?", "{}") .format(*[_sqlite_literal(value) for value in operation["parameters"]]) for operation in batch["operations"]],
         "execution_order": [{"statement_id": statement_id, "transaction_id": "foundation-copy-transaction-1"} for statement_id in statement_ids],
         "expected_write_counts": expected,
@@ -355,7 +383,7 @@ def run_foundation_regression(repo_root: Path, task_package: dict[str, Any], str
         key_ranges = {table: _key_range(copy_connection, table) for table in result["database_delta"]}
     except ContractError as exc:
         return DatabaseCopyRegression(repo_root).feedback(verified_bound_data, None, database_snapshot, "DATA_VALUE_ERROR", "foundation_integrity", str(exc), attempt_no, parents, mode="foundation")
-    write_batch = _foundation_write_batch(result["batch"], verified_bound_data)
+    write_batch = _foundation_write_batch(result["batch"], result["record_id_to_group"])
     hierarchy = task["hierarchy_asset_refs"]
     relations = _foundation_relations(records)
     payload = {

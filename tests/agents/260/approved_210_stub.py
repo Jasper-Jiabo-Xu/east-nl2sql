@@ -51,6 +51,39 @@ def consume(package: dict[str, Any], root: Path) -> dict[str, str]:
                 raise ContractError("210_STUB_EXECUTION_FACT_REJECTED")
             if any(relation["relation_type"] == "temporary_or_existing" for relation in payload["referential_integrity_validation"]["relations"]):
                 raise ContractError("210_STUB_EXECUTION_FACT_REJECTED")
+            sql = write_batch["sql_statements"]
+            params = write_batch["parameter_sets"]
+            order = write_batch["execution_order"]
+            expected = write_batch["expected_write_counts"]
+            executed = payload["sandbox_execution_report"]["statements"]
+            statement_ids = [item["statement_id"] for item in sql]
+            # Every declared surface is one ordered, unique description of the
+            # same frozen compiler batch; a valid hash alone is not evidence.
+            if not statement_ids or len(set(statement_ids)) != len(statement_ids):
+                raise ContractError("210_STUB_EXECUTION_FACT_REJECTED")
+            if any([item["statement_id"] for item in surface] != statement_ids for surface in (params, order, expected, executed)):
+                raise ContractError("210_STUB_EXECUTION_FACT_REJECTED")
+            sql_by_id = {item["statement_id"]: item for item in sql}
+            if any(item["source_record_id"] != sql_by_id[item["statement_id"]]["source_record_id"] for item in params):
+                raise ContractError("210_STUB_EXECUTION_FACT_REJECTED")
+            if any(item["table_id"] != sql_by_id[item["statement_id"]]["table_id"] for surface in (expected, executed) for item in surface):
+                raise ContractError("210_STUB_EXECUTION_FACT_REJECTED")
+            groups = write_batch["transaction_groups"]
+            transaction_ids = [item["transaction_id"] for item in groups]
+            executed_transaction_ids = [item["transaction_id"] for item in payload["sandbox_execution_report"]["transactions"]]
+            if len(set(transaction_ids)) != len(transaction_ids) or executed_transaction_ids != transaction_ids:
+                raise ContractError("210_STUB_EXECUTION_FACT_REJECTED")
+            if any(item["transaction_id"] not in transaction_ids for item in order):
+                raise ContractError("210_STUB_EXECUTION_FACT_REJECTED")
+            if any(group["statement_ids"] != [item["statement_id"] for item in order if item["transaction_id"] == group["transaction_id"]] for group in groups):
+                raise ContractError("210_STUB_EXECUTION_FACT_REJECTED")
+            actual_by_table: dict[str, int] = {}
+            for item in executed:
+                actual_by_table[item["table_id"]] = actual_by_table.get(item["table_id"], 0) + item["affected_rows"]
+            delta_by_table = {table: item["delta"] for table, item in payload["database_state_delta"].items()}
+            summary_by_table = {table: item["actual_count"] for table, item in payload["table_write_summary"].items()}
+            if actual_by_table != delta_by_table or actual_by_table != summary_by_table:
+                raise ContractError("210_STUB_EXECUTION_FACT_REJECTED")
         return {"decision": "accepted", "kind": "success"}
     if package["payload"]["route_target"] not in {"210", "manual", "241", "251"}:
         raise ContractError("210_STUB_ROUTE_REJECTED")
