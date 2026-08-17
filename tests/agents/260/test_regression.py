@@ -4,6 +4,7 @@ import copy
 import importlib
 import sqlite3
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -57,10 +58,10 @@ class FoundationRegressionTests(unittest.TestCase):
         copy_db, formal_db = sqlite3.connect(":memory:"), sqlite3.connect(":memory:")
         for connection in (copy_db, formal_db):
             connection.execute("CREATE TABLE FIXTURE_CUSTOMER (C001 TEXT, C002 TEXT)")
-        result = regression.run_database_copy_regression(plan, self.verified, copy_db, formal_db, set())
+        result = regression.run_database_copy_regression(ROOT, plan, self.verified, copy_db, formal_db, set())
         self.assertEqual(result["database_delta"], {"FIXTURE_CUSTOMER": 1})
         self.assertEqual(formal_db.execute("SELECT COUNT(*) FROM FIXTURE_CUSTOMER").fetchone()[0], 0)
-        self.assertTrue(result["rollback_verified"])
+        self.assertFalse(result["rollback_verified"])
 
     def test_expansion_mode_uses_same_machine_path(self):
         payload = copy.deepcopy(self.task["payload"])
@@ -87,6 +88,26 @@ class FoundationRegressionTests(unittest.TestCase):
         with self.assertRaisesRegex(ContractError, "DATABASE_VERSION_DRIFT"):
             regression.validate_foundation_regression_inputs(ROOT, self.task, self.closure, self.verified, bad_snapshot)
 
+    def test_verified_and_snapshot_content_hash_drifts_are_rejected(self):
+        verified_drift = copy.deepcopy(self.verified)
+        verified_drift["payload"]["validated_data_package"]["data_groups"][0]["records"][0]["field_values"][0]["value"] = "substituted"
+        with self.assertRaisesRegex(ContractError, "CONTENT_HASH_DRIFT"):
+            regression.validate_foundation_regression_inputs(ROOT, self.task, self.closure, verified_drift, self.snapshot)
+        snapshot_hash_drift = copy.deepcopy(self.snapshot)
+        snapshot_hash_drift["payload"]["executed_queries"].append("SELECT changed")
+        snapshot_hash_drift["envelope"]["content_hash"] = content_hash(snapshot_hash_drift["envelope"], snapshot_hash_drift["payload"])
+        verified_for_snapshot = copy.deepcopy(self.verified)
+        verified_for_snapshot["payload"]["validated_data_package"]["database_snapshot_ref"] = artifact_ref(snapshot_hash_drift["envelope"])
+        verified_for_snapshot["payload"]["validated_hash"] = sha256(verified_for_snapshot["payload"]["validated_data_package"])
+        verified_for_snapshot["envelope"]["content_hash"] = content_hash(verified_for_snapshot["envelope"], verified_for_snapshot["payload"])
+        with self.assertRaisesRegex(ContractError, "DATABASE_SNAPSHOT_HASH_DRIFT"):
+            regression.validate_foundation_regression_inputs(ROOT, self.task, self.closure, verified_for_snapshot, snapshot_hash_drift)
+        snapshot_envelope_drift = copy.deepcopy(self.snapshot)
+        snapshot_envelope_drift["payload"]["executed_queries"].append("SELECT changed")
+        snapshot_envelope_drift["payload"]["snapshot_hash"] = sha256({key: value for key, value in snapshot_envelope_drift["payload"].items() if key != "snapshot_hash"})
+        with self.assertRaisesRegex(ContractError, "CONTENT_HASH_DRIFT"):
+            regression.validate_foundation_regression_inputs(ROOT, self.task, self.closure, self.verified, snapshot_envelope_drift)
+
     def test_distribution_hierarchy_scope_prohibited_and_reference_rejections(self):
         data = self.verified["payload"]["validated_data_package"]
         for name, mutate, expected in (
@@ -99,6 +120,65 @@ class FoundationRegressionTests(unittest.TestCase):
                 candidate = copy.deepcopy(self.verified); mutate(candidate["payload"]["validated_data_package"]); candidate["payload"]["validated_hash"] = sha256(candidate["payload"]["validated_data_package"]); candidate["envelope"]["content_hash"] = content_hash(candidate["envelope"], candidate["payload"])
                 with self.assertRaisesRegex(ContractError, expected):
                     regression.validate_foundation_regression_inputs(ROOT, self.task, self.closure, candidate, self.snapshot)
+        missing_hierarchy = copy.deepcopy(self.closure)
+        missing_hierarchy["payload"]["references"] = []
+        missing_hierarchy["envelope"]["content_hash"] = content_hash(missing_hierarchy["envelope"], missing_hierarchy["payload"])
+        verified_for_closure = copy.deepcopy(self.verified)
+        verified_for_closure["payload"]["validated_data_package"]["structure_closure_ref"] = artifact_ref(missing_hierarchy["envelope"])
+        verified_for_closure["payload"]["validated_hash"] = sha256(verified_for_closure["payload"]["validated_data_package"])
+        verified_for_closure["envelope"]["content_hash"] = content_hash(verified_for_closure["envelope"], verified_for_closure["payload"])
+        with self.assertRaisesRegex(ContractError, "FOUNDATION_HIERARCHY_REFERENCE_INVALID"):
+            regression.validate_foundation_regression_inputs(ROOT, self.task, missing_hierarchy, verified_for_closure, self.snapshot)
+
+    def test_execution_binds_plan_to_reauthenticated_verified_package(self):
+        plan = self.plan()
+        swapped = copy.deepcopy(self.verified)
+        swapped["payload"]["validated_data_package"]["data_groups"][0]["records"][0]["field_values"][0]["value"] = "replayed-substitution"
+        swapped["payload"]["validated_hash"] = sha256(swapped["payload"]["validated_data_package"])
+        swapped["envelope"]["content_hash"] = content_hash(swapped["envelope"], swapped["payload"])
+        copy_db, formal_db = sqlite3.connect(":memory:"), sqlite3.connect(":memory:")
+        for connection in (copy_db, formal_db):
+            connection.execute("CREATE TABLE FIXTURE_CUSTOMER (C001 TEXT, C002 TEXT)")
+        with self.assertRaisesRegex(ContractError, "EXECUTION_VERIFIED_REF_DRIFT"):
+            regression.run_database_copy_regression(ROOT, plan, swapped, copy_db, formal_db, set())
+        self.assertEqual(copy_db.execute("SELECT COUNT(*) FROM FIXTURE_CUSTOMER").fetchone()[0], 0)
+        drifted_plan = copy.deepcopy(plan)
+        drifted_plan["snapshot_hash"] = "f" * 64
+        with self.assertRaisesRegex(ContractError, "REGRESSION_PLAN_HASH_DRIFT"):
+            regression.run_database_copy_regression(ROOT, drifted_plan, self.verified, copy_db, formal_db, set())
+
+    def test_rejects_nonisolated_copy_before_any_write(self):
+        plan = self.plan()
+        same = sqlite3.connect(":memory:")
+        same.execute("CREATE TABLE FIXTURE_CUSTOMER (C001 TEXT, C002 TEXT)")
+        with self.assertRaisesRegex(ContractError, "DATABASE_COPY_FORMAL_NOT_ISOLATED"):
+            regression.run_database_copy_regression(ROOT, plan, self.verified, same, same, set())
+        self.assertEqual(same.execute("SELECT COUNT(*) FROM FIXTURE_CUSTOMER").fetchone()[0], 0)
+        same.close()
+        with tempfile.TemporaryDirectory() as directory:
+            database = Path(directory) / "shared.sqlite"
+            seed = sqlite3.connect(database)
+            seed.execute("CREATE TABLE FIXTURE_CUSTOMER (C001 TEXT, C002 TEXT)")
+            seed.commit()
+            seed.close()
+            copy_db, formal_db = sqlite3.connect(database), sqlite3.connect(database)
+            with self.assertRaisesRegex(ContractError, "DATABASE_COPY_FORMAL_NOT_ISOLATED"):
+                regression.run_database_copy_regression(ROOT, plan, self.verified, copy_db, formal_db, set())
+            self.assertEqual(copy_db.execute("SELECT COUNT(*) FROM FIXTURE_CUSTOMER").fetchone()[0], 0)
+            copy_db.close()
+            formal_db.close()
+
+    def test_delta_mismatch_rolls_back_before_commit(self):
+        plan = self.plan()
+        copy_db, formal_db = sqlite3.connect(":memory:"), sqlite3.connect(":memory:")
+        for connection in (copy_db, formal_db):
+            connection.execute("CREATE TABLE FIXTURE_CUSTOMER (C001 TEXT, C002 TEXT)")
+        copy_db.execute("CREATE TRIGGER duplicate_foundation_row AFTER INSERT ON FIXTURE_CUSTOMER BEGIN INSERT INTO FIXTURE_CUSTOMER VALUES ('trigger-row', 'unexpected'); END")
+        copy_db.commit()
+        with self.assertRaisesRegex(ContractError, "DATABASE_DELTA_MISMATCH"):
+            regression.run_database_copy_regression(ROOT, plan, self.verified, copy_db, formal_db, set())
+        self.assertEqual(copy_db.execute("SELECT COUNT(*) FROM FIXTURE_CUSTOMER").fetchone()[0], 0)
+        self.assertEqual(formal_db.execute("SELECT COUNT(*) FROM FIXTURE_CUSTOMER").fetchone()[0], 0)
 
     def test_copy_failure_rolls_back_and_downstream_unconsumable_rejected(self):
         plan = self.plan()
@@ -109,6 +189,6 @@ class FoundationRegressionTests(unittest.TestCase):
         copy_db.execute("INSERT INTO FIXTURE_CUSTOMER VALUES (?, 'taken')", (values[0]["value"],))
         copy_db.commit()
         with self.assertRaises(sqlite3.IntegrityError):
-            regression.run_database_copy_regression(plan, self.verified, copy_db, formal_db, set())
+            regression.run_database_copy_regression(ROOT, plan, self.verified, copy_db, formal_db, set())
         self.assertEqual(copy_db.execute("SELECT COUNT(*) FROM FIXTURE_CUSTOMER").fetchone()[0], 1)
         self.assertEqual(formal_db.execute("SELECT COUNT(*) FROM FIXTURE_CUSTOMER").fetchone()[0], 0)
