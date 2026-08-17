@@ -1,0 +1,18 @@
+{
+  "schema_version": "v5.foundation-task-package/v1",
+  "foundation_task_id": "eas40-foundation-expansion",
+  "foundation_mode": "expansion",
+  "trigger_reason": "sanitized expansion triggered by missing_object_state",
+  "target_database_version": "fixture-db-v1",
+  "target_object_types": ["FIXTURE_CUSTOMER"],
+  "target_table_field_scope": {"FIXTURE_CUSTOMER": ["C001", "C002"]},
+  "target_counts": {"FIXTURE_CUSTOMER": 2},
+  "distribution_targets": {"FIXTURE_CUSTOMER": {"default": 2}},
+  "hierarchy_asset_refs": [
+    {"artifact_id": "TRG-V1.0.0", "version": 1, "content_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}
+  ],
+  "prohibited_record_types": ["EVENT_OWNED", "transaction", "contract"],
+  "resume_qa_ref": null,
+  "constraint_asset_version": "CA-V0.3.0",
+  "graph_version": "TRG-V1.0.0"
+}
