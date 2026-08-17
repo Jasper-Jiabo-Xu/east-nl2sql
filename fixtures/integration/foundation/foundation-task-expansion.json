@@ -12,7 +12,11 @@
     {"artifact_id": "TRG-V1.0.0", "version": 1, "content_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}
   ],
   "prohibited_record_types": ["EVENT_OWNED", "transaction", "contract"],
-  "resume_qa_ref": null,
+  "resume_qa_ref": {
+    "artifact_id": "eas40-resume-qa",
+    "version": 1,
+    "content_hash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+  },
   "constraint_asset_version": "CA-V0.3.0",
   "graph_version": "TRG-V1.0.0"
 }

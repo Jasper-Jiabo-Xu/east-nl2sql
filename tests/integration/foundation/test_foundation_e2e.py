@@ -50,7 +50,7 @@ FIXTURE_DIR = ROOT / "fixtures" / "integration" / "foundation"
 TIME = "2026-08-15T00:00:00+00:00"
 HIERARCHY_REF = {"artifact_id": "TRG-V1.0.0", "version": 1, "content_hash": "b" * 64}
 CA_REF = {"artifact_id": "CA-V0.3.0", "version": 1, "content_hash": "a" * 64}
-RESUME_REF = {"artifact_id": "QA-RESUME-1", "version": 1, "content_hash": "d" * 64}
+RESUME_REF = {"artifact_id": "eas40-resume-qa", "version": 1, "content_hash": "d" * 64}
 FORBIDDEN_AGENT_PREFIXES = ("east_v5.agents.230", "east_v5.agents.251", "east_v5.agents.252")
 
 
@@ -189,10 +189,42 @@ class FoundationE2ETests(unittest.TestCase):
         self.assertEqual(routed["reason"], "FOUNDATION_REQUIRED")
         self.assertTrue(routed["requires_explicit_foundation_task"])
 
-        # Close the loop: the routed event now mints a Foundation expansion task,
-        # and the full Foundation pipeline supplies the missing object state.
-        expansion = _run_pipeline(self.expansion_task, self.resolver, _build_snapshot("fixture-db-v1", [{"record_keys": {"table_id": "FIXTURE_CUSTOMER", "primary_key": "preexisting"}, "data": {"C001": "preexisting", "C002": "legal"}}]))
-        self.assertEqual(expansion["regression"]["payload"]["regression_status"], "passed")
+        # Close the loop with the real production-consumption edge: the routed
+        # feedback triple becomes the expansion task's resume_qa_ref AND a direct
+        # upstream in the task lineage, then runs 210→220→241→242→260→210→010.
+        feedback_ref = routed["feedback_ref"]
+        expansion_payload = {
+            "schema_version": "v5.foundation-task-package/v1",
+            "foundation_task_id": "eas40-foundation-expansion-event",
+            "foundation_mode": "expansion",
+            "trigger_reason": "sanitized expansion from FOUNDATION_REQUIRED feedback",
+            "target_database_version": "fixture-db-v1",
+            "target_object_types": ["FIXTURE_CUSTOMER"],
+            "target_table_field_scope": {"FIXTURE_CUSTOMER": ["C001", "C002"]},
+            "target_counts": {"FIXTURE_CUSTOMER": 1},
+            "distribution_targets": {"FIXTURE_CUSTOMER": {"default": 1}},
+            "hierarchy_asset_refs": [HIERARCHY_REF],
+            "prohibited_record_types": ["EVENT_OWNED", "transaction", "contract"],
+            "resume_qa_ref": feedback_ref,
+            "constraint_asset_version": "CA-V0.3.0",
+            "graph_version": "TRG-V1.0.0",
+        }
+        expansion_task = producer.build_foundation_task_package(
+            expansion_payload, run_id="eas40-e2e", trace_id="eas40-e2e", created_at=TIME,
+            parents=[CA_REF, HIERARCHY_REF, feedback_ref],
+        )
+        self.assertEqual(expansion_task["payload"]["resume_qa_ref"], feedback_ref)
+        self.assertIn(feedback_ref, expansion_task["envelope"]["parent_artifact_refs"])
+        self.assertIn(feedback_ref["content_hash"], expansion_task["envelope"]["input_hashes"])
+
+        result = _run_pipeline(expansion_task, self.resolver, _build_snapshot("fixture-db-v1", []))
+        self.assertEqual(result["regression"]["payload"]["regression_status"], "passed")
+
+        release = coordinator.build_foundation_release(expansion_task, result["regression"])
+        self.assertEqual(release["payload"]["resume_qa_ref"], feedback_ref)
+        self.assertEqual(release["payload"]["resume_qa_ref"], routed["feedback_ref"])
+        self.assertEqual(_consume_stub_010(release), release["envelope"]["content_hash"])
+        self.assertEqual(result["formal_db"].execute("SELECT COUNT(*) FROM FIXTURE_CUSTOMER").fetchone()[0], 0)
 
     def test_forbidden_agents_and_legacy_components_zero_invocation(self) -> None:
         verified_arch = architecture.verify_architecture(ROOT)
@@ -255,17 +287,19 @@ class FoundationE2ETests(unittest.TestCase):
         self.assertEqual(result["formal_db"].execute("SELECT COUNT(*) FROM FIXTURE_CUSTOMER").fetchone()[0], 0)
 
     def test_non_null_resume_qa_ref_retained_by_value_and_strictly_consumed_by_010(self) -> None:
-        payload = copy.deepcopy(self.initial_task["payload"])
-        payload["resume_qa_ref"] = RESUME_REF
-        task = _build_task(payload)
-        result = _run_pipeline(task, self.resolver, _build_snapshot("fixture-db-v1", []))
+        # The approved expansion fixture (foundation_mode=expansion) carries a
+        # non-null resume_qa_ref triple; it must never be an initial_seed impostor.
+        task = self.expansion_task
+        self.assertEqual(task["payload"]["foundation_mode"], "expansion")
+        snapshot = _build_snapshot("fixture-db-v1", [{"record_keys": {"table_id": "FIXTURE_CUSTOMER", "primary_key": "preexisting"}, "data": {"C001": "preexisting", "C002": "legal"}}])
+        result = _run_pipeline(task, self.resolver, snapshot)
         coordinator = coordinator_mod.DataStageCoordinator(ROOT)
         release = coordinator.build_foundation_release(task, result["regression"])
 
         # The non-null triple is retained by identity/value — no serialization or id extraction.
         self.assertIs(release["payload"]["resume_qa_ref"], task["payload"]["resume_qa_ref"])
         self.assertEqual(release["payload"]["resume_qa_ref"], RESUME_REF)
-        self.assertEqual(release["payload"]["resume_qa_ref"], {"artifact_id": "QA-RESUME-1", "version": 1, "content_hash": "d" * 64})
+        self.assertEqual(release["payload"]["resume_qa_ref"], {"artifact_id": "eas40-resume-qa", "version": 1, "content_hash": "d" * 64})
         # Idempotent re-computation.
         self.assertEqual(coordinator.build_foundation_release(task, result["regression"]), release)
         # The frozen 010 Stub strictly consumes it.

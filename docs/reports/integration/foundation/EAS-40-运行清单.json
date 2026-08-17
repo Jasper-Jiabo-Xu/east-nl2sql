@@ -13,7 +13,7 @@
     "typed_reference_graph": {"artifact_id": "TRG-V1.0.0", "version": 1, "content_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
     "fixtures": {
       "foundation-task-initial.json": "898355f747a64ffacbed2374c815e0813c9ec79b5dac23f6c3842ed6bad55d98",
-      "foundation-task-expansion.json": "fdb3c1e65ec89c61d1fb976095df73290b6c58150088b19b13808a2db3a70e20"
+      "foundation-task-expansion.json": "83ec67a17ced5c949e38f20fa989c28cfdf1c372ec187d3a9775d44dccc3eb64"
     }
   },
   "deterministic_outputs": {
@@ -26,11 +26,11 @@
       "foundation_write_batch_hash": "d0f8a4670d1cee5ba326e922445127aae4f2382cdef1dcd4a4e5a0e174fc05b0"
     },
     "expansion": {
-      "foundation_task_ref": {"artifact_id": "eas40-foundation-expansion", "version": 1, "content_hash": "d426c158d2467d3d0be95fba554cad99d95b6752a17da6382ed067e0d2b87538"},
-      "foundation_profile_ref": {"artifact_id": "eas40-foundation-expansion:profile", "version": 1, "content_hash": "728fc4018584d3b02a1f3ebf99d308e6394f2ee04b89168fc57ccb797bb02097"},
-      "structure_closure_ref": {"artifact_id": "eas40-foundation-expansion:structure-closure", "version": 1, "content_hash": "fd42d5fd86f295368379270cd1a0254e617136950e24ba2b1f27be6adaea7347"},
-      "bound_data_ref": {"artifact_id": "bound-data-eas40-e2e", "version": 1, "content_hash": "1666d6e34b539d19c4478592483adc933364b6e24654ee2bbeb57986a99fab1f"},
-      "verified_bound_data_ref": {"artifact_id": "bound-data-eas40-e2e:verified-bound-data", "version": 1, "content_hash": "4184cd3cb83c402a56689edaf2061b872ef212d63920445c66d8b4719a279c33"},
+      "foundation_task_ref": {"artifact_id": "eas40-foundation-expansion", "version": 1, "content_hash": "6728dfe87f2c8d96eea49a958e2db7a4ef2a5fb5ef41f3757b0f45ac6cea8d20"},
+      "foundation_profile_ref": {"artifact_id": "eas40-foundation-expansion:profile", "version": 1, "content_hash": "1344fe9ac0bf914cafe4fcb030ceebd27da5e9ba998474ba760b630d2408ce39"},
+      "structure_closure_ref": {"artifact_id": "eas40-foundation-expansion:structure-closure", "version": 1, "content_hash": "154048d49f86eeb7b5c76e2d74d8aca516bc4d9a6f31d8da1fd4851f5f18d7f6"},
+      "bound_data_ref": {"artifact_id": "bound-data-eas40-e2e", "version": 1, "content_hash": "832329bb12ebf6a182f23f25b67a820cc3a13bb40fb77920df953169b635e71d"},
+      "verified_bound_data_ref": {"artifact_id": "bound-data-eas40-e2e:verified-bound-data", "version": 1, "content_hash": "8efe386bc92a9a382705835006c414aa8e99819f251ec87cdbb6be5b43a20308"},
       "foundation_write_batch_hash": "d0f8a4670d1cee5ba326e922445127aae4f2382cdef1dcd4a4e5a0e174fc05b0"
     }
   },
@@ -49,8 +49,9 @@
   },
   "resume_qa_ref_evidence": {
     "schema": "release_candidate.payload.resume_qa_ref = runtime_artifact_ref|null（EAS-65 修补）",
-    "null_positive": "release_mode=foundation 且 resume_qa_ref=null 经 010 Stub 严格消费",
-    "non_null_positive": "resume_qa_ref={artifact_id,version,content_hash} 经 210 build_foundation_release 原值保留（同一对象），并由 010 Stub 严格消费返回 content_hash",
+    "event_closure_lineage": "event FOUNDATION_REQUIRED feedback_ref（260 产出）→ foundation_mode=expansion 任务的 resume_qa_ref 与 parent_artifact_refs/input_hashes → 260 → release_candidate.resume_qa_ref 与 feedback_ref 完全一致 → 010 Stub 严格消费",
+    "null_positive": "release_mode=foundation 且 resume_qa_ref=null 经 010 Stub 严格消费（initial seed）",
+    "expansion_fixture_positive": "foundation-task-expansion.json 携带非空三元组（eas40-resume-qa），经 210 原值保留并被 010 Stub 严格消费",
     "idempotent": "同一输入两次 build_foundation_release 产出同一 release_candidate",
     "strict_reject": "resume_qa_ref 裸字符串被 010 Stub 拒绝（RELEASE_CANDIDATE_STUB_REJECTED）"
   },
@@ -60,7 +61,7 @@
     "tests_passed": 7,
     "tests_failed": 0,
     "entry_points": ["initial_seed", "expansion", "event_missing_object_state"],
-    "release_candidate": "assembled, resume_qa_ref retained (null 与非空三元组均覆盖), no formal commit"
+    "release_candidate": "assembled, resume_qa_ref retained（null 与非空三元组均覆盖，含 event→expansion 真实血缘）, no formal commit"
   },
   "unresolved": []
 }
