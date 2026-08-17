@@ -1,1 +1,5 @@
-"""Agent 210 Foundation task-package producer."""
+"""Agent 210 deterministic orchestration contracts."""
+
+from .scheduler import DataStageCoordinator
+
+__all__ = ["DataStageCoordinator"]
