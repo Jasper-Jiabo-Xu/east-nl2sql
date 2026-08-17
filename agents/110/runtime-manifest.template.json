@@ -1,0 +1,9 @@
+{
+  "schema_version": "v5.110-runtime-manifest/v1",
+  "issue_key": "EAS-28",
+  "artifact_ref": {"artifact_id": "<artifact_id>", "version": 1, "content_hash": "<sha256>"},
+  "runtime_locator": "<V5_RUNTIME_ROOT>/vnext/03_构建过程层/issues/EAS-28/<run_id>/<attempt>/question-sql-dual-review-passed.json",
+  "contains_business_data": false,
+  "formal_database_write": false,
+  "lineage": {"source_package_hash": "<sha256>", "deepseek_review_hash": "<sha256>", "glm_review_hash": "<sha256>"}
+}
