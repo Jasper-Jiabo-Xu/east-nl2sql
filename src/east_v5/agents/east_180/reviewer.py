@@ -30,6 +30,10 @@ ERROR_ROUTE = {
     "OBSERVABLE_MAPPING_ERROR": "130", "QUERY_SPEC_ERROR": "140",
     "QUESTION_SQL_ERROR": "150", "BUSINESS_EVENT_ERROR": "150",
 }
+# A complete review can legitimately contain defects owned by several repair
+# layers.  110 still takes only one next step, so choose the most-upstream
+# affected layer deterministically; never discard the lower-layer findings.
+ROUTE_PRIORITY = ("120", "130", "140", "150")
 REPORT_KEYS = {"reviewer_id", "decision", "error_types", "error_details", "evidence_refs", "route_suggestion"}
 DETAIL_KEYS = {"error_type", "object", "location", "reason", "suggestion"}
 EVIDENCE_KEYS = {"kind", "ref", "description"}
@@ -147,7 +151,8 @@ class GLMReviewerAgent:
         if detail_types != set(report["error_types"]):
             _fail("ERROR_DETAIL_COVERAGE_INVALID")
         routes = {ERROR_ROUTE[item] for item in report["error_types"]}
-        if len(routes) != 1 or report["route_suggestion"] != next(iter(routes)):
+        expected_route = next(route for route in ROUTE_PRIORITY if route in routes)
+        if report["route_suggestion"] != expected_route:
             _fail("ERROR_ROUTE_MAPPING_INVALID")
 
     def validate_output(self, package: dict[str, Any]) -> None:
@@ -170,6 +175,7 @@ class GLMReviewerAgent:
             "reviewer_id": REVIEWER_ID, "artifact_type": "question_sql_pending_dual_review",
             "package_hash": package["payload"]["package_hash"], "frozen_package": package["payload"],
             "required_output_keys": sorted(REPORT_KEYS), "error_route_map": ERROR_ROUTE,
+            "route_priority": list(ROUTE_PRIORITY),
         }
 
     @staticmethod

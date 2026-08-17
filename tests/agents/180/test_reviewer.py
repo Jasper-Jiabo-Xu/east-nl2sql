@@ -14,7 +14,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from east_v5.agents.east_150 import MAPPED_SPEC_ITEMS, PendingPrecheckBuilder
 from east_v5.agents.east_180.probe import run_sanitized_probe
-from east_v5.agents.east_180.reviewer import ERROR_ROUTE, ERROR_TYPES, GLMReviewerAgent, REVIEWER_ID, consume_110_stub
+from east_v5.agents.east_180.reviewer import ERROR_ROUTE, ERROR_TYPES, ROUTE_PRIORITY, GLMReviewerAgent, REVIEWER_ID, consume_110_stub
 from east_v5.artifacts import content_hash
 from east_v5.governance import ContractError
 
@@ -44,7 +44,7 @@ def report(error_types=None, *, route=None, evidence=True, extra=None):
             "reviewer_id": "180", "decision": "no", "error_types": error_types,
             "error_details": [{"error_type": item, "object": "candidate", "location": "candidate_content", "reason": f"detected-{item}", "suggestion": "修复后重新预审"} for item in error_types],
             "evidence_refs": [{"kind": "frozen_package", "ref": "dual-180", "description": "冻结审核包证据"}] if evidence else [],
-            "route_suggestion": route or ERROR_ROUTE.get(error_types[0], "150"),
+            "route_suggestion": route or next((item for item in ROUTE_PRIORITY if item in {ERROR_ROUTE.get(error_type) for error_type in error_types}), "150"),
         }
     if extra:
         result.update(extra)
@@ -105,10 +105,33 @@ class Tests(unittest.TestCase):
                 self.assertEqual(body["error_details"][0]["error_type"], error_type)
                 self.assertTrue(body["evidence_refs"])
 
-    def test_multi_error_requires_single_deterministic_route(self):
+    def test_same_route_multi_error_uses_the_shared_route(self):
         result = GLMReviewerAgent(ROOT, ScriptedGLM([report(["QUESTION_SQL_ERROR", "BUSINESS_EVENT_ERROR"])])) .review(self.dual(), created_at=TIME)
         self.assertEqual(result["payload"]["semantic_review_report"]["route_suggestion"], "150")
-        client = ScriptedGLM([report(["FACT_PACKAGE_ERROR", "QUERY_SPEC_ERROR"], route="120")] * 3)
+
+    def test_cross_route_errors_are_preserved_and_choose_most_upstream_route(self):
+        errors = ["OBSERVABLE_MAPPING_ERROR", "QUERY_SPEC_ERROR", "QUESTION_SQL_ERROR", "BUSINESS_EVENT_ERROR"]
+        result = GLMReviewerAgent(ROOT, ScriptedGLM([report(errors)])).review(self.dual(), created_at=TIME)
+        body = result["payload"]["semantic_review_report"]
+        self.assertEqual(body["error_types"], errors)
+        self.assertEqual(body["route_suggestion"], "130")
+        self.assertEqual(consume_110_stub(ROOT, result)["route_suggestion"], "130")
+
+    def test_cross_route_priority_is_order_independent(self):
+        permutations = [
+            ["OBSERVABLE_MAPPING_ERROR", "QUERY_SPEC_ERROR", "QUESTION_SQL_ERROR"],
+            ["QUESTION_SQL_ERROR", "OBSERVABLE_MAPPING_ERROR", "QUERY_SPEC_ERROR"],
+            ["QUERY_SPEC_ERROR", "QUESTION_SQL_ERROR", "OBSERVABLE_MAPPING_ERROR"],
+        ]
+        for errors in permutations:
+            with self.subTest(errors=errors):
+                result = GLMReviewerAgent(ROOT, ScriptedGLM([report(errors)])).review(self.dual(), created_at=TIME)
+                self.assertEqual(result["payload"]["semantic_review_report"]["route_suggestion"], "130")
+        result = GLMReviewerAgent(ROOT, ScriptedGLM([report(["QUESTION_SQL_ERROR", "OBSERVABLE_MAPPING_ERROR", "FACT_PACKAGE_ERROR"])])) .review(self.dual(), created_at=TIME)
+        self.assertEqual(result["payload"]["semantic_review_report"]["route_suggestion"], "120")
+
+    def test_lower_priority_route_for_cross_route_errors_is_rejected(self):
+        client = ScriptedGLM([report(["FACT_PACKAGE_ERROR", "QUERY_SPEC_ERROR"], route="140")] * 3)
         with self.assertRaisesRegex(ContractError, "MODEL_RETRY_EXHAUSTED:ERROR_ROUTE_MAPPING_INVALID"):
             GLMReviewerAgent(ROOT, client).review(self.dual(), created_at=TIME)
         self.assertEqual(client.calls, 3)
@@ -159,6 +182,8 @@ class Tests(unittest.TestCase):
         self.assertTrue(summary["pass_consumed_by_110"])
         self.assertTrue(summary["input_hash_drift_detected"])
         self.assertTrue(summary["multi_error_decision"])
+        self.assertTrue(summary["cross_route_errors_preserved"])
+        self.assertTrue(summary["cross_route_priority"])
         self.assertEqual(set(ERROR_TYPES), set(ERROR_ROUTE))
 
 

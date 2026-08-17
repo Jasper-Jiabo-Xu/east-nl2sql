@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from east_v5.agents.east_150 import MAPPED_SPEC_ITEMS, PendingPrecheckBuilder
-from east_v5.agents.east_180.reviewer import ERROR_ROUTE, GLMReviewerAgent, REVIEWER_ID, consume_110_stub
+from east_v5.agents.east_180.reviewer import ERROR_ROUTE, ROUTE_PRIORITY, GLMReviewerAgent, REVIEWER_ID, consume_110_stub
 from east_v5.artifacts import content_hash
 from east_v5.governance import ContractError
 
@@ -94,7 +94,8 @@ def _glm_report(error_types: list[str] | None = None) -> dict[str, Any]:
     error_types = error_types or []
     if not error_types:
         return {"reviewer_id": REVIEWER_ID, "decision": "yes", "error_types": [], "error_details": [], "evidence_refs": [{"kind": "query_spec", "ref": "qspec-027", "description": "冻结查询规格已覆盖"}], "route_suggestion": "150"}
-    route = ERROR_ROUTE[error_types[0]]
+    routes = {ERROR_ROUTE[error_type] for error_type in error_types}
+    route = next(item for item in ROUTE_PRIORITY if item in routes)
     return {
         "reviewer_id": REVIEWER_ID, "decision": "no", "error_types": error_types,
         "error_details": [{"error_type": error_type, "object": "candidate", "location": "payload", "reason": f"probe-{error_type}", "suggestion": "修复后重新预审"} for error_type in error_types],
@@ -144,6 +145,11 @@ def run_sanitized_probe(root: Path) -> dict[str, Any]:
     multi_result = GLMReviewerAgent(root, _StaticGLM(_glm_report(["QUESTION_SQL_ERROR", "BUSINESS_EVENT_ERROR"]))).review(dual, created_at=TIME)
     consumed_multi = consume_110_stub(root, multi_result)
 
+    # Cross-route findings remain complete; 110 receives just the upstream
+    # repair target for this round.
+    cross_result = GLMReviewerAgent(root, _StaticGLM(_glm_report(["OBSERVABLE_MAPPING_ERROR", "QUERY_SPEC_ERROR", "QUESTION_SQL_ERROR", "BUSINESS_EVENT_ERROR"]))).review(dual, created_at=TIME)
+    consumed_cross = consume_110_stub(root, cross_result)
+
     # Deterministic: same input → same output
     pass_again = GLMReviewerAgent(root, _StaticGLM(_glm_report())).review(dual, created_at=TIME)
     deterministic = pass_result["envelope"]["content_hash"] == pass_again["envelope"]["content_hash"]
@@ -167,6 +173,8 @@ def run_sanitized_probe(root: Path) -> dict[str, Any]:
             "fail_matrix": fail_matrix,
             "multi_error_decision": consumed_multi["decision"] == "no",
             "multi_error_types_count": len(json.loads(consumed_multi["error_types"])) == 2,
+            "cross_route_errors_preserved": len(json.loads(consumed_cross["error_types"])) == 4,
+            "cross_route_priority": consumed_cross["route_suggestion"] == "130",
             "deterministic": deterministic,
             "input_hash_drift_detected": drift_detected,
         },
