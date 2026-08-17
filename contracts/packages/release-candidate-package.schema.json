@@ -1,0 +1,90 @@
+{
+  "$id": "https://east.example/contracts/packages/release-candidate-package/v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "FORMAL-RELEASE-CANDIDATE",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["envelope", "payload"],
+  "properties": {
+    "envelope": {
+      "allOf": [
+        {"$ref": "https://east.example/contracts/common-envelope/v1"},
+        {"type": "object", "properties": {"artifact_type": {"const": "release_candidate"}, "producer_id": {"const": "210"}, "mode": {"enum": ["event_data", "foundation"]}}}
+      ]
+    },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["release_candidate_id", "release_mode", "approved_question_sql_ref", "event_regression_passed_ref", "foundation_regression_report_ref", "target_database_version", "target_question_dataset_version", "idempotency_key", "expected_write_summary", "package_hashes", "resume_qa_ref"],
+      "properties": {
+        "release_candidate_id": {"type": "string", "minLength": 1},
+        "release_mode": {"enum": ["event_data", "foundation"]},
+        "approved_question_sql_ref": {"$ref": "#/$defs/artifact_ref_or_null"},
+        "event_regression_passed_ref": {"$ref": "#/$defs/artifact_ref_or_null"},
+        "foundation_regression_report_ref": {"$ref": "#/$defs/artifact_ref_or_null"},
+        "target_database_version": {"type": "string", "minLength": 1},
+        "target_question_dataset_version": {"type": ["string", "null"]},
+        "idempotency_key": {"type": "string", "minLength": 1},
+        "expected_write_summary": {"type": "object", "minProperties": 1},
+        "package_hashes": {"type": "object"},
+        "resume_qa_ref": {"type": ["string", "null"]}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"release_mode": {"const": "event_data"}}},
+          "then": {"properties": {
+            "approved_question_sql_ref": {"$ref": "#/$defs/artifact_ref"},
+            "event_regression_passed_ref": {"$ref": "#/$defs/artifact_ref"},
+            "foundation_regression_report_ref": {"type": "null"},
+            "target_question_dataset_version": {"type": "string", "minLength": 1},
+            "resume_qa_ref": {"type": "null"},
+            "package_hashes": {"$ref": "#/$defs/event_hashes"}
+          }},
+          "else": {"properties": {
+            "approved_question_sql_ref": {"type": "null"},
+            "event_regression_passed_ref": {"type": "null"},
+            "foundation_regression_report_ref": {"$ref": "#/$defs/artifact_ref"},
+            "target_question_dataset_version": {"type": "null"},
+            "package_hashes": {"$ref": "#/$defs/foundation_hashes"}
+          }}
+        }
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"payload": {"properties": {"release_mode": {"const": "event_data"}}}}},
+      "then": {"properties": {"envelope": {"properties": {"mode": {"const": "event_data"}}}}},
+      "else": {"properties": {"envelope": {"properties": {"mode": {"const": "foundation"}}}}}
+    }
+  ],
+  "$defs": {
+    "artifact_ref": {
+      "type": "object", "additionalProperties": false,
+      "required": ["artifact_id", "version", "content_hash"],
+      "properties": {
+        "artifact_id": {"type": "string", "minLength": 1},
+        "version": {"type": "integer", "minimum": 1},
+        "content_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    },
+    "artifact_ref_or_null": {"anyOf": [{"$ref": "#/$defs/artifact_ref"}, {"type": "null"}]},
+    "event_hashes": {
+      "type": "object", "additionalProperties": false,
+      "required": ["question_sql", "data", "orm", "regression"],
+      "properties": {
+        "question_sql": {"$ref": "#/$defs/hash"}, "data": {"$ref": "#/$defs/hash"},
+        "orm": {"$ref": "#/$defs/hash"}, "regression": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "foundation_hashes": {
+      "type": "object", "additionalProperties": false,
+      "required": ["foundation_task", "data", "write_batch", "regression_report"],
+      "properties": {
+        "foundation_task": {"$ref": "#/$defs/hash"}, "data": {"$ref": "#/$defs/hash"},
+        "write_batch": {"$ref": "#/$defs/hash"}, "regression_report": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  }
+}
