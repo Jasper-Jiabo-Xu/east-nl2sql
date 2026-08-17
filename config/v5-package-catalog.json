@@ -5,7 +5,7 @@
     {"id": "structure_closure", "producer": "220", "consumers": ["230", "241", "251", "252", "260"]},
     {"id": "operation_closure", "producer": "230", "consumers": ["241", "251"], "modes": ["event"]},
     {"id": "bound_data", "producer": "241", "consumers": ["242"]},
-    {"id": "verified_bound_data", "producer": "242", "consumers": ["260"]},
+    {"id": "verified_bound_data", "producer": "242", "consumers": ["260"], "payload_schema": "v5.verified-bound-data/v1", "package_schema": "contracts/packages/verified-bound-data-package.schema.json"},
     {"id": "restricted_orm", "producer": "251", "consumers": ["252"]},
     {"id": "frozen_orm", "producer": "252", "consumers": ["260"]},
     {"id": "database_copy_regression", "producer": "260", "consumers": ["210"]},

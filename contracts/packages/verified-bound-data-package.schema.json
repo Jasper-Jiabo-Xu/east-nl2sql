@@ -1,0 +1,153 @@
+{
+  "$id": "https://east.example/contracts/packages/verified-bound-data-package/v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Agent 242 verified bound data package (DATA-PENDING-REGRESSION)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["envelope", "payload"],
+  "properties": {
+    "envelope": {
+      "allOf": [
+        {"$ref": "https://east.example/contracts/common-envelope/v1"},
+        {
+          "type": "object",
+          "properties": {
+            "artifact_type": {"const": "verified_bound_data"},
+            "producer_id": {"const": "242"},
+            "status": {"const": "validated"}
+          }
+        }
+      ]
+    },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "validated_data_package", "source_data_package_ref", "data_validation_report", "validator_registry_version", "validated_hash", "validated_at"],
+      "properties": {
+        "schema_version": {"const": "v5.verified-bound-data/v1"},
+        "validated_data_package": {"$ref": "#/$defs/validated_data_package"},
+        "source_data_package_ref": {"$ref": "#/$defs/artifact_ref"},
+        "data_validation_report": {"$ref": "#/$defs/data_validation_report"},
+        "validator_registry_version": {"type": "string", "minLength": 1},
+        "validated_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "validated_at": {"type": "string", "format": "date-time"}
+      }
+    }
+  },
+  "$defs": {
+    "artifact_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifact_id", "version", "content_hash"],
+      "properties": {
+        "artifact_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"},
+        "version": {"type": "integer", "minimum": 1},
+        "content_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    },
+    "validated_data_package": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "data_package_id", "structure_closure_ref", "operation_closure_ref", "database_snapshot_ref", "data_groups"],
+      "properties": {
+        "schema_version": {"const": "v5.bound-data/v1"},
+        "data_package_id": {"type": "string", "minLength": 1},
+        "structure_closure_ref": {"$ref": "#/$defs/artifact_ref"},
+        "operation_closure_ref": {"anyOf": [{"$ref": "#/$defs/artifact_ref"}, {"type": "null"}]},
+        "database_snapshot_ref": {"anyOf": [{"$ref": "#/$defs/artifact_ref"}, {"type": "null"}]},
+        "data_groups": {"type": "array", "minItems": 1, "items": {"$ref": "https://east.example/contracts/packages/bound-data-package/v1#/$defs/data_group"}}
+      }
+    },
+    "source_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifact_id", "content_hash"],
+      "properties": {
+        "artifact_id": {"type": "string", "minLength": 1},
+        "content_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    },
+    "enumerated_constraint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["constraint_id", "scope", "source_asset_version", "canonical_rule_hash"],
+      "properties": {
+        "constraint_id": {"type": "string", "minLength": 1},
+        "scope": {"enum": ["field", "within_table", "cross_table"]},
+        "source_asset_version": {"enum": ["CA-V0.2.0", "CA-V0.3.0", "TRG-V1.0.0"]},
+        "canonical_rule_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    },
+    "constraint_universe": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "closure_ref", "sources", "constraints", "content_sha256"],
+      "properties": {
+        "schema_version": {"const": "v5.constraint-universe/v2"},
+        "closure_ref": {"$ref": "#/$defs/artifact_ref"},
+        "sources": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["CA-V0.2.0", "CA-V0.3.0", "TRG-V1.0.0"],
+          "properties": {
+            "CA-V0.2.0": {"$ref": "#/$defs/source_ref"},
+            "CA-V0.3.0": {"$ref": "#/$defs/source_ref"},
+            "TRG-V1.0.0": {"$ref": "#/$defs/source_ref"}
+          }
+        },
+        "constraints": {"type": "array", "items": {"$ref": "#/$defs/enumerated_constraint"}},
+        "content_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    },
+    "module_result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["validator_id", "layer", "rule_count", "violation_count", "result"],
+      "properties": {
+        "validator_id": {"type": "string", "minLength": 1},
+        "layer": {"enum": ["field", "table", "cross_table"]},
+        "rule_count": {"type": "integer", "minimum": 0},
+        "violation_count": {"type": "integer", "minimum": 0},
+        "result": {"enum": ["pass", "fail"]}
+      }
+    },
+    "query_receipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "artifact_type", "artifact_id", "asset_version", "content_hash", "query_method", "table_code", "query_parameters", "total", "returned_count", "complete", "cursor", "next_cursor", "source_hash", "records_hash", "receipt_hash", "records"],
+      "properties": {
+        "schema_version": {"const": "v5.constraint-asset-query-result/v2"},
+        "artifact_type": {"enum": ["constraint_asset_ref", "typed_reference_graph_ref"]},
+        "artifact_id": {"type": "string", "minLength": 1},
+        "asset_version": {"enum": ["CA-V0.2.0", "CA-V0.3.0", "TRG-V1.0.0"]},
+        "content_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "query_method": {"enum": ["asset_ref", "constraints_for_table", "field_rules_for_table", "graph_edges_for_table"]},
+        "table_code": {"type": "string", "minLength": 1},
+        "query_parameters": {"type": "object", "additionalProperties": false, "required": ["page_size"], "properties": {"page_size": {"type": "integer", "minimum": 1, "maximum": 500}}},
+        "total": {"type": "integer", "minimum": 0},
+        "returned_count": {"type": "integer", "minimum": 0},
+        "complete": {"type": "boolean"},
+        "cursor": {"type": ["string", "null"]},
+        "next_cursor": {"type": ["string", "null"]},
+        "source_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "records_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "receipt_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "records": {"type": "array"}
+      }
+    },
+    "data_validation_report": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "constraint_universe", "query_receipts", "module_results", "total_checks", "passed_checks", "violation_count"],
+      "properties": {
+        "schema_version": {"const": "v5.data-validation-report/v1"},
+        "constraint_universe": {"$ref": "#/$defs/constraint_universe"},
+        "query_receipts": {"type": "array", "items": {"$ref": "#/$defs/query_receipt"}},
+        "module_results": {"type": "array", "items": {"$ref": "#/$defs/module_result"}},
+        "total_checks": {"type": "integer", "minimum": 0},
+        "passed_checks": {"type": "integer", "minimum": 0},
+        "violation_count": {"type": "integer", "minimum": 0}
+      }
+    }
+  }
+}
