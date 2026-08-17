@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import importlib
 import sqlite3
 import sys
@@ -11,7 +12,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "src"))
 from east_v5.artifacts import artifact_ref, content_hash
-from east_v5.governance import ContractError, sha256
+from east_v5.governance import ContractError, canonical_bytes, sha256
 
 producer = importlib.import_module("east_v5.agents.210.foundation")
 closure_mod = importlib.import_module("east_v5.agents.220.closure")
@@ -74,6 +75,9 @@ class FoundationRegressionTests(unittest.TestCase):
             connection.execute("CREATE TABLE FIXTURE_CUSTOMER (C001 TEXT, C002 TEXT)")
         package = regression.run_foundation_regression(ROOT, self.task, self.closure, self.verified, self.snapshot, copy_db, formal_db, set())
         self.assertEqual(package["payload"]["regression_status"], "passed")
+        batch = package["payload"]["foundation_write_batch"]
+        self.assertTrue(all("?" not in statement for statement in batch["rendered_sql_for_audit"]))
+        self.assertEqual(package["payload"]["foundation_write_batch_hash"], sha256({key: batch[key] for key in ("transaction_groups", "sql_statements", "parameter_sets", "execution_order", "expected_write_counts")}))
         regression._validate_schema(ROOT, package, "contracts/packages/foundation-regression-report.schema.json", "FOUNDATION_REPORT")
         self.assertEqual(stub_210.consume(package, ROOT)["kind"], "success")
         hash_drift = copy.deepcopy(package)
@@ -102,6 +106,14 @@ class FoundationRegressionTests(unittest.TestCase):
         self.assertEqual(feedback["payload"]["mode"], "foundation")
         self.assertEqual(feedback["payload"]["route_target"], "manual")
         self.assertEqual(stub_210.consume(feedback, ROOT)["kind"], "feedback")
+
+    def test_foundation_transport_hash_drift_is_hard_rejected_before_feedback(self):
+        task = copy.deepcopy(self.task)
+        task["envelope"]["content_hash"] = "0" * 64
+        copy_db, formal_db = sqlite3.connect(":memory:"), sqlite3.connect(":memory:")
+        for connection in (copy_db, formal_db): connection.execute("CREATE TABLE FIXTURE_CUSTOMER (C001 TEXT, C002 TEXT)")
+        with self.assertRaisesRegex(ContractError, "CONTENT_HASH_DRIFT"):
+            regression.run_foundation_regression(ROOT, task, self.closure, self.verified, self.snapshot, copy_db, formal_db, set())
 
     def test_expansion_mode_uses_same_machine_path(self):
         payload = copy.deepcopy(self.task["payload"])
@@ -261,8 +273,6 @@ class EventRegressionTests(unittest.TestCase):
         review_payload = {"schema_version":"v5.question-sql-dual-review-passed/v1","candidate_ref":{"artifact_id":"candidate","version":1,"content_hash":"3"*64},"candidate_content":{"clear_question":"open accounts","sql_gold":"SELECT CUSTOMER_ID, STATUS FROM FIXTURE_ACCOUNT WHERE STATUS = 'OPEN'","sql_explanation":{"select":"s","from_join":"f","where":"w","aggregation":"","sort":"","business_meaning":"b"},"business_event_candidates":[{"event_name":"open","objective":"o","objects":["account"],"state_changes":[]}],"specification_mapping":[{"spec_item":"open","question_fragment":"open","sql_fragment":"STATUS"}]},"query_specification_package":artifact_ref(self.spec["envelope"]),"penalty_fact_package":{"artifact_id":"penalty","version":1,"content_hash":"1"*64},"observable_fact_package":{"artifact_id":"observable","version":1,"content_hash":"2"*64},"constraint_evidence_summary":{"tables":["FIXTURE_ACCOUNT"],"fields":["STATUS"],"data_elements":[],"relationships":[],"source_refs":["CA-V0.3.0"]},"precheck_report":{"decision":"pass","report_hash":"4"*64},"deepseek_review":{"decision":"pass","issue_level":"none","reason":"ok","review_hash":"5"*64},"glm_review":{"decision":"pass","issue_level":"none","reason":"ok","review_hash":"6"*64},"adjudication":{"decision":"pass","report_hash":"7"*64},"review_round":1,"package_hash":""}
         review_payload["package_hash"] = sha256({key:value for key,value in review_payload.items() if key != "package_hash"})
         self.review = wrap("question_sql_dual_review_passed", "review-260", review_payload, "110", "event_data", parents=[artifact_ref(self.spec["envelope"])], status="validated"); self.review["envelope"]["qa_id"] = "QA-260"; self.review["envelope"]["content_hash"] = content_hash(self.review["envelope"], self.review["payload"])
-        self.spec["payload"]["minimum_positive_count"] = 1
-        self.refresh_query_refs()
 
     def tearDown(self): self.temp.cleanup()
 
@@ -277,6 +287,8 @@ class EventRegressionTests(unittest.TestCase):
     def test_full_110_event_success_copy_only_and_independent_210_consumption(self):
         before = self.db.read_bytes(); package = self.worker.run_event(self.data, self.orm, self.snapshot, self.review, self.spec, self.db)
         self.assertEqual(package["payload"]["regression_status"], "passed"); self.assertEqual(before, self.db.read_bytes())
+        self.assertEqual(self.spec["payload"]["minimum_positive_count"], 2)
+        self.assertEqual(package["payload"]["sql_regression_report"]["positive_negative_metrics"]["positive_hits"], 2)
         self.worker._validate(package, "regression-passed-data-orm.schema.json", "event")
         self.assertEqual(stub_210.consume(package, ROOT)["decision"], "accepted")
 
@@ -316,6 +328,19 @@ class EventRegressionTests(unittest.TestCase):
         package["envelope"]["content_hash"] = content_hash(package["envelope"], package["payload"])
         with self.assertRaisesRegex(ContractError, "210_STUB_SCHEMA_REJECTED"):
             stub_210.consume(package, ROOT)
+
+    def test_orm_execution_and_gold_sql_errors_have_distinct_feedback(self):
+        plan = self.orm["payload"]["validated_orm_plan"]
+        plan["orm_source_code"] = "def apply(context, params):\n    with context.transaction() as tx:\n        tx.insert('FIXTURE_ACCOUNT', {'CUSTOMER_ID': 'C1', 'STATUS': 'OPEN'})\n        tx.insert('FIXTURE_ACCOUNT', {'CUSTOMER_ID': 'C1', 'STATUS': 'OPEN'})\n    return {'executed_operation_ids': ['op-1'], 'write_count': 2}\n"
+        frozen = hashlib.sha256(canonical_bytes({"orm_source_code": plan["orm_source_code"], "execution_contract": plan["execution_contract"], "operations": plan["operations"]})).hexdigest()
+        plan["code_hash"] = frozen; self.orm["payload"]["validated_hash"] = frozen; self.orm["envelope"]["content_hash"] = content_hash(self.orm["envelope"], self.orm["payload"])
+        orm_feedback = self.worker.run_event(self.data, self.orm, self.snapshot, self.review, self.spec, self.db)
+        self.assertEqual((orm_feedback["payload"]["failure_details"]["error_code"], orm_feedback["payload"]["failure_details"]["error_stage"], orm_feedback["payload"]["route_target"]), ("ORM_PLAN_ERROR", "orm_execution", "251"))
+        self.tearDown(); self.setUp()
+        self.review["payload"]["candidate_content"]["sql_gold"] = "SELECT missing FROM FIXTURE_ACCOUNT"; self.refresh_query_refs()
+        sql_feedback = self.worker.run_event(self.data, self.orm, self.snapshot, self.review, self.spec, self.db)
+        self.assertEqual((sql_feedback["payload"]["failure_details"]["error_code"], sql_feedback["payload"]["failure_details"]["error_stage"], sql_feedback["payload"]["route_target"]), ("SQL_EXECUTION_ERROR", "sql_execution", "210"))
+        self.assertEqual(sql_feedback["payload"]["failure_details"]["sql_error_detail"]["sql_text"], "SELECT missing FROM FIXTURE_ACCOUNT")
 
     def test_stub_rejects_hash_drift_and_foundation_required_is_reachable(self):
         package = self.worker.run_event(self.data, self.orm, self.snapshot, self.review, self.spec, self.db)

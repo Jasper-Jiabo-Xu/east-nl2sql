@@ -39,7 +39,9 @@ def consume(package: dict[str, Any], root: Path) -> dict[str, str]:
             raise ContractError("210_STUB_LINEAGE_REJECTED")
         if mode == "foundation":
             payload = package["payload"]
-            if payload["foundation_write_batch_hash"] != sha256(payload["foundation_write_batch"]) or payload["report_hash"] != sha256({key: value for key, value in payload.items() if key != "report_hash"}):
+            write_batch = payload["foundation_write_batch"]
+            hashed = {key: write_batch[key] for key in ("transaction_groups", "sql_statements", "parameter_sets", "execution_order", "expected_write_counts")}
+            if payload["foundation_write_batch_hash"] != sha256(hashed) or payload["report_hash"] != sha256({key: value for key, value in payload.items() if key != "report_hash"}):
                 raise ContractError("210_STUB_HASH_REJECTED")
         return {"decision": "accepted", "kind": "success"}
     if package["payload"]["route_target"] not in {"210", "manual", "241", "251"}:
