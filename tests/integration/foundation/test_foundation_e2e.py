@@ -322,6 +322,14 @@ class FoundationE2ETests(unittest.TestCase):
         manifest_path = ROOT / "docs" / "reports" / "integration" / "foundation" / "EAS-40-运行清单.json"
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
 
+        # Test-count consistency is discovered from the live test class, never
+        # hand-authored: the manifest's total must equal the discovered count,
+        # and a passed run must report total==passed and zero failures.
+        discovered = unittest.defaultTestLoader.loadTestsFromTestCase(FoundationE2ETests).countTestCases()
+        self.assertEqual(discovered, manifest["test_summary"]["tests_total"])
+        self.assertEqual(manifest["test_summary"]["tests_passed"], manifest["test_summary"]["tests_total"])
+        self.assertEqual(manifest["test_summary"]["tests_failed"], 0)
+
         for name, expected in manifest["frozen_inputs"]["fixtures"].items():
             actual = hashlib.sha256((FIXTURE_DIR / name).read_bytes()).hexdigest()
             self.assertEqual(actual, expected, f"fixture sha256 drift: {name}")

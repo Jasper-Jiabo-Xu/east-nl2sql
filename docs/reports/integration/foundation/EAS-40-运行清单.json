@@ -57,8 +57,8 @@
   },
   "test_summary": {
     "test_file": "tests/integration/foundation/test_foundation_e2e.py",
-    "tests_total": 7,
-    "tests_passed": 7,
+    "tests_total": 8,
+    "tests_passed": 8,
     "tests_failed": 0,
     "entry_points": ["initial_seed", "expansion", "event_missing_object_state"],
     "release_candidate": "assembled, resume_qa_ref retained（null 与非空三元组均覆盖，含 event→expansion 真实血缘）, no formal commit"
