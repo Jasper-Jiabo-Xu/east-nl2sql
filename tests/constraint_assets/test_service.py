@@ -139,7 +139,10 @@ class ConstraintAssetServiceTests(unittest.TestCase):
     def test_schema_and_query_rejections_are_stable_and_idempotent(self) -> None:
         service = self.service()
         first, second = service.constraints_for_table("CHILD"), service.constraints_for_table("CHILD")
-        self.assertEqual(first, second)
+        self.assertEqual(first["records"], second["records"])
+        self.assertEqual((first["total"], first["records_hash"]), (second["total"], second["records_hash"]))
+        self.assertNotEqual(first["next_cursor"], second["next_cursor"])
+        self.assertEqual(service.constraints_for_table("CHILD", cursor=first["next_cursor"])["records"], service.constraints_for_table("CHILD", cursor=second["next_cursor"])["records"])
         with self.assertRaisesRegex(ContractError, "ASSET_QUERY_INVALID"):
             service.constraints_for_table("")
         for value in (0, 501):
@@ -240,7 +243,7 @@ class ConstraintAssetServiceTests(unittest.TestCase):
         with self.assertRaisesRegex(ContractError, "ASSET_PAYLOAD_HASH_DRIFT"):
             service.constraints_for_table("CHILD")
 
-    def test_cursor_tamper_skip_and_production_chain_replay_are_rejected(self) -> None:
+    def test_cursor_tamper_skip_replay_and_production_chain_replay_are_rejected(self) -> None:
         import base64
 
         service = self.service()
@@ -255,6 +258,10 @@ class ConstraintAssetServiceTests(unittest.TestCase):
         tampered = base64.urlsafe_b64encode(json.dumps(cursor, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")).decode("ascii").rstrip("=")
         with self.assertRaisesRegex(ContractError, "ASSET_QUERY_CURSOR_INVALID"):
             service.constraints_for_table("CHILD", limit=100, cursor=tampered)
+        valid_cursor = first["next_cursor"]
+        self.assertEqual(service.constraints_for_table("CHILD", limit=100, cursor=valid_cursor)["returned_count"], 22)
+        with self.assertRaisesRegex(ContractError, "ASSET_QUERY_CURSOR_INVALID"):
+            service.constraints_for_table("CHILD", limit=100, cursor=valid_cursor)
         self.assertEqual(consume_complete_table(service, "constraints_for_table", "CHILD", page_size=100)["returned_count"], 122)
         original_query = service.constraints_for_table
 

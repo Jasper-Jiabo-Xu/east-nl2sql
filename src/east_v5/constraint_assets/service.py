@@ -13,6 +13,7 @@ import json
 import sqlite3
 import base64
 import secrets
+import threading
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -289,6 +290,9 @@ class ConstraintAssetService:
         # are not authority proofs; only this live, validated service can issue
         # or continue a query chain.
         self._capability = secrets.token_bytes(32)
+        self._cursor_lock = threading.Lock()
+        self._cursor_sessions: set[str] = set()
+        self._consumed_cursors: set[str] = set()
         self.entries = validate_runtime_manifest(self.repo_root, roots, manifest_path, control_path=control_path)
         self.control = _control_index(self.repo_root, control_path)
         validate_reconciliation_manifest(self.repo_root)
@@ -342,19 +346,30 @@ class ConstraintAssetService:
     def _page(self, entry: dict[str, Any], method: str, table_code: str, records: list[dict[str, Any]], limit: int, cursor: str | None) -> dict[str, Any]:
         binding = _digest({"query_method": method, "table_code": table_code, "page_size": limit, "source": {key: entry[key] for key in ("artifact_id", "asset_version", "content_hash")}})
         offset = 0
+        session_id: str | None = None
         if cursor is not None:
-            decoded = _decode_cursor(cursor, self._capability)
-            if set(decoded) != {"binding", "offset", "total"} or decoded["binding"] != binding or not isinstance(decoded["offset"], int) or not isinstance(decoded["total"], int):
-                _fail("ASSET_QUERY_CURSOR_INVALID")
-            if decoded["total"] != len(records):
-                _fail("ASSET_QUERY_CURSOR_STALE")
-            offset = decoded["offset"]
+            with self._cursor_lock:
+                if cursor in self._consumed_cursors:
+                    _fail("ASSET_QUERY_CURSOR_INVALID")
+                decoded = _decode_cursor(cursor, self._capability)
+                if set(decoded) != {"binding", "offset", "total", "session_id"} or decoded["binding"] != binding or not isinstance(decoded["offset"], int) or not isinstance(decoded["total"], int) or not isinstance(decoded["session_id"], str) or decoded["session_id"] not in self._cursor_sessions:
+                    _fail("ASSET_QUERY_CURSOR_INVALID")
+                if decoded["total"] != len(records):
+                    _fail("ASSET_QUERY_CURSOR_STALE")
+                # A valid capability is still single-use.  Mark it atomically
+                # before returning a page so a concurrent replay cannot win.
+                self._consumed_cursors.add(cursor)
+                offset, session_id = decoded["offset"], decoded["session_id"]
         if offset < 0 or offset >= len(records) and not (offset == 0 and not records):
             _fail("ASSET_QUERY_CURSOR_INVALID")
         page = records[offset:offset + limit]
         next_cursor = None
         if offset + len(page) < len(records):
-            next_cursor = _encode_cursor({"binding": binding, "offset": offset + len(page), "total": len(records)}, self._capability)
+            if session_id is None:
+                session_id = secrets.token_urlsafe(24)
+                with self._cursor_lock:
+                    self._cursor_sessions.add(session_id)
+            next_cursor = _encode_cursor({"binding": binding, "offset": offset + len(page), "total": len(records), "session_id": session_id}, self._capability)
         return self._verify_service_receipt(self._issue_receipt(_result(entry, page, query_method=method, table_code=table_code, page_size=limit, total=len(records), cursor=cursor, next_cursor=next_cursor)), query_method=method, table_code=table_code)
 
     def complete_table_query(self, query_method: str, table_code: str, *, page_size: int = 100) -> dict[str, Any]:
