@@ -350,13 +350,22 @@ class DatabaseCopyRegression:
     @staticmethod
     def _metrics(rows: list[tuple[Any, ...]], spec: dict[str, Any], records: list[dict[str, Any]]) -> dict[str, Any]:
         flat = [value for row in rows for value in row]
-        role_values = {role: {value["value"] for record in records if record["case_role"] == role for value in record["field_values"] if not value["is_null"]} for role in {record["case_role"] for record in records}}
-        positive_values = role_values.get("positive", set())
-        negative_values = set().union(*(values for role, values in role_values.items() if role in {"negative", "hard_negative"})) if role_values else set()
-        positive_hits = sum(1 for value in positive_values if value in flat)
-        negative_hits = sum(1 for value in negative_values if value in flat)
+        role_records = {role: [record for record in records if record["case_role"] == role] for role in {record["case_role"] for record in records}}
+
+        def record_matches(record: dict[str, Any]) -> bool:
+            # Record identity is the frozen data-group record, not a distinct
+            # scalar. A projection can omit fields, so an identity is observed
+            # when at least one non-null frozen value reaches the result.
+            values = [item["value"] for item in record["field_values"] if not item["is_null"]]
+            return bool(values) and any(value in flat for value in values)
+
+        positive_records = role_records.get("positive", [])
+        negative_records = [record for role in ("negative", "hard_negative") for record in role_records.get(role, [])]
+        positive_hits = sum(record_matches(record) for record in positive_records)
+        negative_hits = sum(record_matches(record) for record in negative_records)
+        role_matches = {role: [record_matches(record) for record in candidates] for role, candidates in role_records.items()}
         coverage = spec["condition_coverage"]
-        conditions_ok = all(all(role_values.get(role, set()) and any(value in flat for value in role_values[role]) for role in item["positive_types"]) and all(not any(value in flat for value in role_values.get(role, set())) for role in item["negative_types"]) for item in coverage)
+        conditions_ok = all(all(role_matches.get(role) and any(role_matches[role]) for role in item["positive_types"]) and all(not any(role_matches.get(role, [])) for role in item["negative_types"]) for item in coverage)
         code_ok = all(all(value in flat for value in item["target_code_values"]) for item in spec["code_value_coverage"])
         aggregation = spec["aggregation_dedup_sort_time"]
         group_fields = aggregation["group_by_fields"]
@@ -373,8 +382,8 @@ class DatabaseCopyRegression:
         multiplier = len(rows) / baseline
         limit = spec["join_expansion_limit"]
         join_ok = multiplier <= limit["max_multiplier"] and len(rows) <= limit["max_result_rows"]
-        pos_ok = positive_hits >= spec["minimum_positive_count"] and negative_hits == 0 and conditions_ok and code_ok
-        return {"positive_negative_metrics": {"positive_hits": positive_hits, "negative_hits": negative_hits, "negative_excluded": negative_hits == 0, "condition_coverage_passed": conditions_ok, "code_value_coverage_passed": code_ok, "passed": pos_ok}, "density_group_metrics": {"row_count": len(rows), "distinct_count": distinct_count, "group_count": len(set(group_keys)), "target": count["target"], "tolerance_range": count["tolerance_range"], "distinct_required": aggregation.get("distinct_required", False), "passed": rows_ok and distinct_ok and groups_ok}, "join_expansion_metrics": {"row_count": len(rows), "baseline_grain_count": baseline, "actual_multiplier": multiplier, "max_multiplier": limit["max_multiplier"], "max_result_rows": limit["max_result_rows"], "passed": join_ok}}
+        pos_ok = positive_hits >= spec["minimum_positive_count"] and len(negative_records) >= spec["minimum_negative_count"] and negative_hits == 0 and conditions_ok and code_ok
+        return {"positive_negative_metrics": {"positive_hits": positive_hits, "minimum_positive_count": spec["minimum_positive_count"], "negative_fixture_count": len(negative_records), "minimum_negative_count": spec["minimum_negative_count"], "negative_hits": negative_hits, "negative_excluded": negative_hits == 0, "condition_coverage_passed": conditions_ok, "code_value_coverage_passed": code_ok, "passed": pos_ok}, "density_group_metrics": {"row_count": len(rows), "distinct_count": distinct_count, "group_count": len(set(group_keys)), "target": count["target"], "tolerance_range": count["tolerance_range"], "distinct_required": aggregation.get("distinct_required", False), "passed": rows_ok and distinct_ok and groups_ok}, "join_expansion_metrics": {"row_count": len(rows), "baseline_grain_count": baseline, "actual_multiplier": multiplier, "max_multiplier": limit["max_multiplier"], "max_result_rows": limit["max_result_rows"], "passed": join_ok}}
 
     @contextmanager
     def _sandbox(self, formal_database: Path) -> Iterator[sqlite3.Connection]:

@@ -229,19 +229,48 @@ class EventRegressionTests(unittest.TestCase):
 
     def tearDown(self): self.temp.cleanup()
 
+    def refresh_query_refs(self):
+        self.spec["envelope"]["content_hash"] = content_hash(self.spec["envelope"], self.spec["payload"])
+        self.review["payload"]["query_specification_package"] = artifact_ref(self.spec["envelope"])
+        self.review["payload"]["package_hash"] = sha256({key: value for key, value in self.review["payload"].items() if key != "package_hash"})
+        self.review["envelope"]["parent_artifact_refs"] = [artifact_ref(self.spec["envelope"])]
+        self.review["envelope"]["input_hashes"] = [self.spec["envelope"]["content_hash"]]
+        self.review["envelope"]["content_hash"] = content_hash(self.review["envelope"], self.review["payload"])
+
     def test_full_110_event_success_copy_only_and_independent_210_consumption(self):
         before = self.db.read_bytes(); package = self.worker.run_event(self.data, self.orm, self.snapshot, self.review, self.spec, self.db)
         self.assertEqual(package["payload"]["regression_status"], "passed"); self.assertEqual(before, self.db.read_bytes())
         self.worker._validate(package, "regression-passed-data-orm.schema.json", "event")
         self.assertEqual(stub_210.consume(package, ROOT)["decision"], "accepted")
 
-    def test_negative_group_distinct_join_and_attempt_three_sql_error_are_rejected_or_routed(self):
-        for mutator in (lambda: self.spec["payload"]["expected_row_group_count"].update({"target":2,"tolerance_range":{"low":0,"high":0}}), lambda: self.spec["payload"]["join_expansion_limit"].update({"max_multiplier":0.5})):
-            with self.subTest(mutator=mutator):
-                mutator(); self.spec["envelope"]["content_hash"] = content_hash(self.spec["envelope"], self.spec["payload"]); self.review["payload"]["query_specification_package"] = artifact_ref(self.spec["envelope"]); self.review["payload"]["package_hash"] = sha256({key:value for key,value in self.review["payload"].items() if key != "package_hash"}); self.review["envelope"]["parent_artifact_refs"]=[artifact_ref(self.spec["envelope"])]; self.review["envelope"]["input_hashes"]=[self.spec["envelope"]["content_hash"]]; self.review["envelope"]["content_hash"]=content_hash(self.review["envelope"],self.review["payload"])
-                feedback = self.worker.run_event(self.data,self.orm,self.snapshot,self.review,self.spec,self.db); self.assertEqual(feedback["payload"]["route_target"], "241")
+    def test_negative_fixture_count_shortfall_is_rejected(self):
+        self.spec["payload"]["minimum_negative_count"] = 99; self.refresh_query_refs()
+        feedback = self.worker.run_event(self.data, self.orm, self.snapshot, self.review, self.spec, self.db)
+        self.assertEqual(feedback["payload"]["route_target"], "241")
+
+    def test_negative_identity_leak_is_rejected(self):
+        connection = sqlite3.connect(self.db); connection.execute("INSERT INTO FIXTURE_ACCOUNT VALUES ('C2', 'CLOSED')"); connection.commit(); connection.close()
+        self.review["payload"]["candidate_content"]["sql_gold"] = "SELECT CUSTOMER_ID, STATUS FROM FIXTURE_ACCOUNT"
+        self.refresh_query_refs()
+        feedback = self.worker.run_event(self.data, self.orm, self.snapshot, self.review, self.spec, self.db)
+        self.assertEqual(feedback["payload"]["route_target"], "241")
+
+    def test_row_count_and_join_are_independent_gates(self):
+        self.spec["payload"]["expected_row_group_count"].update({"target": 2, "tolerance_range": {"low": 0, "high": 0}}); self.refresh_query_refs()
+        self.assertEqual(self.worker.run_event(self.data, self.orm, self.snapshot, self.review, self.spec, self.db)["payload"]["route_target"], "241")
+        self.tearDown(); self.setUp()
+        self.spec["payload"]["join_expansion_limit"].update({"max_multiplier": 0.5}); self.refresh_query_refs()
+        self.assertEqual(self.worker.run_event(self.data, self.orm, self.snapshot, self.review, self.spec, self.db)["payload"]["route_target"], "241")
+
+    def test_attempt_three_sql_error_routes_manual_and_210_rejects_unknown_operation_field(self):
         self.review["payload"]["candidate_content"]["sql_gold"]="SELECT missing FROM FIXTURE_ACCOUNT"; self.review["payload"]["package_hash"]=sha256({key:value for key,value in self.review["payload"].items() if key != "package_hash"}); self.review["envelope"]["content_hash"]=content_hash(self.review["envelope"],self.review["payload"])
         feedback=self.worker.run_event(self.data,self.orm,self.snapshot,self.review,self.spec,self.db,attempt_no=3); self.assertEqual(feedback["payload"]["failure_details"]["error_code"],"MANUAL_REVIEW_REQUIRED"); self.assertEqual(stub_210.consume(feedback,ROOT)["kind"],"feedback")
+
+        self.tearDown(); self.setUp(); package = self.worker.run_event(self.data, self.orm, self.snapshot, self.review, self.spec, self.db)
+        package["payload"]["sandbox_execution_report"]["operations"][0]["unexpected_nested_field"] = True
+        package["envelope"]["content_hash"] = content_hash(package["envelope"], package["payload"])
+        with self.assertRaisesRegex(ContractError, "210_STUB_SCHEMA_REJECTED"):
+            stub_210.consume(package, ROOT)
 
     def test_110_unknown_field_and_schema_drift_are_rejected(self):
         self.review["payload"]["unexpected"] = True; self.review["envelope"]["content_hash"] = content_hash(self.review["envelope"], self.review["payload"])
