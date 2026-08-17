@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from east_v5.agents.east_150 import MAPPED_SPEC_ITEMS, PendingPrecheckBuilder
-from east_v5.agents.east_180.reviewer import GLMReviewerAgent, REVIEWER_ID, ERROR_TYPES, consume_110_stub
+from east_v5.agents.east_180.reviewer import ERROR_ROUTE, GLMReviewerAgent, REVIEWER_ID, consume_110_stub
 from east_v5.artifacts import content_hash
 from east_v5.governance import ContractError
 
@@ -79,11 +79,34 @@ def _candidate(sql: str, suffix: str = "") -> dict[str, Any]:
     }
 
 
+class _StaticGLM:
+    """脱敏探针使用的 GLM 传输替身，只返回完整原始 JSON。"""
+
+    def __init__(self, report: dict[str, Any]):
+        self.raw = json.dumps(report, ensure_ascii=False)
+
+    def review(self, request: dict[str, Any]) -> str:
+        assert request["reviewer_id"] == REVIEWER_ID
+        return self.raw
+
+
+def _glm_report(error_types: list[str] | None = None) -> dict[str, Any]:
+    error_types = error_types or []
+    if not error_types:
+        return {"reviewer_id": REVIEWER_ID, "decision": "yes", "error_types": [], "error_details": [], "evidence_refs": [{"kind": "query_spec", "ref": "qspec-027", "description": "冻结查询规格已覆盖"}], "route_suggestion": "150"}
+    route = ERROR_ROUTE[error_types[0]]
+    return {
+        "reviewer_id": REVIEWER_ID, "decision": "no", "error_types": error_types,
+        "error_details": [{"error_type": error_type, "object": "candidate", "location": "payload", "reason": f"probe-{error_type}", "suggestion": "修复后重新预审"} for error_type in error_types],
+        "evidence_refs": [{"kind": "frozen_package", "ref": "package_hash", "description": "脱敏冻结输入"}],
+        "route_suggestion": route,
+    }
+
+
 def run_sanitized_probe(root: Path) -> dict[str, Any]:
     """Run the full desensitized probe: 150 → 160 → 180 → 110."""
     builder_150 = PendingPrecheckBuilder(root)
     agent_160 = PrecheckAgent(root)
-    agent_180 = GLMReviewerAgent(root)
     query = _spec()
 
     # Build a valid candidate and run through 160
@@ -95,7 +118,7 @@ def run_sanitized_probe(root: Path) -> dict[str, Any]:
     dual = agent_160.build_dual_review(valid, query, result_160, created_at=TIME)
 
     # 180 pass path
-    pass_result = agent_180.review(dual, decision="yes", route_suggestion="150", created_at=TIME)
+    pass_result = GLMReviewerAgent(root, _StaticGLM(_glm_report())).review(dual, created_at=TIME)
     consumed_pass = consume_110_stub(root, pass_result)
 
     # 180 fail paths: each of the six error types
@@ -109,13 +132,7 @@ def run_sanitized_probe(root: Path) -> dict[str, Any]:
         "question_fact_omission": ("QUESTION_FACT_OMISSION", "120"),
     }
     for label, (error_type, route) in error_type_cases.items():
-        fail_result = agent_180.review(
-            dual, decision="no",
-            error_types=[error_type],
-            error_details=[{"error_type": error_type, "description": f"probe-{label}"}],
-            route_suggestion=route,
-            created_at=TIME,
-        )
+        fail_result = GLMReviewerAgent(root, _StaticGLM(_glm_report([error_type]))).review(dual, created_at=TIME)
         consumed_fail = consume_110_stub(root, fail_result)
         fail_matrix[label] = {
             "decision": consumed_fail["decision"],
@@ -124,20 +141,11 @@ def run_sanitized_probe(root: Path) -> dict[str, Any]:
         }
 
     # Multiple non-conflicting errors
-    multi_result = agent_180.review(
-        dual, decision="no",
-        error_types=["QUESTION_SQL_ERROR", "BUSINESS_EVENT_ERROR"],
-        error_details=[
-            {"error_type": "QUESTION_SQL_ERROR", "description": "SQL语义偏差"},
-            {"error_type": "BUSINESS_EVENT_ERROR", "description": "事件遗漏"},
-        ],
-        route_suggestion="150",
-        created_at=TIME,
-    )
+    multi_result = GLMReviewerAgent(root, _StaticGLM(_glm_report(["QUESTION_SQL_ERROR", "BUSINESS_EVENT_ERROR"]))).review(dual, created_at=TIME)
     consumed_multi = consume_110_stub(root, multi_result)
 
     # Deterministic: same input → same output
-    pass_again = agent_180.review(dual, decision="yes", route_suggestion="150", created_at=TIME)
+    pass_again = GLMReviewerAgent(root, _StaticGLM(_glm_report())).review(dual, created_at=TIME)
     deterministic = pass_result["envelope"]["content_hash"] == pass_again["envelope"]["content_hash"]
 
     # Input hash drift detection
@@ -146,7 +154,7 @@ def run_sanitized_probe(root: Path) -> dict[str, Any]:
     drift["envelope"]["content_hash"] = content_hash(drift["envelope"], drift["payload"])
     drift_detected = False
     try:
-        agent_180.validate_input(drift)
+        GLMReviewerAgent(root).validate_input(drift)
     except ContractError as exc:
         drift_detected = "PACKAGE_HASH_DRIFT" in str(exc)
 
