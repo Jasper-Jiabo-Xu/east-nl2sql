@@ -263,7 +263,7 @@ def validate_foundation_regression_inputs(repo_root: Path, task_package: dict[st
         "record_counts": actual_counts,
         "baseline_distribution": baseline_distribution,
         "delta_distribution": delta_distribution,
-        "target_distribution": target_distribution,
+        "target_distribution": copy.deepcopy(target_distribution),
         "after_distribution": after_distribution,
         "distribution_tolerance": distribution_tolerance,
         "input_sha256": sha256({"task": task_ref, "closure": artifact_ref(structure_closure["envelope"]), "verified": artifact_ref(envelope), "snapshot": artifact_ref(snapshot_envelope)}),

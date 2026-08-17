@@ -128,6 +128,24 @@ class FoundationRegressionTests(unittest.TestCase):
         detached_audit["envelope"]["content_hash"] = content_hash(detached_audit["envelope"], detached_audit["payload"])
         with self.assertRaisesRegex(ContractError, "210_STUB_EXECUTION_FACT_REJECTED"):
             stub_210.consume(detached_audit, ROOT)
+        inflated_copy, inflated_formal = sqlite3.connect(":memory:"), sqlite3.connect(":memory:")
+        for connection in (inflated_copy, inflated_formal): connection.execute("CREATE TABLE FIXTURE_CUSTOMER (C001 TEXT PRIMARY KEY, C002 TEXT)")
+        inflated = regression.run_foundation_regression(ROOT, self.task, self.closure, self.verified, self.snapshot, inflated_copy, inflated_formal, set())
+        inflated["payload"]["distribution_validation"]["expected"]["FIXTURE_CUSTOMER"]["default"] = 100
+        inflated["payload"]["distribution_validation"]["allowed_tolerance"]["FIXTURE_CUSTOMER"]["default"] = 99
+        inflated["payload"]["report_hash"] = sha256({key: value for key, value in inflated["payload"].items() if key != "report_hash"})
+        inflated["envelope"]["content_hash"] = content_hash(inflated["envelope"], inflated["payload"])
+        with self.assertRaisesRegex(ContractError, "210_STUB_EXECUTION_FACT_REJECTED"):
+            stub_210.consume(inflated, ROOT)
+        ghost_copy, ghost_formal = sqlite3.connect(":memory:"), sqlite3.connect(":memory:")
+        for connection in (ghost_copy, ghost_formal): connection.execute("CREATE TABLE FIXTURE_CUSTOMER (C001 TEXT PRIMARY KEY, C002 TEXT)")
+        ghost = regression.run_foundation_regression(ROOT, self.task, self.closure, self.verified, self.snapshot, ghost_copy, ghost_formal, set())
+        for surface in ("baseline", "delta", "after", "allowed_tolerance"):
+            ghost["payload"]["distribution_validation"][surface]["FIXTURE_CUSTOMER"]["ghost"] = 0
+        ghost["payload"]["report_hash"] = sha256({key: value for key, value in ghost["payload"].items() if key != "report_hash"})
+        ghost["envelope"]["content_hash"] = content_hash(ghost["envelope"], ghost["payload"])
+        with self.assertRaisesRegex(ContractError, "210_STUB_EXECUTION_FACT_REJECTED"):
+            stub_210.consume(ghost, ROOT)
         bad_copy, bad_formal = sqlite3.connect(":memory:"), sqlite3.connect(":memory:")
         for connection in (bad_copy, bad_formal):
             connection.execute("CREATE TABLE FIXTURE_CUSTOMER (C001 TEXT PRIMARY KEY, C002 TEXT)")

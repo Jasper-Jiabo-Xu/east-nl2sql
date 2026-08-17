@@ -115,14 +115,24 @@ def consume(package: dict[str, Any], root: Path) -> dict[str, str]:
             ):
                 raise ContractError("210_STUB_EXECUTION_FACT_REJECTED")
             distribution = payload["distribution_validation"]
+            expected_tables = set(distribution["expected"])
+            target_tables = set(payload["target_count_validation"])
+            if not expected_tables or expected_tables != target_tables or expected_tables != set(distribution["baseline"]) or expected_tables != set(distribution["delta"]) or expected_tables != set(distribution["after"]) or expected_tables != set(distribution["allowed_tolerance"]):
+                raise ContractError("210_STUB_EXECUTION_FACT_REJECTED")
             for table, expected in distribution["expected"].items():
-                baseline, delta, after, tolerance = (distribution[key].get(table) for key in ("baseline", "delta", "after", "allowed_tolerance"))
-                if not baseline or not delta or not after or not tolerance or set(expected) != set(baseline) != set(delta) != set(after) != set(tolerance):
+                baseline, delta, after, tolerance = (distribution[key][table] for key in ("baseline", "delta", "after", "allowed_tolerance"))
+                labels = set(expected)
+                if not labels or labels != set(baseline) or labels != set(delta) or labels != set(after) or labels != set(tolerance):
                     raise ContractError("210_STUB_EXECUTION_FACT_REJECTED")
-                if any(after[label] != baseline[label] + delta[label] or abs(after[label] - expected[label]) > tolerance[label] for label in expected):
+                # Foundation-task-package has no tolerance source.  Only a
+                # future task-contract revision may relax this hard zero.
+                if any(tolerance[label] != 0 for label in labels):
+                    raise ContractError("210_STUB_EXECUTION_FACT_REJECTED")
+                if any(after[label] != baseline[label] + delta[label] or abs(after[label] - expected[label]) > tolerance[label] for label in labels):
                     raise ContractError("210_STUB_EXECUTION_FACT_REJECTED")
                 state = payload["database_state_delta"].get(table)
-                if not state or sum(after.values()) != state["after"]:
+                target = payload["target_count_validation"][table]
+                if not state or sum(expected.values()) != target["target"] or sum(after.values()) != target["actual"] or target["actual"] != state["after"]:
                     raise ContractError("210_STUB_EXECUTION_FACT_REJECTED")
         return {"decision": "accepted", "kind": "success"}
     if package["payload"]["route_target"] not in {"210", "manual", "241", "251"}:
