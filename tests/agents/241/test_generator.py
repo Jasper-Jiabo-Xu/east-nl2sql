@@ -87,13 +87,14 @@ class GeneratorTests(unittest.TestCase):
         self.foundation_closure = fixture("structure-closure-foundation.json")
         self.operation = fixture("operation-closure.json")
         self.profile = fixture("foundation-profile.json")
+        self.task = json.loads((ROOT / "fixtures" / "artifacts" / "foundation-task-package-valid.json").read_text(encoding="utf-8"))
         self.snapshot = fixture("database-read-snapshot.json")
 
     def _event(self, **kwargs):
         return self.builder.build_bound_data(self.event_closure, operation_closure=self.operation, snapshot=self.snapshot, created_at=FIXED_TIME, **kwargs)
 
     def _foundation(self, **kwargs):
-        return self.builder.build_bound_data(self.foundation_closure, foundation_profile=self.profile, created_at=FIXED_TIME, **kwargs)
+        return self.builder.build_bound_data(self.foundation_closure, foundation_task_package=self.task, foundation_profile=self.profile, created_at=FIXED_TIME, **kwargs)
 
     # ------------------------------------------------------------ success path
     def test_event_build_valid(self):

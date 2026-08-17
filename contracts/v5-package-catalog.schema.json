@@ -34,6 +34,19 @@
                 "package_schema": {"const": "contracts/packages/foundation-profile-package.schema.json"}
               }
             }
+          },
+          {
+            "if": {"properties": {"id": {"const": "foundation_task_package"}}},
+            "then": {
+              "required": ["modes", "payload_schema", "package_schema"],
+              "properties": {
+                "producer": {"const": "210"},
+                "consumers": {"const": ["220", "241", "260"]},
+                "modes": {"const": ["foundation"]},
+                "payload_schema": {"const": "v5.foundation-task-package/v1"},
+                "package_schema": {"const": "contracts/packages/foundation-task-package.schema.json"}
+              }
+            }
           }
         ]
       }

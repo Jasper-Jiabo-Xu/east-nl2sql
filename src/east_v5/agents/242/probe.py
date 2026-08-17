@@ -57,6 +57,7 @@ def _foundation_structure() -> dict[str, Any]:
         "schema_version": "v5.structure-closure/v1", "constraint_asset_version": "CA-V0.3.0",
         "graph_version": "TRG-V1.0.0", "tables": ["FIXTURE_CUSTOMER"],
         "fields": ["FIXTURE_CUSTOMER.C001", "FIXTURE_CUSTOMER.C002"], "references": [],
+        "foundation_task_ref": {"artifact_id": "eas32-foundation-task", "version": 1, "content_hash": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"},
     }
     return _wrap("structure_closure", "eas32-foundation-structure", payload, producer="220", mode="foundation", qa_id=None)
 
@@ -88,6 +89,7 @@ def _bound_data(
         "structure_closure_ref": artifact_ref(structure["envelope"]),
         "operation_closure_ref": artifact_ref(operation["envelope"]) if operation is not None else None,
         "database_snapshot_ref": None,
+        "foundation_task_ref": structure["payload"].get("foundation_task_ref"),
         "data_groups": data_groups,
     }
     return _wrap("bound_data", "bound-data-eas32", payload, producer="241", mode=mode, qa_id="QA-EAS32" if operation is not None else None, parents=parents)

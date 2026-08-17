@@ -22,9 +22,8 @@ REVIEWED_QUESTION_SQL_FIELDS = {
     "evidence_refs", "precheck_report_ref", "deepseek_review_ref",
     "glm_review_ref", "package_hash", "approved_at",
 }
-STRUCTURE_FIELDS = {
-    "schema_version", "constraint_asset_version", "graph_version", "tables", "fields", "references",
-}
+STRUCTURE_FIELDS = {"schema_version", "constraint_asset_version", "graph_version", "tables", "fields", "references"}
+FOUNDATION_STRUCTURE_FIELDS = STRUCTURE_FIELDS | {"foundation_task_ref"}
 FIELD_PATH = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)$")
 SQL_TABLE = re.compile(r"\b(?:from|join)\s+([A-Za-z_][A-Za-z0-9_]*)\b", re.IGNORECASE)
 
@@ -59,6 +58,43 @@ def _validate_foundation_input(package: dict[str, Any]) -> tuple[dict[str, Any],
     except ValidationError as exc:
         raise ContractError("FOUNDATION_PROFILE_SCHEMA_INVALID") from exc
     return envelope, payload
+
+
+def validate_foundation_task_package(package: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Validate the only complete Foundation intent accepted by runtime consumers."""
+    if set(package) != {"envelope", "payload"}:
+        _fail("UNKNOWN_FIELD:FOUNDATION_TASK_PACKAGE")
+    envelope, payload = package["envelope"], package["payload"]
+    validate_envelope(REPO_ROOT, envelope, payload)
+    try:
+        _package_schema_validator("foundation-task-package.schema.json").validate(package)
+    except ValidationError as exc:
+        raise ContractError("FOUNDATION_TASK_PACKAGE_SCHEMA_INVALID") from exc
+    if envelope["artifact_id"] != payload["foundation_task_id"]:
+        _fail("FOUNDATION_TASK_IDENTITY_MISMATCH")
+    if set(payload["target_counts"]) - set(payload["target_object_types"]):
+        _fail("FOUNDATION_TARGET_COUNT_SCOPE_MISMATCH")
+    if set(payload["target_table_field_scope"]) - set(payload["target_object_types"]):
+        _fail("FOUNDATION_TABLE_SCOPE_OBJECT_MISMATCH")
+    return envelope, payload
+
+
+def project_foundation_profile(task_package: dict[str, Any]) -> dict[str, Any]:
+    """Return the deterministic compatibility projection; never accept it as intent."""
+    envelope, task = validate_foundation_task_package(task_package)
+    profile = {
+        "schema_version": "v5.foundation-profile/v1", "foundation_task_ref": artifact_ref(envelope),
+        "base_database_version": task["target_database_version"],
+        "target_classes": task["target_object_types"], "target_counts": task["target_counts"],
+        "constraint_asset_version": task["constraint_asset_version"], "graph_version": task["graph_version"],
+    }
+    return profile
+
+
+def validate_foundation_profile_projection(profile_package: dict[str, Any], task_package: dict[str, Any]) -> None:
+    _, profile = _validate_foundation_input(profile_package)
+    if profile != project_foundation_profile(task_package):
+        _fail("FOUNDATION_PROFILE_PROJECTION_DRIFT")
 
 
 def _validate_event_input(package: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -178,7 +214,7 @@ def _validate_asset_result(result: dict[str, Any], source: dict[str, Any], reque
     return artifact_ref(envelope)
 
 
-def _payload_from_assets(seed_tables: set[str], seed_fields: set[str], assets: list[dict[str, Any]]) -> dict[str, Any]:
+def _payload_from_assets(seed_tables: set[str], seed_fields: set[str], assets: list[dict[str, Any]], foundation_task_ref: dict[str, Any] | None = None) -> dict[str, Any]:
     tables, fields, references = set(seed_tables), set(seed_fields), []
     for package in assets:
         for record in package["payload"]["matched_records"]:
@@ -204,6 +240,8 @@ def _payload_from_assets(seed_tables: set[str], seed_fields: set[str], assets: l
         "graph_version": "TRG-V1.0.0", "tables": sorted(tables), "fields": sorted(fields),
         "references": sorted(references, key=_hash),
     }
+    if foundation_task_ref is not None:
+        payload["foundation_task_ref"] = foundation_task_ref
     validate_closure(payload)
     return payload
 
@@ -237,22 +275,23 @@ def build_event_closure(event: dict[str, Any], first_result: dict[str, Any], sec
 
 
 def build_closure(profile_package: dict[str, Any], assets: list[dict[str, Any]]) -> dict[str, Any]:
-    """Build a registered Foundation closure after full input and 000 validation."""
-    source, profile = _validate_foundation_input(profile_package)
+    """Build Foundation closure from complete frozen intent, not the profile projection."""
+    source, task = validate_foundation_task_package(profile_package)
     source_ref = artifact_ref(source)
     asset_refs = []
     for package in assets:
         asset_refs.append(_validate_asset_result(package, source, package["payload"].get("request_id", ""), source_ref))
-    seeds = set(profile["target_classes"])
+    seeds = set(task["target_object_types"])
     if any(not isinstance(target, str) or not target for target in seeds):
-        _fail("FOUNDATION_PROFILE_INVALID")
+        _fail("FOUNDATION_TASK_INVALID")
     if any(target.startswith("EVENT_OWNED:") for target in seeds):
         _fail("FOUNDATION_EVENT_OWNED_REJECTED")
-    return _wrap_closure(source, [source_ref, *asset_refs], _payload_from_assets(seeds, set(), assets))
+    return _wrap_closure(source, [source_ref, *asset_refs], _payload_from_assets(seeds, set(), assets, source_ref))
 
 
 def validate_closure(value: dict[str, Any]) -> None:
-    if not isinstance(value, dict) or set(value) != STRUCTURE_FIELDS:
+    allowed = FOUNDATION_STRUCTURE_FIELDS if "foundation_task_ref" in value else STRUCTURE_FIELDS
+    if not isinstance(value, dict) or set(value) != allowed:
         _fail("UNKNOWN_FIELD:STRUCTURE_CLOSURE")
     try:
         schema = load_json(REPO_ROOT / "contracts" / "packages" / "structure-closure-package.schema.json")
@@ -270,6 +309,10 @@ def validate_structure_closure_package(package: dict[str, Any]) -> None:
         _fail("STRUCTURE_CLOSURE_ENVELOPE_INVALID")
     if envelope["mode"] not in {"event_data", "foundation"}:
         _fail("MODE_INVALID")
+    if envelope["mode"] == "foundation" and "foundation_task_ref" not in payload:
+        _fail("FOUNDATION_TASK_REF_REQUIRED")
+    if envelope["mode"] != "foundation" and "foundation_task_ref" in payload:
+        _fail("FOUNDATION_TASK_REF_FORBIDDEN")
     validate_closure(payload)
 
 

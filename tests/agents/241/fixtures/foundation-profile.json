@@ -10,8 +10,8 @@
     "supersedes_ref": null,
     "attempt_no": 1,
     "producer_id": "210",
-    "parent_artifact_refs": [],
-    "input_hashes": [],
+    "parent_artifact_refs": [{"artifact_id": "foundation-task-fixture", "version": 1, "content_hash": "c3053411a077f17df8995b5e835eaab5fbcc6eddb277554e69cf341752db3a45"}],
+    "input_hashes": ["c3053411a077f17df8995b5e835eaab5fbcc6eddb277554e69cf341752db3a45"],
     "status": "candidate",
     "mode": "foundation",
     "created_at": "2026-08-16T00:00:00+00:00",
@@ -20,6 +20,7 @@
   },
   "payload": {
     "schema_version": "v5.foundation-profile/v1",
+    "foundation_task_ref": {"artifact_id": "foundation-task-fixture", "version": 1, "content_hash": "c3053411a077f17df8995b5e835eaab5fbcc6eddb277554e69cf341752db3a45"},
     "base_database_version": "fixture-db-v1",
     "target_classes": ["FIXTURE_CUSTOMER"],
     "target_counts": {"FIXTURE_CUSTOMER": 1},

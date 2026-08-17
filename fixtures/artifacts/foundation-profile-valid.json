@@ -6,15 +6,17 @@
     "qa_id": null,
     "version": 1,
     "schema_version": "COMMON-ENVELOPE/v1",
-    "content_hash": "6c244393ffc1adc5c721e9612b70a697b457ee0e3f799f5c9493fd8432dd8325",
+    "content_hash": "cb75bbee8522ff83458250ec5c4d76702d43a8dbd0927832661d0eb34c28a8bd",
     "supersedes_ref": null,
     "attempt_no": 1,
     "producer_id": "210",
     "parent_artifact_refs": [
+      {"artifact_id": "foundation-task-fixture", "version": 1, "content_hash": "c3053411a077f17df8995b5e835eaab5fbcc6eddb277554e69cf341752db3a45"},
       {"artifact_id": "CA-V0.3.0", "version": 1, "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
       {"artifact_id": "TRG-V1.0.0", "version": 1, "content_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}
     ],
     "input_hashes": [
+      "c3053411a077f17df8995b5e835eaab5fbcc6eddb277554e69cf341752db3a45",
       "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
     ],
@@ -26,9 +28,10 @@
   },
   "payload": {
     "schema_version": "v5.foundation-profile/v1",
+    "foundation_task_ref": {"artifact_id": "foundation-task-fixture", "version": 1, "content_hash": "c3053411a077f17df8995b5e835eaab5fbcc6eddb277554e69cf341752db3a45"},
     "base_database_version": "fixture-db-v1",
     "target_classes": ["FIXTURE_CUSTOMER"],
-    "target_counts": {"FIXTURE_CUSTOMER": 2},
+    "target_counts": {"FIXTURE_CUSTOMER": 1},
     "constraint_asset_version": "CA-V0.3.0",
     "graph_version": "TRG-V1.0.0"
   }

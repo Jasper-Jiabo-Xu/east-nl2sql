@@ -39,6 +39,10 @@ def verify_architecture(repo_root: Path) -> dict[str, Any]:
         raise ContractError("PACKAGE_CONSUMER_DRIFT")
     if package_index["verified_bound_data"]["consumers"] != ["260"]:
         raise ContractError("VERIFIED_DATA_CONSUMER_DRIFT")
+    if package_index["foundation_profile"]["consumers"] != ["220", "241"]:
+        raise ContractError("FOUNDATION_PROFILE_CONSUMER_DRIFT")
+    if package_index["foundation_task_package"] != {"id": "foundation_task_package", "producer": "210", "consumers": ["220", "241", "260"], "modes": ["foundation"], "payload_schema": "v5.foundation-task-package/v1", "package_schema": "contracts/packages/foundation-task-package.schema.json"}:
+        raise ContractError("FOUNDATION_TASK_PACKAGE_DRIFT")
     if package_index["frozen_orm"]["consumers"] != ["260"]:
         raise ContractError("FROZEN_ORM_CONSUMER_DRIFT")
     return {"architecture": architecture, "packages": packages}

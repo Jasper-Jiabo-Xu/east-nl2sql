@@ -55,6 +55,7 @@
         "structure_closure_ref": {"$ref": "#/$defs/artifact_ref"},
         "operation_closure_ref": {"anyOf": [{"$ref": "#/$defs/artifact_ref"}, {"type": "null"}]},
         "database_snapshot_ref": {"anyOf": [{"$ref": "#/$defs/artifact_ref"}, {"type": "null"}]},
+        "foundation_task_ref": {"anyOf": [{"$ref": "#/$defs/artifact_ref"}, {"type": "null"}]},
         "data_groups": {"type": "array", "minItems": 1, "items": {"$ref": "https://east.example/contracts/packages/bound-data-package/v1#/$defs/data_group"}}
       }
     },
