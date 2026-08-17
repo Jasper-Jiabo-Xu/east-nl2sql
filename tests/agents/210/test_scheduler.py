@@ -118,6 +118,10 @@ class DataStageCoordinatorTests(unittest.TestCase):
             self.coordinator.route_feedback(feedback("DATA_VALUE_ERROR", "251"))
         with self.assertRaisesRegex(ContractError, "210_FOUNDATION_ROUTE_MODE_REJECTED"):
             self.coordinator.route_feedback(feedback("FOUNDATION_REQUIRED", "210", mode="foundation"))
+        with self.assertRaisesRegex(ContractError, "210_THIRD_ATTEMPT_NOT_MANUAL"):
+            self.coordinator.route_feedback(feedback("DATA_VALUE_ERROR", "241", attempt=3))
+        with self.assertRaisesRegex(ContractError, "210_MANUAL_REVIEW_ATTEMPT_INVALID"):
+            self.coordinator.route_feedback(feedback("MANUAL_REVIEW_REQUIRED", "manual", attempt=1))
 
     def test_real_event_regression_is_joined_and_consumed_by_010_stub(self) -> None:
         source = test_module("agents.260.test_regression")
@@ -140,14 +144,25 @@ class DataStageCoordinatorTests(unittest.TestCase):
         finally:
             case.tearDown()
 
-    def test_foundation_has_no_orm_branch_and_builds_real_release_candidate(self) -> None:
+    def test_foundation_is_ordered_220_then_real_241_then_260_and_010(self) -> None:
         foundation_tests = test_module("agents.260.test_regression")
         case = foundation_tests.FoundationRegressionTests()
         case.setUp()
         try:
             started = self.coordinator.begin_foundation(copy.deepcopy(case.task["payload"]), run_id="foundation-run", trace_id="foundation-trace", created_at=TIME, parents=case.task["envelope"]["parent_artifact_refs"])
-            self.assertEqual([item["target"] for item in started["dispatches"]], ["220", "241"])
+            self.assertEqual([item["target"] for item in started["dispatches"]], ["220"])
             self.assertNotIn("251", str(started))
+            data_dispatch = self.coordinator.dispatch_foundation_data(case.task, case.closure, case.profile)
+            self.assertEqual(data_dispatch["target"], "241")
+            self.assertEqual(data_dispatch["structure_closure_ref"], artifact_ref(case.closure["envelope"]))
+            self.assertEqual(foundation_tests.closure_mod.consume_downstream_stub("241", case.closure)["consumer"], "241")
+            bound = foundation_tests.generator_mod.BoundDataGenerator(ROOT).build_bound_data(
+                case.closure, foundation_task_package=case.task, foundation_profile=case.profile,
+                snapshot=case.snapshot, created_at=TIME,
+            )
+            self.assertEqual(bound["payload"]["structure_closure_ref"], data_dispatch["structure_closure_ref"])
+            regression_dispatch = self.coordinator.dispatch_foundation_regression(case.task, case.closure, case.verified)
+            self.assertEqual(regression_dispatch["target"], "260")
             import sqlite3
             copy_db, formal_db = sqlite3.connect(":memory:"), sqlite3.connect(":memory:")
             for connection in (copy_db, formal_db):
@@ -169,6 +184,65 @@ class DataStageCoordinatorTests(unittest.TestCase):
             regression = case.worker.run_event(case.data, case.orm, case.snapshot, case.review, case.spec, case.db)
             with self.assertRaisesRegex(ContractError, "210_RELEASE_TARGET_VERSION_REQUIRED"):
                 self.coordinator.build_event_release(case.review, regression, target_database_version="", target_question_dataset_version="fixture-question-v1")
+        finally:
+            case.tearDown()
+
+    def test_foundation_rejects_forged_closure_binding_context_attempt_and_target_drift(self) -> None:
+        foundation_tests = test_module("agents.260.test_regression")
+        case = foundation_tests.FoundationRegressionTests()
+        case.setUp()
+        try:
+            forged = copy.deepcopy(case.closure)
+            forged["envelope"]["content_hash"] = "f" * 64
+            with self.assertRaisesRegex(ContractError, "210_FOUNDATION_STRUCTURE_REJECTED"):
+                self.coordinator.dispatch_foundation_regression(case.task, forged, case.verified)
+
+            wrong_binding = copy.deepcopy(case.verified)
+            wrong_binding["payload"]["validated_data_package"]["structure_closure_ref"] = ref("other-closure", "f")
+            wrong_binding["envelope"]["content_hash"] = content_hash(wrong_binding["envelope"], wrong_binding["payload"])
+            with self.assertRaisesRegex(ContractError, "210_FOUNDATION_DATA_BINDING_DRIFT"):
+                self.coordinator.dispatch_foundation_regression(case.task, case.closure, wrong_binding)
+
+            late_attempt = copy.deepcopy(case.verified)
+            late_attempt["envelope"]["attempt_no"] = 2
+            late_attempt["envelope"]["content_hash"] = content_hash(late_attempt["envelope"], late_attempt["payload"])
+            with self.assertRaisesRegex(ContractError, "210_ATTEMPT_MISMATCH"):
+                self.coordinator.dispatch_foundation_regression(case.task, case.closure, late_attempt)
+
+            import sqlite3
+            copy_db, formal_db = sqlite3.connect(":memory:"), sqlite3.connect(":memory:")
+            for connection in (copy_db, formal_db):
+                connection.execute("CREATE TABLE FIXTURE_CUSTOMER (C001 TEXT PRIMARY KEY, C002 TEXT)")
+            report = foundation_tests.regression.run_foundation_regression(ROOT, case.task, case.closure, case.verified, case.snapshot, copy_db, formal_db, set())
+
+            for field, value in (("run_id", "other-run"), ("qa_id", "QA-other"), ("trace_id", "other-trace")):
+                with self.subTest(context_field=field):
+                    cross_context = copy.deepcopy(report)
+                    cross_context["envelope"][field] = value
+                    cross_context["envelope"]["content_hash"] = content_hash(cross_context["envelope"], cross_context["payload"])
+                    with self.assertRaisesRegex(ContractError, "210_CONTEXT_MISMATCH"):
+                        self.coordinator.build_foundation_release(case.task, cross_context)
+
+            late_report = copy.deepcopy(report)
+            late_report["envelope"]["attempt_no"] = 2
+            late_report["envelope"]["content_hash"] = content_hash(late_report["envelope"], late_report["payload"])
+            with self.assertRaisesRegex(ContractError, "210_ATTEMPT_MISMATCH"):
+                self.coordinator.build_foundation_release(case.task, late_report)
+
+            wrong_database = copy.deepcopy(report)
+            wrong_database["payload"]["target_database_version"] = "wrong-db-v9"
+            wrong_database["payload"]["report_hash"] = sha256({key: value for key, value in wrong_database["payload"].items() if key != "report_hash"})
+            wrong_database["envelope"]["content_hash"] = content_hash(wrong_database["envelope"], wrong_database["payload"])
+            with self.assertRaisesRegex(ContractError, "210_FOUNDATION_TARGET_DATABASE_VERSION_DRIFT"):
+                self.coordinator.build_foundation_release(case.task, wrong_database)
+
+            duplicate_data = copy.deepcopy(report)
+            duplicate_data["payload"]["validated_data_package_refs"].append(copy.deepcopy(duplicate_data["payload"]["validated_data_package_refs"][0]))
+            duplicate_data["payload"]["report_hash"] = sha256({key: value for key, value in duplicate_data["payload"].items() if key != "report_hash"})
+            duplicate_data["envelope"]["content_hash"] = content_hash(duplicate_data["envelope"], duplicate_data["payload"])
+            with self.assertRaisesRegex(ContractError, "210_FOUNDATION_REGRESSION_LINEAGE_REJECTED"):
+                self.coordinator.build_foundation_release(case.task, duplicate_data)
+            copy_db.close(); formal_db.close()
         finally:
             case.tearDown()
 

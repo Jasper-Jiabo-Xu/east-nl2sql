@@ -73,6 +73,13 @@ class DataStageCoordinator:
         if len(contexts) != 1:
             _fail("210_CONTEXT_MISMATCH")
 
+    @classmethod
+    def _same_context_and_attempt(cls, *packages: dict[str, Any]) -> None:
+        """All Foundation hand-offs are one immutable run/attempt lineage."""
+        cls._same_context(*packages)
+        if len({item["envelope"]["attempt_no"] for item in packages}) != 1:
+            _fail("210_ATTEMPT_MISMATCH")
+
     @staticmethod
     def _parent_with_hash(package: dict[str, Any], expected_hash: str, label: str) -> dict[str, Any]:
         matches = [item for item in package["envelope"]["parent_artifact_refs"] if item["content_hash"] == expected_hash]
@@ -184,22 +191,45 @@ class DataStageCoordinator:
         return {"target": "260", "kind": "database_copy_regression", "mode": "event_data", "verified_data_ref": artifact_ref(verified_data["envelope"]), "frozen_orm_ref": artifact_ref(frozen_orm["envelope"]), "approved_question_sql_ref": artifact_ref(approved["envelope"]), "query_spec_ref": approved["payload"]["query_specification_package"]}
 
     def begin_foundation(self, task_payload: dict[str, Any], *, run_id: str, trace_id: str, created_at: str, parents: list[dict[str, Any]]) -> dict[str, Any]:
-        """Start the Foundation-only chain; its task is never inferred from feedback."""
+        """Start Foundation with 220 only; 241 requires 220's closure first."""
         task = foundation.build_foundation_task_package(task_payload, run_id=run_id, trace_id=trace_id, created_at=created_at, parents=parents)
         profile = foundation.build_foundation_profile(task)
-        return {"foundation_task": task, "foundation_profile": profile, "dispatches": [{"target": "220", "kind": "structure_closure", "foundation_task_ref": artifact_ref(task["envelope"])}, {"target": "241", "kind": "bound_data", "foundation_task_ref": artifact_ref(task["envelope"])}]}
+        return {"foundation_task": task, "foundation_profile": profile, "dispatches": [{"target": "220", "kind": "structure_closure", "foundation_task_ref": artifact_ref(task["envelope"])}]}
+
+    def dispatch_foundation_data(self, task: dict[str, Any], structure: dict[str, Any], profile: dict[str, Any]) -> dict[str, Any]:
+        """After authenticated 220 output, dispatch the only Foundation 241 step."""
+        foundation._closure.validate_foundation_task_package(task)
+        foundation._closure.validate_foundation_profile_projection(profile, task)
+        try:
+            foundation._closure.validate_structure_closure_package(structure)
+        except ContractError as exc:
+            raise ContractError("210_FOUNDATION_STRUCTURE_REJECTED") from exc
+        if structure["envelope"]["mode"] != "foundation" or structure["payload"].get("foundation_task_ref") != artifact_ref(task["envelope"]):
+            _fail("210_FOUNDATION_TASK_REF_DRIFT")
+        self._same_context_and_attempt(task, structure, profile)
+        return {
+            "target": "241", "kind": "bound_data", "mode": "foundation",
+            "foundation_task_ref": artifact_ref(task["envelope"]),
+            "foundation_profile_ref": artifact_ref(profile["envelope"]),
+            "structure_closure_ref": artifact_ref(structure["envelope"]),
+        }
 
     def dispatch_foundation_regression(self, task: dict[str, Any], structure: dict[str, Any], verified_data: dict[str, Any]) -> dict[str, Any]:
         """Foundation explicitly excludes 230/251/252 and sends only its data chain to 260."""
         foundation._closure.validate_foundation_task_package(task)
-        if (structure.get("envelope", {}).get("artifact_type"), structure.get("envelope", {}).get("producer_id"), structure.get("envelope", {}).get("mode")) != ("structure_closure", "220", "foundation"):
-            _fail("210_FOUNDATION_STRUCTURE_REJECTED")
+        try:
+            foundation._closure.validate_structure_closure_package(structure)
+        except ContractError as exc:
+            raise ContractError("210_FOUNDATION_STRUCTURE_REJECTED") from exc
+        if structure["envelope"]["mode"] != "foundation" or structure["payload"].get("foundation_task_ref") != artifact_ref(task["envelope"]):
+            _fail("210_FOUNDATION_TASK_REF_DRIFT")
         self._validate(verified_data, "verified-bound-data-package.schema.json", "210_FOUNDATION_DATA_REJECTED")
         if (verified_data["envelope"]["producer_id"], verified_data["envelope"]["mode"], verified_data["envelope"]["status"]) != ("242", "foundation", "validated"):
             _fail("210_FOUNDATION_DATA_STATE_REJECTED")
-        self._same_context(task, structure, verified_data)
-        if structure["payload"].get("foundation_task_ref") != artifact_ref(task["envelope"]) or verified_data["payload"].get("validated_data_package", {}).get("foundation_task_ref") != artifact_ref(task["envelope"]):
-            _fail("210_FOUNDATION_TASK_REF_DRIFT")
+        self._same_context_and_attempt(task, structure, verified_data)
+        bound = verified_data["payload"]["validated_data_package"]
+        if bound.get("foundation_task_ref") != artifact_ref(task["envelope"]) or bound.get("structure_closure_ref") != artifact_ref(structure["envelope"]):
+            _fail("210_FOUNDATION_DATA_BINDING_DRIFT")
         return {"target": "260", "kind": "database_copy_regression", "mode": "foundation", "foundation_task_ref": artifact_ref(task["envelope"]), "structure_closure_ref": artifact_ref(structure["envelope"]), "verified_data_ref": artifact_ref(verified_data["envelope"])}
 
     def route_feedback(self, feedback: dict[str, Any]) -> dict[str, Any]:
@@ -209,6 +239,10 @@ class DataStageCoordinator:
         code, target = payload["failure_details"]["error_code"], payload["route_target"]
         if code not in _ROUTES or target != _ROUTES[code] or payload["retry_count"] != feedback["envelope"]["attempt_no"]:
             _fail("210_260_ROUTE_CONFLICT")
+        if feedback["envelope"]["attempt_no"] == 3 and (code, target) != ("MANUAL_REVIEW_REQUIRED", "manual"):
+            _fail("210_THIRD_ATTEMPT_NOT_MANUAL")
+        if code == "MANUAL_REVIEW_REQUIRED" and feedback["envelope"]["attempt_no"] != 3:
+            _fail("210_MANUAL_REVIEW_ATTEMPT_INVALID")
         if code == "FOUNDATION_REQUIRED" and payload["mode"] != "event_data":
             _fail("210_FOUNDATION_ROUTE_MODE_REJECTED")
         return {"target": target, "kind": "manual" if target == "manual" else "retry_or_rollback", "reason": code, "attempt_no": payload["retry_count"], "feedback_ref": artifact_ref(feedback["envelope"]), "requires_explicit_foundation_task": code == "FOUNDATION_REQUIRED"}
@@ -245,7 +279,13 @@ class DataStageCoordinator:
         foundation._closure.validate_foundation_task_package(task)
         self._validate(regression, "foundation-regression-report.schema.json", "210_FOUNDATION_REGRESSION_REJECTED")
         payload_260 = regression["payload"]
+        self._same_context_and_attempt(task, regression)
         if payload_260["foundation_task_ref"] != artifact_ref(task["envelope"]) or len(payload_260["validated_data_package_refs"]) != 1:
+            _fail("210_FOUNDATION_REGRESSION_LINEAGE_REJECTED")
+        if payload_260["target_database_version"] != task["payload"]["target_database_version"]:
+            _fail("210_FOUNDATION_TARGET_DATABASE_VERSION_DRIFT")
+        parents = regression["envelope"]["parent_artifact_refs"]
+        if artifact_ref(task["envelope"]) not in parents or payload_260["structure_closure_ref"] not in parents:
             _fail("210_FOUNDATION_REGRESSION_LINEAGE_REJECTED")
         batch_hash = sha256({key: payload_260["foundation_write_batch"][key] for key in ("transaction_groups", "sql_statements", "parameter_sets", "execution_order", "expected_write_counts")})
         report_hash = sha256({key: value for key, value in payload_260.items() if key != "report_hash"})
