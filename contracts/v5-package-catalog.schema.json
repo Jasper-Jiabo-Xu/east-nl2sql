@@ -23,6 +23,45 @@
         },
         "allOf": [
           {
+            "if": {"properties": {"id": {"const": "question_sql_dual_review_passed"}}},
+            "then": {
+              "required": ["modes", "payload_schema", "package_schema"],
+              "properties": {
+                "producer": {"const": "110"},
+                "consumers": {"const": ["210"]},
+                "modes": {"const": ["event"]},
+                "payload_schema": {"const": "v5.question-sql-dual-review-passed/v1"},
+                "package_schema": {"const": "contracts/packages/question-sql-dual-review-passed-package.schema.json"}
+              }
+            }
+          },
+          {
+            "if": {"properties": {"id": {"const": "reviewed_question_sql"}}},
+            "then": {
+              "required": ["modes", "payload_schema", "package_schema"],
+              "properties": {
+                "producer": {"const": "210"},
+                "consumers": {"const": ["150", "220"]},
+                "modes": {"const": ["event"]},
+                "payload_schema": {"const": "v5.reviewed-question-sql/v1"},
+                "package_schema": {"const": "contracts/packages/reviewed-question-sql-package.schema.json"}
+              }
+            }
+          },
+          {
+            "if": {"properties": {"id": {"const": "release_candidate"}}},
+            "then": {
+              "required": ["modes", "payload_schema", "package_schema"],
+              "properties": {
+                "producer": {"const": "210"},
+                "consumers": {"const": ["010"]},
+                "modes": {"const": ["event", "foundation"]},
+                "payload_schema": {"const": "v5.release-candidate/v1"},
+                "package_schema": {"const": "contracts/packages/release-candidate-package.schema.json"}
+              }
+            }
+          },
+          {
             "if": {"properties": {"id": {"const": "foundation_profile"}}},
             "then": {
               "required": ["modes", "payload_schema", "package_schema"],
