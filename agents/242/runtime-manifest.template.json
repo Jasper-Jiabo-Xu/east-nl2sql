@@ -1,0 +1,8 @@
+{
+  "schema_version": "v5.242-runtime-manifest/v1",
+  "issue_key": "EAS-32",
+  "artifact_ref": {"artifact_id": "<artifact_id>", "version": 1, "content_hash": "<sha256>"},
+  "runtime_locator": "<V5_RUNTIME_ROOT>/vnext/03_构建过程层/issues/EAS-32/<run_id>/<attempt>/verified-bound-data.json",
+  "contains_business_data": false,
+  "formal_database_write": false
+}
