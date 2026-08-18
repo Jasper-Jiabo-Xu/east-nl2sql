@@ -7,8 +7,9 @@
 - 241 与 251 消费同一操作闭包且槽位可一一绑定；
 - 260 仅在正式库 copy 上绑定/回归，正式库字节不变；
 - 210 仅在回归通过后组装 FORMAL-RELEASE-CANDIDATE，不正式提交；
-- DATA_VALUE_ERROR / ORM_PLAN_ERROR / SQL_EXECUTION_ERROR / FOUNDATION_REQUIRED /
-  MANUAL_REVIEW_REQUIRED 五类路由均有真实证据。
+- DATA_VALUE_ERROR→241 / ORM_PLAN_ERROR→251 / SQL_EXECUTION_ERROR→010 /
+  FOUNDATION_REQUIRED→210 / MANUAL_REVIEW_REQUIRED→manual 五类路由均以
+  「真实 260 产包 → 真实 210 消费并确定性路由」为整链证据。
 """
 from __future__ import annotations
 
@@ -207,43 +208,20 @@ class EventDualPathIntegrationTests(unittest.TestCase):
         self.assertIsNone(candidate["payload"]["foundation_regression_report_ref"])
         self.assertTrue(_test_module("contracts.test_stage10_package_contracts").consume_stub("release_candidate", "010", candidate))
 
-    def test_release_candidate_requires_passed_regression(self):
-        # 210 仅在回归通过后组装；失败反馈不得组装为发布候选。
-        feedback = self._feedback("DATA_VALUE_ERROR", "241", attempt=1)
-        with self.assertRaisesRegex(ContractError, "210_EVENT_REGRESSION_REJECTED"):
-            self.coordinator.build_event_release(self.approved, feedback, target_database_version="fixture-db-v1", target_question_dataset_version="fixture-question-v1")
-
-    def test_five_frozen_error_routes_and_conflicts_are_rejected(self):
-        for code, target in (("DATA_VALUE_ERROR", "241"), ("ORM_PLAN_ERROR", "251"), ("SQL_EXECUTION_ERROR", "010"), ("FOUNDATION_REQUIRED", "210"), ("MANUAL_REVIEW_REQUIRED", "manual")):
-            with self.subTest(code=code):
-                result = self.coordinator.route_feedback(self._feedback(code, target, attempt=3 if code == "MANUAL_REVIEW_REQUIRED" else 1))
-                self.assertEqual(result["target"], target)
-                self.assertEqual(result["requires_explicit_foundation_task"], code == "FOUNDATION_REQUIRED")
-        with self.assertRaisesRegex(ContractError, "210_260_ROUTE_CONFLICT"):
-            self.coordinator.route_feedback(self._feedback("DATA_VALUE_ERROR", "251"))
-        with self.assertRaisesRegex(ContractError, "210_THIRD_ATTEMPT_NOT_MANUAL"):
-            self.coordinator.route_feedback(self._feedback("DATA_VALUE_ERROR", "241", attempt=3))
-        with self.assertRaisesRegex(ContractError, "210_MANUAL_REVIEW_ATTEMPT_INVALID"):
-            self.coordinator.route_feedback(self._feedback("MANUAL_REVIEW_REQUIRED", "manual", attempt=1))
-
-    def test_realistic_260_failure_productions_route_correctly(self):
-        approved, reviewed, structure, operation, bound, verified, restricted, frozen = self._chain()
-
-        # DATA_VALUE_ERROR：反例数量不足 → 241。
+    def _failures(self, verified, frozen):
+        """用真实 260 产包覆盖五类失败路由，返回 {error_code: (feedback, target)}。"""
         spec = self._refresh_spec(lambda payload: payload.update({"minimum_negative_count": 99}))
         approved_dve = self._bind_approved(copy.deepcopy(self.approved), spec)
-        feedback = regression_mod.DatabaseCopyRegression(ROOT).run_event(verified, frozen, self.snapshot, approved_dve, spec, self._formal_file())
-        self.assertEqual((feedback["payload"]["failure_details"]["error_code"], feedback["payload"]["route_target"]), ("DATA_VALUE_ERROR", "241"))
+        worker = regression_mod.DatabaseCopyRegression(ROOT)
 
-        # SQL_EXECUTION_ERROR：Gold SQL 无法执行 → 210。
+        dve = worker.run_event(verified, frozen, self.snapshot, approved_dve, spec, self._formal_file())
+
         approved_sql = copy.deepcopy(self.approved)
         approved_sql["payload"]["candidate_content"]["sql_gold"] = "SELECT missing FROM FIXTURE_T001"
         approved_sql["payload"]["package_hash"] = sha256({key: value for key, value in approved_sql["payload"].items() if key != "package_hash"})
         approved_sql["envelope"]["content_hash"] = content_hash(approved_sql["envelope"], approved_sql["payload"])
-        feedback = regression_mod.DatabaseCopyRegression(ROOT).run_event(verified, frozen, self.snapshot, approved_sql, self.spec, self._formal_file())
-        self.assertEqual((feedback["payload"]["failure_details"]["error_code"], feedback["payload"]["route_target"]), ("SQL_EXECUTION_ERROR", "210"))
+        sql = worker.run_event(verified, frozen, self.snapshot, approved_sql, self.spec, self._formal_file())
 
-        # ORM_PLAN_ERROR：受限 ORM 执行异常 → 251。
         orm_broken = copy.deepcopy(frozen)
         plan = orm_broken["payload"]["validated_orm_plan"]
         plan["orm_source_code"] = "def apply(context, params):\n    raise RuntimeError('boom')\n"
@@ -251,20 +229,80 @@ class EventDualPathIntegrationTests(unittest.TestCase):
         plan["code_hash"] = code_hash
         orm_broken["payload"]["validated_hash"] = code_hash
         orm_broken["envelope"]["content_hash"] = content_hash(orm_broken["envelope"], orm_broken["payload"])
-        feedback = regression_mod.DatabaseCopyRegression(ROOT).run_event(verified, orm_broken, self.snapshot, approved, self.spec, self._formal_file())
-        self.assertEqual((feedback["payload"]["failure_details"]["error_code"], feedback["payload"]["route_target"]), ("ORM_PLAN_ERROR", "251"))
+        orm = worker.run_event(verified, orm_broken, self.snapshot, self.approved, self.spec, self._formal_file())
 
-        # FOUNDATION_REQUIRED：existing_record_ref 不在快照 → 210。
         data_foundation = copy.deepcopy(verified)
         data_foundation["payload"]["validated_data_package"]["data_groups"][0]["records"][0]["existing_record_refs"] = [{"table_id": "FIXTURE_CUSTOMER", "record_key": "not-in-snapshot"}]
         data_foundation["payload"]["validated_hash"] = sha256(data_foundation["payload"]["validated_data_package"])
         data_foundation["envelope"]["content_hash"] = content_hash(data_foundation["envelope"], data_foundation["payload"])
-        feedback = regression_mod.DatabaseCopyRegression(ROOT).run_event(data_foundation, frozen, self.snapshot, approved, self.spec, self._formal_file())
-        self.assertEqual((feedback["payload"]["failure_details"]["error_code"], feedback["payload"]["route_target"]), ("FOUNDATION_REQUIRED", "210"))
+        foundation = worker.run_event(data_foundation, frozen, self.snapshot, self.approved, self.spec, self._formal_file())
 
-        # MANUAL_REVIEW_REQUIRED：第三次尝试终止 → manual。
-        feedback = regression_mod.DatabaseCopyRegression(ROOT).run_event(verified, frozen, self.snapshot, approved_dve, spec, self._formal_file(), attempt_no=3)
-        self.assertEqual((feedback["payload"]["failure_details"]["error_code"], feedback["payload"]["route_target"]), ("MANUAL_REVIEW_REQUIRED", "manual"))
+        manual = worker.run_event(verified, frozen, self.snapshot, approved_dve, spec, self._formal_file(), attempt_no=3)
+
+        return {
+            "DATA_VALUE_ERROR": (dve, "241"),
+            "SQL_EXECUTION_ERROR": (sql, "010"),
+            "ORM_PLAN_ERROR": (orm, "251"),
+            "FOUNDATION_REQUIRED": (foundation, "210"),
+            "MANUAL_REVIEW_REQUIRED": (manual, "manual"),
+        }
+
+    def test_release_candidate_requires_passed_regression(self):
+        _, _, _, _, _, verified, _, frozen = self._chain()
+        feedback, _ = self._failures(verified, frozen)["DATA_VALUE_ERROR"]
+        with self.assertRaisesRegex(ContractError, "210_EVENT_REGRESSION_REJECTED"):
+            self.coordinator.build_event_release(self.approved, feedback, target_database_version="fixture-db-v1", target_question_dataset_version="fixture-question-v1")
+
+    def test_five_real_failure_routes_consumed_by_210_and_routed(self):
+        _, _, _, _, _, verified, _, frozen = self._chain()
+        for code, (feedback, target) in self._failures(verified, frozen).items():
+            with self.subTest(code=code):
+                self.assertEqual(feedback["payload"]["failure_details"]["error_code"], code)
+                self.assertEqual(feedback["payload"]["route_target"], target)
+                self.assertEqual(stub_210.consume(feedback, ROOT), {"decision": "accepted", "kind": "feedback"})
+                route = self.coordinator.route_feedback(feedback)
+                self.assertEqual(route["target"], target)
+                self.assertEqual(route["reason"], code)
+                self.assertEqual(route["requires_explicit_foundation_task"], code == "FOUNDATION_REQUIRED")
+                self.assertEqual(route["kind"], "manual" if target == "manual" else "retry_or_rollback")
+
+    def test_retry_escalation_manual_block_and_idempotent_replay(self):
+        _, _, _, _, _, verified, _, frozen = self._chain()
+        spec = self._refresh_spec(lambda payload: payload.update({"minimum_negative_count": 99}))
+        approved_dve = self._bind_approved(copy.deepcopy(self.approved), spec)
+        worker = regression_mod.DatabaseCopyRegression(ROOT)
+        attempt1 = worker.run_event(verified, frozen, self.snapshot, approved_dve, spec, self._formal_file(), attempt_no=1)
+        attempt2 = worker.run_event(verified, frozen, self.snapshot, approved_dve, spec, self._formal_file(), attempt_no=2)
+        attempt3 = worker.run_event(verified, frozen, self.snapshot, approved_dve, spec, self._formal_file(), attempt_no=3)
+        self.assertEqual((attempt1["payload"]["failure_details"]["error_code"], attempt1["payload"]["route_target"]), ("DATA_VALUE_ERROR", "241"))
+        self.assertEqual((attempt2["payload"]["failure_details"]["error_code"], attempt2["payload"]["route_target"]), ("DATA_VALUE_ERROR", "241"))
+        self.assertEqual((attempt3["payload"]["failure_details"]["error_code"], attempt3["payload"]["route_target"]), ("MANUAL_REVIEW_REQUIRED", "manual"))
+        self.assertEqual(self.coordinator.route_feedback(attempt1), self.coordinator.route_feedback(attempt1))
+        self.assertEqual(stub_210.consume(attempt1, ROOT), stub_210.consume(attempt1, ROOT))
+        self.assertEqual(self.coordinator.route_feedback(attempt3)["kind"], "manual")
+
+    def test_route_conflict_version_and_hash_drift_rejected(self):
+        _, _, _, _, _, verified, _, frozen = self._chain()
+        feedback, _ = self._failures(verified, frozen)["DATA_VALUE_ERROR"]
+        conflict = copy.deepcopy(feedback)
+        conflict["payload"]["route_target"] = "251"
+        conflict["envelope"]["content_hash"] = content_hash(conflict["envelope"], conflict["payload"])
+        with self.assertRaisesRegex(ContractError, "210_260_ROUTE_CONFLICT"):
+            self.coordinator.route_feedback(conflict)
+        retry_drift = copy.deepcopy(feedback)
+        retry_drift["payload"]["retry_count"] = 2
+        retry_drift["envelope"]["content_hash"] = content_hash(retry_drift["envelope"], retry_drift["payload"])
+        with self.assertRaisesRegex(ContractError, "210_260_ROUTE_CONFLICT"):
+            self.coordinator.route_feedback(retry_drift)
+        hash_drift = copy.deepcopy(feedback)
+        hash_drift["payload"]["actual_values"] = ["tampered"]
+        with self.assertRaisesRegex(ContractError, "210_STUB_SCHEMA_REJECTED"):
+            stub_210.consume(hash_drift, ROOT)
+        bad_target = copy.deepcopy(feedback)
+        bad_target["payload"]["route_target"] = "110"
+        bad_target["envelope"]["content_hash"] = content_hash(bad_target["envelope"], bad_target["payload"])
+        with self.assertRaisesRegex(ContractError, "210_STUB_ROUTE_REJECTED"):
+            stub_210.consume(bad_target, ROOT)
 
     def test_210_stub_rejects_schema_title_impersonation_and_hash_drift(self):
         _, _, _, _, _, verified, _, frozen = self._chain()
@@ -285,28 +323,6 @@ class EventDualPathIntegrationTests(unittest.TestCase):
         hash_drift["payload"]["executable_package_hash"] = "f" * 64
         with self.assertRaisesRegex(ContractError, "210_STUB_SCHEMA_REJECTED"):
             stub_210.consume(hash_drift, ROOT)
-
-    def _feedback(self, code: str, target: str, *, attempt: int = 1) -> dict:
-        payload = {
-            "schema_version": "v5.sql-regression-failed-feedback/v1", "mode": "event_data",
-            "input_data_refs": [{"artifact_id": "data", "version": 1, "content_hash": "a" * 64}],
-            "input_orm_ref": {"artifact_id": "orm", "version": 1, "content_hash": "b" * 64},
-            "sandbox_snapshot_id": "sanitized-copy",
-            "failure_details": {
-                "error_code": code, "error_stage": "regression_gate", "error_location": "sanitized",
-                "expected_values": [], "actual_values": [], "sql_error_detail": None, "regression_metrics": {},
-            },
-            "route_target": target, "retry_count": attempt,
-        }
-        envelope = {
-            "artifact_id": f"eas39-feedback-{code}", "artifact_type": "sql_regression_failed_feedback",
-            "run_id": "eas39-run", "qa_id": "QA-EAS39", "version": 1, "schema_version": "COMMON-ENVELOPE/v1",
-            "content_hash": "0" * 64, "supersedes_ref": None, "attempt_no": attempt, "producer_id": "260",
-            "parent_artifact_refs": [], "input_hashes": [], "status": "rejected", "mode": "event_data",
-            "created_at": TIME, "trace_id": "eas39-trace", "storage_locator": None,
-        }
-        envelope["content_hash"] = content_hash(envelope, payload)
-        return {"envelope": envelope, "payload": payload}
 
     def _formal_file(self) -> Path:
         directory = tempfile.TemporaryDirectory()

@@ -1,0 +1,49 @@
+{
+  "schema_version": "v5.integration-run-manifest/v1",
+  "issue_key": "EAS-39",
+  "title": "data 业务事件双通路联调（返工）",
+  "implementation_owner": "7d50dabd-40f8-40a1-807f-041eeed941a9",
+  "base_sha": "bec2b033598d715b76078acfed31d539e4413e2e",
+  "generated_at": "2026-08-18T00:00:00+00:00",
+  "route_semantics": {
+    "route_target_meaning": "next_business_destination",
+    "sql_execution_error_route_target": "010"
+  },
+  "topology": "210->220->230->{241->242,251->252}->260->210->010",
+  "catalog_change": {
+    "artifact_id": "sql_regression_failed_feedback",
+    "producer": "260",
+    "consumers": ["210"]
+  },
+  "routes": [
+    {"error_code": "DATA_VALUE_ERROR", "route_target": "241"},
+    {"error_code": "ORM_PLAN_ERROR", "route_target": "251"},
+    {"error_code": "SQL_EXECUTION_ERROR", "route_target": "010"},
+    {"error_code": "FOUNDATION_REQUIRED", "route_target": "210"},
+    {"error_code": "MANUAL_REVIEW_REQUIRED", "route_target": "manual"}
+  ],
+  "input_fixtures": {
+    "fixtures/integration/data/approved-question-sql.json": "6db27eb81024511fb8bf630e411346afbabf0b7ce248fb8f077bac135eb71394",
+    "fixtures/integration/data/query-specification.json": "542f46084ffcab020cb5ce3b623bffcfae86c30293442e4b3b49d445e9d5c61c",
+    "fixtures/integration/data/database-read-snapshot.json": "e5fb06eab5128595ba26ff59bc3b5c3d70b22ba3296c2285c96b1653ffa0764f",
+    "tests/integration/data/test_event_dual_path.py": "de1bc43042fd64f58bd03df6c21874c0840c2612d2b162b1fac381867c319f8b"
+  },
+  "output_artifacts": {
+    "reviewed_artifact_id": "210-reviewed-eas39-approved",
+    "structure_tables": ["FIXTURE_T001", "FIXTURE_T002"],
+    "operation_steps": ["op-001:READ", "op-002:CHECK", "op-003:INSERT", "op-004:INSERT"],
+    "binding_slots": ["slot_fixture_t001_f001", "slot_fixture_t001_f002", "slot_fixture_t002_pk001"],
+    "verified_validated_hash": "10ca99e73591314823201a527efd5b89e279bc2a77437d8e4c42081c4342ca8d",
+    "frozen_orm_validated_hash": "10ae73f3c47cc71c25d6d15d292493bf475fa3b1a863da235574928db9541779",
+    "regression_content_hash": "aa5af549f450c3a1bbd03e84db46da5eddabb4728abc3e48010602ca8bac9e98",
+    "release_candidate_id": "210-release-event-regression-bound-data-eas39-run:verified-bound-data",
+    "regression_status": "passed",
+    "formal_store_unchanged": true
+  },
+  "test_summary": {
+    "integration_tests": 6,
+    "integration_tests_passed": 6,
+    "full_suite": "scripts/v5.py check -> Ran 347 tests ... OK"
+  },
+  "conclusion": "passed"
+}

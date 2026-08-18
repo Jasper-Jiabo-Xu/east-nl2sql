@@ -617,7 +617,7 @@ class DatabaseCopyRegression:
         if formal_database.read_bytes() != before: _fail("FORMAL_DATABASE_MUTATED")
 
     def feedback(self, data: dict[str, Any], orm: dict[str, Any] | None, snapshot: dict[str, Any], error_code: str, stage: str, detail: str, attempt_no: int, parents: list[dict[str, Any]], *, mode: str = "event_data", sql_error_detail: dict[str, Any] | None = None) -> dict[str, Any]:
-        error_code, route = ("MANUAL_REVIEW_REQUIRED", "manual") if attempt_no == 3 else (error_code, {"DATA_VALUE_ERROR": "241", "ORM_PLAN_ERROR": "251", "FOUNDATION_REQUIRED": "210"}.get(error_code, "210"))
+        error_code, route = ("MANUAL_REVIEW_REQUIRED", "manual") if attempt_no == 3 else (error_code, {"DATA_VALUE_ERROR": "241", "ORM_PLAN_ERROR": "251", "FOUNDATION_REQUIRED": "210", "SQL_EXECUTION_ERROR": "010"}.get(error_code, "210"))
         payload = {"schema_version": "v5.sql-regression-failed-feedback/v1", "mode": mode, "input_data_refs": [artifact_ref(data["envelope"])], "input_orm_ref": artifact_ref(orm["envelope"]) if orm else None, "sandbox_snapshot_id": snapshot["payload"]["snapshot_id"], "failure_details": {"error_code": error_code, "error_stage": stage, "error_location": "database_copy", "expected_values": [], "actual_values": [detail], "sql_error_detail": sql_error_detail, "regression_metrics": {}}, "route_target": route, "retry_count": attempt_no}
         return self._wrap("sql_regression_failed_feedback", payload, data["envelope"], parents, attempt_no, "rejected", mode=mode)
 

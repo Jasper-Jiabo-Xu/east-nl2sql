@@ -440,7 +440,7 @@ class EventRegressionTests(unittest.TestCase):
         self.tearDown(); self.setUp()
         self.review["payload"]["candidate_content"]["sql_gold"] = "SELECT missing FROM FIXTURE_ACCOUNT"; self.refresh_query_refs()
         sql_feedback = self.worker.run_event(self.data, self.orm, self.snapshot, self.review, self.spec, self.db)
-        self.assertEqual((sql_feedback["payload"]["failure_details"]["error_code"], sql_feedback["payload"]["failure_details"]["error_stage"], sql_feedback["payload"]["route_target"]), ("SQL_EXECUTION_ERROR", "sql_execution", "210"))
+        self.assertEqual((sql_feedback["payload"]["failure_details"]["error_code"], sql_feedback["payload"]["failure_details"]["error_stage"], sql_feedback["payload"]["route_target"]), ("SQL_EXECUTION_ERROR", "sql_execution", "010"))
         self.assertEqual(sql_feedback["payload"]["failure_details"]["sql_error_detail"]["sql_text"], "SELECT missing FROM FIXTURE_ACCOUNT")
 
     def test_stub_rejects_hash_drift_and_foundation_required_is_reachable(self):
