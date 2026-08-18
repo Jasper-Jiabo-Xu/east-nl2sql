@@ -62,6 +62,19 @@
             }
           },
           {
+            "if": {"properties": {"id": {"const": "release_receipt"}}},
+            "then": {
+              "required": ["modes", "payload_schema", "package_schema"],
+              "properties": {
+                "producer": {"const": "010"},
+                "consumers": {"const": []},
+                "modes": {"const": ["event", "foundation"]},
+                "payload_schema": {"const": "v5.formal-release-receipt/v1"},
+                "package_schema": {"const": "contracts/packages/formal-release-receipt.schema.json"}
+              }
+            }
+          },
+          {
             "if": {"properties": {"id": {"const": "foundation_profile"}}},
             "then": {
               "required": ["modes", "payload_schema", "package_schema"],
