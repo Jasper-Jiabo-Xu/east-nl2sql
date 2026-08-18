@@ -29,7 +29,7 @@ CONTRACTS = {
     },
     "release_candidate": {
         "producer": "210", "consumers": ["010"], "modes": ["event", "foundation"],
-        "payload_schema": "v5.release-candidate/v1",
+        "payload_schema": "v5.release-candidate/v2",
         "package_schema": "contracts/packages/release-candidate-package.schema.json",
     },
 }
@@ -84,6 +84,7 @@ def dual_review_passed() -> dict[str, object]:
                 "select": "F1", "from_join": "T1", "where": "无", "aggregation": "无", "sort": "无", "business_meaning": "脱敏说明"},
             "business_event_candidates": [{"event_name": "开户", "objective": "开户", "objects": ["客户"], "state_changes": []}],
             "specification_mapping": [{"spec_item": "S1", "question_fragment": "问题", "sql_fragment": "F1"}],
+            "query_parameter_bindings": [],
         },
         "query_specification_package": ref("query-spec", "b"), "penalty_fact_package": ref("penalty", "c"),
         "observable_fact_package": ref("observable", "d"),
@@ -105,13 +106,13 @@ def reviewed_question_sql() -> dict[str, object]:
 def release_candidate(mode: str = "event_data", *, resume_qa_ref: dict[str, object] | None = None) -> dict[str, object]:
     event = mode == "event_data"
     payload = {
-        "release_candidate_id": f"release-{mode}", "release_mode": mode,
+        "schema_version": "v5.release-candidate/v2", "release_candidate_id": f"release-{mode}", "release_mode": mode,
         "approved_question_sql_ref": ref("approved-question", "3") if event else None,
         "event_regression_passed_ref": ref("event-regression", "4") if event else None,
         "foundation_regression_report_ref": None if event else ref("foundation-regression", "5"),
         "target_database_version": "fixture-db-v1", "target_question_dataset_version": "fixture-question-v1" if event else None,
         "idempotency_key": f"stage10-{mode}-1", "expected_write_summary": {"T1": {"insert": 1, "update": 0}},
-        "package_hashes": ({"question_sql": "6" * 64, "data": "7" * 64, "orm": "8" * 64, "regression": "9" * 64} if event else {"foundation_task": "a" * 64, "data": "b" * 64, "write_batch": "c" * 64, "regression_report": "d" * 64}),
+        "package_hashes": ({"question_sql": "6" * 64, "data": "7" * 64, "orm": "8" * 64, "query_binding": "9" * 64, "regression": "a" * 64} if event else {"foundation_task": "a" * 64, "data": "b" * 64, "write_batch": "c" * 64, "regression_report": "d" * 64}),
         "resume_qa_ref": resume_qa_ref,
     }
     return package("release_candidate", payload, producer="210", mode=mode)
@@ -167,6 +168,11 @@ class Stage10PackageContractTests(unittest.TestCase):
         leaked["envelope"]["content_hash"] = content_hash(leaked["envelope"], leaked["payload"])
         with self.assertRaisesRegex(ContractError, "RELEASE_CANDIDATE_STUB_REJECTED"):
             consume_stub("release_candidate", "010", leaked)
+        legacy = release_candidate()
+        legacy["payload"]["schema_version"] = "v5.release-candidate/v1"
+        legacy["envelope"]["content_hash"] = content_hash(legacy["envelope"], legacy["payload"])
+        with self.assertRaisesRegex(ContractError, "RELEASE_CANDIDATE_STUB_REJECTED"):
+            consume_stub("release_candidate", "010", legacy)
 
     def test_resume_qa_ref_is_a_strict_artifact_reference_or_null(self) -> None:
         expansion = release_candidate("foundation", resume_qa_ref=ref("resume-qa", "e"))

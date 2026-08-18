@@ -46,7 +46,7 @@
       "additionalProperties": false,
       "required": ["error_code", "error_stage", "error_location", "expected_values", "actual_values", "sql_error_detail", "regression_metrics"],
       "properties": {
-        "error_code": {"enum": ["DATA_VALUE_ERROR", "ORM_PLAN_ERROR", "SQL_EXECUTION_ERROR", "FOUNDATION_REQUIRED", "MANUAL_REVIEW_REQUIRED"]},
+        "error_code": {"enum": ["DATA_VALUE_ERROR", "ORM_PLAN_ERROR", "SQL_EXECUTION_ERROR", "QUERY_PARAMETER_BINDING_ERROR", "FOUNDATION_REQUIRED", "MANUAL_REVIEW_REQUIRED"]},
         "error_stage": {"enum": ["binding", "orm_execution", "sql_execution", "regression_gate", "foundation_integrity"]},
         "error_location": {"type": "string", "minLength": 1},
         "expected_values": {"type": "array", "items": {}},

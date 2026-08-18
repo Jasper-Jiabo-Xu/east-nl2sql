@@ -8,6 +8,7 @@ until both reviews have passed.
 from __future__ import annotations
 
 import copy
+import hashlib
 import importlib
 from pathlib import Path
 from typing import Any
@@ -16,6 +17,7 @@ from jsonschema import Draft202012Validator, FormatChecker, ValidationError
 from referencing import Registry, Resource
 
 from east_v5.artifacts import artifact_ref, content_hash, validate_envelope
+from .query_binding import resolve_declaration, validate_declarations
 from east_v5.governance import ContractError, load_json, sha256
 
 ERROR_ROUTE = {
@@ -144,7 +146,7 @@ class QuestionSqlStageScheduler:
             _fail("110_UNKNOWN_ERROR_TYPE")
         return next(route for route in ROUTE_PRIORITY if route in routes)
 
-    def collect_reviews(self, pending: dict[str, Any], reviews: list[dict[str, Any]], *, created_at: str | None = None) -> dict[str, Any]:
+    def collect_reviews(self, pending: dict[str, Any], reviews: list[dict[str, Any]], query_spec: dict[str, Any] | None = None, *, created_at: str | None = None) -> dict[str, Any]:
         """Join 170/180 deterministically; success alone can dispatch 210."""
         before = copy.deepcopy((pending, reviews))
         by_reviewer = self._validate_reviews(pending, reviews)
@@ -154,12 +156,48 @@ class QuestionSqlStageScheduler:
             result: dict[str, Any] = {"target": "manual", "kind": "blocked_manual", "reason": "REVIEW_ATTEMPT_EXHAUSTED", "attempt_no": source_env["attempt_no"], "reviewed_package_ref": artifact_ref(source_env)}
         elif all(report["decision"] == "yes" for report in reports):
             approved = self._assemble_passed(pending, by_reviewer, created_at=created_at)
-            result = {"target": "210", "kind": "question_sql_dual_review_passed", "approved_package": approved, "approved_package_ref": artifact_ref(approved["envelope"])}
+            if query_spec is None:
+                _fail("110_QUERY_PARAMETER_BINDING_SOURCE_REQUIRED")
+            binding = self.build_query_parameter_binding(approved, query_spec, created_at=created_at)
+            result = {"target": "210", "kind": "question_sql_dual_review_passed", "approved_package": approved, "approved_package_ref": artifact_ref(approved["envelope"]), "query_parameter_binding": binding, "query_parameter_binding_ref": artifact_ref(binding["envelope"])}
         else:
             result = {"target": self._route(reports), "kind": "repair", "reason": "SEMANTIC_REVIEW_REJECTED", "attempt_no": source_env["attempt_no"], "reviewed_package_ref": artifact_ref(source_env), "reports": [by_reviewer["170"], by_reviewer["180"]], "package_hash": source_body["package_hash"]}
         if before != (pending, reviews):
             _fail("110_INPUT_MUTATED")
         return result
+
+    def build_query_parameter_binding(self, approved: dict[str, Any], query_spec: dict[str, Any], *, created_at: str | None = None) -> dict[str, Any]:
+        """110's sole production point for immutable query parameter values."""
+        before = copy.deepcopy((approved, query_spec))
+        self._validate(approved, "question-sql-dual-review-passed-package.schema.json", "110_BINDING_APPROVED_REJECTED")
+        try:
+            validate_envelope(self.repo_root, query_spec["envelope"], query_spec["payload"])
+            Draft202012Validator(load_json(self.repo_root / "contracts/packages/query-specification-package.schema.json"), format_checker=FormatChecker()).validate(query_spec["payload"])
+        except (KeyError, ValidationError, ContractError) as exc:
+            raise ContractError("110_BINDING_QUERY_SPEC_REJECTED") from exc
+        if (query_spec["envelope"].get("artifact_type"), query_spec["envelope"].get("producer_id"), query_spec["envelope"].get("mode")) != ("query_specification_package", "140", "question_sql"):
+            _fail("110_BINDING_QUERY_SPEC_REJECTED")
+        approved_env, approved_payload = approved["envelope"], approved["payload"]
+        query_env = query_spec["envelope"]
+        if approved_payload["query_specification_package"] != artifact_ref(query_env):
+            _fail("110_BINDING_QUERY_SPEC_LINEAGE_REJECTED")
+        if (approved_env["run_id"], approved_env["qa_id"], approved_env["trace_id"], approved_env["attempt_no"]) != (query_env["run_id"], query_env["qa_id"], query_env["trace_id"], query_env["attempt_no"]):
+            _fail("110_BINDING_CONTEXT_DRIFT")
+        candidate = approved_payload["candidate_content"]
+        names = validate_declarations(candidate["sql_gold"], candidate["query_parameter_bindings"])
+        parameters = [resolve_declaration(item, query_spec) for item in candidate["query_parameter_bindings"]]
+        parameters.sort(key=lambda item: item["name"])
+        if tuple(item["name"] for item in parameters) != names:
+            _fail("110_BINDING_PARAMETER_SET_DRIFT")
+        approved_ref, query_ref = artifact_ref(approved_env), artifact_ref(query_env)
+        payload = {"schema_version": "v5.query-parameter-binding/v1", "source_question_sql_ref": approved_ref, "source_query_spec_ref": query_ref, "sql_hash": hashlib.sha256(candidate["sql_gold"].strip().encode("utf-8")).hexdigest(), "parameters": parameters, "binding_hash": "0" * 64}
+        payload["binding_hash"] = sha256({key: value for key, value in payload.items() if key != "binding_hash"})
+        envelope = {"artifact_id": f"110-query-parameter-binding-{approved_env['artifact_id']}", "artifact_type": "query_parameter_binding", "run_id": approved_env["run_id"], "qa_id": approved_env["qa_id"], "version": approved_env["version"], "schema_version": "COMMON-ENVELOPE/v1", "content_hash": "0" * 64, "supersedes_ref": None, "attempt_no": approved_env["attempt_no"], "producer_id": "110", "parent_artifact_refs": [approved_ref, query_ref], "input_hashes": [approved_ref["content_hash"], query_ref["content_hash"]], "status": "validated", "mode": "event_data", "created_at": created_at or approved_env["created_at"], "trace_id": approved_env["trace_id"], "storage_locator": None}
+        envelope["content_hash"] = content_hash(envelope, payload)
+        package = {"envelope": envelope, "payload": payload}
+        self._validate(package, "query-parameter-binding-package.schema.json", "110_BINDING_OUTPUT_REJECTED")
+        if before != (approved, query_spec): _fail("110_INPUT_MUTATED")
+        return package
 
     def _assemble_passed(self, pending: dict[str, Any], reviews: dict[str, dict[str, Any]], *, created_at: str | None) -> dict[str, Any]:
         source_env, source = pending["envelope"], pending["payload"]

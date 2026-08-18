@@ -44,6 +44,7 @@ generator_mod = importlib.import_module("east_v5.agents.241.generator")
 validator_mod = importlib.import_module("east_v5.agents.242.validator")
 fixture_mod = importlib.import_module("east_v5.agents.242.sanitized_fixture")
 regression = importlib.import_module("east_v5.agents.260.regression")
+question_scheduler = importlib.import_module("east_v5.agents.110.scheduler")
 compiler = importlib.import_module("east_v5.foundation.compiler")
 architecture = importlib.import_module("east_v5.architecture")
 
@@ -178,9 +179,9 @@ class FoundationE2ETests(unittest.TestCase):
         self.assertEqual(expansion["regression"]["payload"]["target_count_validation"]["FIXTURE_CUSTOMER"]["target"], 2)
 
     def test_event_missing_object_state_routes_to_explicit_foundation_task(self) -> None:
-        data, orm, snapshot, review, context, spec, formal_db = self._event_context_with_missing_state()
+        data, orm, snapshot, review, context, binding, spec, formal_db = self._event_context_with_missing_state()
         worker = regression.DatabaseCopyRegression(ROOT)
-        feedback = worker.run_event(data, orm, snapshot, review, context, spec, formal_db)
+        feedback = worker.run_event(data, orm, snapshot, review, context, binding, spec, formal_db)
         self.assertEqual(feedback["payload"]["failure_details"]["error_code"], "FOUNDATION_REQUIRED")
         self.assertEqual(feedback["payload"]["route_target"], "210")
 
@@ -352,7 +353,7 @@ class FoundationE2ETests(unittest.TestCase):
 
     # ------------------------------------------------------------------ helpers
 
-    def _event_context_with_missing_state(self) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any], Path]:
+    def _event_context_with_missing_state(self) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any], Path]:
         data = copy.deepcopy(importlib.import_module("east_v5.agents.242.probe").run_sanitized_probe(ROOT)["transport"])
         data["envelope"].update({"mode": "event_data", "qa_id": "QA-260"})
         record = data["payload"]["validated_data_package"]["data_groups"][0]["records"][0]
@@ -372,7 +373,7 @@ class FoundationE2ETests(unittest.TestCase):
             producer_id="140", mode="question_sql", status="validated", qa_id="QA-260",
         )
 
-        review_payload = {"schema_version": "v5.question-sql-dual-review-passed/v1", "candidate_ref": {"artifact_id": "candidate", "version": 1, "content_hash": "3" * 64}, "candidate_content": {"clear_question": "open accounts", "sql_gold": "SELECT CUSTOMER_ID, STATUS FROM FIXTURE_ACCOUNT WHERE STATUS = 'OPEN'", "sql_explanation": {"select": "s", "from_join": "f", "where": "w", "aggregation": "", "sort": "", "business_meaning": "b"}, "business_event_candidates": [{"event_name": "open", "objective": "o", "objects": ["account"], "state_changes": []}], "specification_mapping": [{"spec_item": "open", "question_fragment": "open", "sql_fragment": "STATUS"}]}, "query_specification_package": artifact_ref(spec["envelope"]), "penalty_fact_package": {"artifact_id": "penalty", "version": 1, "content_hash": "1" * 64}, "observable_fact_package": {"artifact_id": "observable", "version": 1, "content_hash": "2" * 64}, "constraint_evidence_summary": {"tables": ["FIXTURE_ACCOUNT"], "fields": ["STATUS"], "data_elements": [], "relationships": [], "source_refs": ["CA-V0.3.0"]}, "precheck_report": {"decision": "pass", "report_hash": "4" * 64}, "deepseek_review": {"decision": "pass", "issue_level": "none", "reason": "ok", "review_hash": "5" * 64}, "glm_review": {"decision": "pass", "issue_level": "none", "reason": "ok", "review_hash": "6" * 64}, "adjudication": {"decision": "pass", "report_hash": "7" * 64}, "review_round": 1, "package_hash": ""}
+        review_payload = {"schema_version": "v5.question-sql-dual-review-passed/v1", "candidate_ref": {"artifact_id": "candidate", "version": 1, "content_hash": "3" * 64}, "candidate_content": {"clear_question": "open accounts", "sql_gold": "SELECT CUSTOMER_ID, STATUS FROM FIXTURE_ACCOUNT WHERE STATUS = 'OPEN'", "sql_explanation": {"select": "s", "from_join": "f", "where": "w", "aggregation": "", "sort": "", "business_meaning": "b"}, "business_event_candidates": [{"event_name": "open", "objective": "o", "objects": ["account"], "state_changes": []}], "specification_mapping": [{"spec_item": "open", "question_fragment": "open", "sql_fragment": "STATUS"}], "query_parameter_bindings": []}, "query_specification_package": artifact_ref(spec["envelope"]), "penalty_fact_package": {"artifact_id": "penalty", "version": 1, "content_hash": "1" * 64}, "observable_fact_package": {"artifact_id": "observable", "version": 1, "content_hash": "2" * 64}, "constraint_evidence_summary": {"tables": ["FIXTURE_ACCOUNT"], "fields": ["STATUS"], "data_elements": [], "relationships": [], "source_refs": ["CA-V0.3.0"]}, "precheck_report": {"decision": "pass", "report_hash": "4" * 64}, "deepseek_review": {"decision": "pass", "issue_level": "none", "reason": "ok", "review_hash": "5" * 64}, "glm_review": {"decision": "pass", "issue_level": "none", "reason": "ok", "review_hash": "6" * 64}, "adjudication": {"decision": "pass", "report_hash": "7" * 64}, "review_round": 1, "package_hash": ""}
         review_payload["package_hash"] = sha256({key: value for key, value in review_payload.items() if key != "package_hash"})
         review = _wrap("question_sql_dual_review_passed", "review-260", review_payload, producer_id="110", mode="event_data", status="validated", qa_id="QA-260", parents=[artifact_ref(spec["envelope"])])
         context_keys = ("run_id", "qa_id", "trace_id", "attempt_no", "created_at")
@@ -390,7 +391,8 @@ class FoundationE2ETests(unittest.TestCase):
         review["envelope"]["parent_artifact_refs"] = reports
         review["envelope"]["input_hashes"] = [item["content_hash"] for item in review["envelope"]["parent_artifact_refs"]]
         review["envelope"]["content_hash"] = content_hash(review["envelope"], review["payload"])
-        started = coordinator_mod.DataStageCoordinator(ROOT).begin_event(review, spec)
+        binding = question_scheduler.QuestionSqlStageScheduler(ROOT).build_query_parameter_binding(review, spec, created_at=TIME)
+        started = coordinator_mod.DataStageCoordinator(ROOT).begin_event(review, spec, binding)
         reviewed, context = started["reviewed_question_sql"], started["event_query_context"]
 
         tmp = tempfile.TemporaryDirectory()
@@ -400,7 +402,7 @@ class FoundationE2ETests(unittest.TestCase):
         connection.execute("CREATE TABLE FIXTURE_ACCOUNT (CUSTOMER_ID TEXT, STATUS TEXT)")
         connection.commit()
         connection.close()
-        return data, orm, snapshot, reviewed, context, spec, formal_db
+        return data, orm, snapshot, reviewed, context, binding, spec, formal_db
 
 
 if __name__ == "__main__":

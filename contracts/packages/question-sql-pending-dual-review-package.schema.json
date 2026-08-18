@@ -41,10 +41,11 @@
     "candidate_content": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["clear_question", "sql_gold", "sql_explanation", "business_event_candidates", "specification_mapping"],
+      "required": ["clear_question", "sql_gold", "query_parameter_bindings", "sql_explanation", "business_event_candidates", "specification_mapping"],
       "properties": {
         "clear_question": { "type": "string", "minLength": 1 },
         "sql_gold": { "type": "string", "minLength": 1 },
+        "query_parameter_bindings": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["name", "source_pointer"], "properties": {"name": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"}, "source_pointer": {"type": "string", "pattern": "^/(query_entry/entry_conditions|filters_and_evidence)/(0|[1-9][0-9]*)/value$"}}}},
         "sql_explanation": {
           "type": "object",
           "additionalProperties": false,

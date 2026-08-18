@@ -38,7 +38,8 @@ def event_source(*, run_id: str = "220-run") -> tuple[dict, dict, dict]:
     spec["payload"].update({"query_spec_id": "qspec-220", "sql_schema_scope": {"allowed_tables": [{"table_id": "FIXTURE_T001", "allowed_fields": ["F001"]}, {"table_id": "FIXTURE_T002", "allowed_fields": ["PK001"]}]}, "return_fields": [{"field_id": "F001", "display_name": "left", "source_table": "FIXTURE_T001"}, {"field_id": "PK001", "display_name": "right", "source_table": "FIXTURE_T002"}]})
     spec["envelope"]["content_hash"] = content_hash(spec["envelope"], spec["payload"])
     helper.bind_query_spec(approved, spec)
-    started = coordinator_mod.DataStageCoordinator(ROOT).begin_event(approved, spec)
+    binding = importlib.import_module("east_v5.agents.110.scheduler").QuestionSqlStageScheduler(ROOT).build_query_parameter_binding(approved, spec, created_at="2026-08-18T00:00:00+00:00")
+    started = coordinator_mod.DataStageCoordinator(ROOT).begin_event(approved, spec, binding)
     return started["reviewed_question_sql"], started["event_query_context"], spec
 
 

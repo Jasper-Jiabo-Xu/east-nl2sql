@@ -13,12 +13,15 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from importlib import import_module
 
 from jsonschema import Draft202012Validator, ValidationError
 from referencing import Registry, Resource
 
 from east_v5.agents.east_150 import MAPPED_SPEC_ITEMS
 from east_v5.artifacts import artifact_ref, content_hash, validate_envelope
+_query_binding = import_module("east_v5.agents.110.query_binding")
+validate_declarations, resolve_declaration = _query_binding.validate_declarations, _query_binding.resolve_declaration
 from east_v5.governance import ContractError, load_json, sha256
 
 SCHEMAS = {
@@ -31,7 +34,7 @@ SCHEMAS = {
 # Canonical rule order drives the deterministic precheck_report.
 REPORT_RULE_ORDER = (
     "PC-SQL-001", "PC-SQL-002", "PC-SQL-003", "PC-SQL-004", "PC-SQL-005",
-    "PC-SQL-006", "PC-SQL-007", "PC-SQL-008", "PC-REF-001", "PC-REF-002",
+    "PC-SQL-006", "PC-SQL-007", "PC-SQL-008", "PC-PARAM-001", "PC-PARAM-002", "PC-REF-001", "PC-REF-002",
     "PC-REF-003", "PC-MAP-001", "PC-MAP-002", "PC-EVI-001", "PC-FMT-001",
     "PC-LIN-001",
 )
@@ -44,6 +47,8 @@ RULE_LABELS = {
     "PC-SQL-006": "字段限定无歧义",
     "PC-SQL-007": "引号标识符在范围内",
     "PC-SQL-008": "SQL 可由 SQLite 解析",
+    "PC-PARAM-001": "仅声明 SQLite :name 参数且集合精确一致",
+    "PC-PARAM-002": "参数来源为唯一冻结 query-spec 指针",
     "PC-REF-001": "query_spec_ref 为合法引用",
     "PC-REF-002": "penalty_fact_package_ref 为合法引用",
     "PC-REF-003": "observable_fact_package_ref 为合法引用",
@@ -168,6 +173,16 @@ def _collect_failures(package: dict[str, Any], query_spec: dict[str, Any]) -> li
     failures: list[tuple[str, str, Any, Any, str]] = []
 
     failures.extend(_sql_violations(payload.get("sql_gold"), spec.get("sql_schema_scope")))
+    try:
+        validate_declarations(payload.get("sql_gold"), payload.get("query_parameter_bindings"))
+    except ContractError as exc:
+        failures.append(("PC-PARAM-001", "query_parameter_bindings", "SQL :name 参数的精确唯一声明", payload.get("query_parameter_bindings"), str(exc)))
+    else:
+        for declaration in payload["query_parameter_bindings"]:
+            try:
+                resolve_declaration(declaration, query_spec)
+            except ContractError as exc:
+                failures.append(("PC-PARAM-002", declaration["source_pointer"], "query-spec 内可验证的唯一参数来源", declaration, str(exc)))
 
     for field, rule_id in (("query_spec_ref", "PC-REF-001"), ("penalty_fact_package_ref", "PC-REF-002"), ("observable_fact_package_ref", "PC-REF-003")):
         ref = payload.get(field)
@@ -331,6 +346,7 @@ class PrecheckAgent:
         candidate_content = {
             "clear_question": payload["clear_question"],
             "sql_gold": payload["sql_gold"],
+            "query_parameter_bindings": payload["query_parameter_bindings"],
             "sql_explanation": payload["sql_explanation"],
             "business_event_candidates": payload["business_event_candidates"],
             "specification_mapping": payload["specification_mapping"],

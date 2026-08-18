@@ -65,6 +65,7 @@ def dual_review() -> dict[str, object]:
         "glm_review": {"decision": "pass", "issue_level": "none", "reason": "通过", "review_hash": glm["content_hash"]},
         "adjudication": {"decision": "pass", "report_hash": "9" * 64}, "review_round": 1, "package_hash": "",
     }
+    payload["candidate_content"]["query_parameter_bindings"] = []
     payload["package_hash"] = sha256({key: value for key, value in payload.items() if key != "package_hash"})
     return wrap("question_sql_dual_review_passed", "110", payload, parents=[precheck, deepseek, glm])
 
@@ -92,6 +93,11 @@ def bind_query_spec(approved: dict[str, object], spec: dict[str, object]) -> Non
     approved["payload"]["query_specification_package"] = artifact_ref(spec["envelope"])
     approved["payload"]["package_hash"] = sha256({key: value for key, value in approved["payload"].items() if key != "package_hash"})
     approved["envelope"]["content_hash"] = content_hash(approved["envelope"], approved["payload"])
+
+
+def query_binding(approved: dict[str, object], spec: dict[str, object]) -> dict[str, object]:
+    scheduler = importlib.import_module("east_v5.agents.110.scheduler").QuestionSqlStageScheduler(ROOT)
+    return scheduler.build_query_parameter_binding(approved, spec, created_at=TIME)
 
 
 def feedback(code: str, target: str, *, attempt: int = 1, mode: str = "event_data") -> dict[str, object]:
@@ -133,7 +139,7 @@ class DataStageCoordinatorTests(unittest.TestCase):
         # A bare ref cannot substitute for the immutable 140 package.  Tests
         # requesting one keep this real local 140 package and bind it below.
         bind_query_spec(approved, spec)
-        started = self.coordinator.begin_event(approved, spec)
+        started = self.coordinator.begin_event(approved, spec, query_binding(approved, spec))
         reviewed = started["reviewed_question_sql"]
         context = started["event_query_context"]
         closure_tests = test_module("agents.220.test_closure")
@@ -180,7 +186,7 @@ class DataStageCoordinatorTests(unittest.TestCase):
         approved = dual_review()
         spec = query_spec_for(approved); bind_query_spec(approved, spec)
         before = copy.deepcopy(approved)
-        result = self.coordinator.begin_event(approved, spec)
+        result = self.coordinator.begin_event(approved, spec, query_binding(approved, spec))
         reviewed = result["reviewed_question_sql"]
         self.assertEqual(approved, before)
         self.assertEqual((reviewed["envelope"]["artifact_type"], reviewed["envelope"]["producer_id"]), ("reviewed_question_sql", "210"))
@@ -190,7 +196,7 @@ class DataStageCoordinatorTests(unittest.TestCase):
         self.assertEqual(result["dispatches"][0]["event_query_context_ref"], artifact_ref(result["event_query_context"]["envelope"]))
         context = result["event_query_context"]
         self.assertNotIn(artifact_ref(spec["envelope"]), approved["envelope"]["parent_artifact_refs"])
-        self.assertEqual(context["envelope"]["parent_artifact_refs"], [artifact_ref(spec["envelope"]), artifact_ref(approved["envelope"]), artifact_ref(reviewed["envelope"])])
+        self.assertEqual(context["envelope"]["parent_artifact_refs"], [artifact_ref(spec["envelope"]), artifact_ref(approved["envelope"]), context["payload"]["query_parameter_binding_ref"], artifact_ref(reviewed["envelope"])])
         self.assertEqual(context["envelope"]["input_hashes"], [item["content_hash"] for item in context["envelope"]["parent_artifact_refs"]])
 
     def test_event_start_rejects_missing_review_lineage_and_hash_drift(self) -> None:
@@ -200,13 +206,13 @@ class DataStageCoordinatorTests(unittest.TestCase):
         missing["envelope"]["input_hashes"] = [item["content_hash"] for item in missing["envelope"]["parent_artifact_refs"]]
         missing["envelope"]["content_hash"] = content_hash(missing["envelope"], missing["payload"])
         with self.assertRaisesRegex(ContractError, "210_SOURCE_LINEAGE_MISSING:glm"):
-            self.coordinator.begin_event(missing, spec)
+            self.coordinator.begin_event(missing, spec, query_binding(missing, spec))
         drift = dual_review()
         spec = query_spec_for(drift); bind_query_spec(drift, spec)
         drift["payload"]["package_hash"] = "0" * 64
         drift["envelope"]["content_hash"] = content_hash(drift["envelope"], drift["payload"])
         with self.assertRaisesRegex(ContractError, "210_DUAL_REVIEW_HASH_DRIFT"):
-            self.coordinator.begin_event(drift, spec)
+            self.coordinator.begin_event(drift, spec, query_binding(drift, spec))
 
     def test_event_projection_alias_unknown_ambiguous_and_out_of_scope_are_rejected(self) -> None:
         def source(sql: str, fragment: str) -> tuple[dict[str, object], dict[str, object]]:
@@ -223,16 +229,16 @@ class DataStageCoordinatorTests(unittest.TestCase):
 
         approved, spec = source("SELECT T1.F001 FROM FIXTURE_T001 T1", "T9.F001")
         with self.assertRaisesRegex(ContractError, "210_FIELD_PROJECTION_ALIAS_AMBIGUOUS"):
-            self.coordinator.begin_event(approved, spec)
+            self.coordinator.begin_event(approved, spec, query_binding(approved, spec))
         approved, spec = source("SELECT T1.F001, T2.F001 FROM FIXTURE_T001 T1 JOIN FIXTURE_T002 T2 ON T1.F001 = T2.F001", "F001")
         with self.assertRaisesRegex(ContractError, "210_FIELD_PROJECTION_ALIAS_AMBIGUOUS"):
-            self.coordinator.begin_event(approved, spec)
+            self.coordinator.begin_event(approved, spec, query_binding(approved, spec))
         approved, spec = source("SELECT T1.SECRET FROM FIXTURE_T001 T1", "T1.SECRET")
         with self.assertRaisesRegex(ContractError, "210_FIELD_PROJECTION_SCOPE_VIOLATION"):
-            self.coordinator.begin_event(approved, spec)
+            self.coordinator.begin_event(approved, spec, query_binding(approved, spec))
 
     def test_260_fixed_error_routes_and_conflicts_are_rejected(self) -> None:
-        for code, target in (("DATA_VALUE_ERROR", "241"), ("ORM_PLAN_ERROR", "251"), ("SQL_EXECUTION_ERROR", "010"), ("FOUNDATION_REQUIRED", "210"), ("MANUAL_REVIEW_REQUIRED", "manual")):
+        for code, target in (("DATA_VALUE_ERROR", "241"), ("ORM_PLAN_ERROR", "251"), ("SQL_EXECUTION_ERROR", "010"), ("QUERY_PARAMETER_BINDING_ERROR", "010"), ("FOUNDATION_REQUIRED", "210"), ("MANUAL_REVIEW_REQUIRED", "manual")):
             with self.subTest(code=code):
                 result = self.coordinator.route_feedback(feedback(code, target, attempt=3 if code == "MANUAL_REVIEW_REQUIRED" else 1))
                 self.assertEqual(result["target"], target)
@@ -262,7 +268,7 @@ class DataStageCoordinatorTests(unittest.TestCase):
         self.assertEqual(bound["payload"]["structure_closure_ref"], artifact_ref(structure["envelope"]))
         self.assertEqual(verified["payload"]["source_data_package_ref"], artifact_ref(bound["envelope"]))
         self.assertEqual(frozen["envelope"]["producer_id"], "252")
-        dispatch = self.coordinator.join_event_validations(approved, reviewed, context, structure, operation, restricted, verified, frozen)
+        dispatch = self.coordinator.join_event_validations(approved, reviewed, context, structure, operation, restricted, verified, frozen, started["query_parameter_binding"])
         self.assertEqual(dispatch["target"], "260")
 
     def test_event_140_110_210_260_release_and_010(self) -> None:
@@ -276,6 +282,7 @@ class DataStageCoordinatorTests(unittest.TestCase):
                 case.snapshot,
                 case.reviewed,
                 case.context,
+                case.binding,
                 case.spec,
                 case.db,
             )
@@ -324,13 +331,13 @@ class DataStageCoordinatorTests(unittest.TestCase):
             (other_frozen["envelope"]["run_id"], other_frozen["envelope"]["qa_id"], other_frozen["envelope"]["trace_id"], other_frozen["envelope"]["attempt_no"]),
         )
         with self.assertRaisesRegex(ContractError, "210_EVENT_ORM_LINEAGE_REJECTED"):
-            self.coordinator.join_event_validations(approved, reviewed, context, structure, operation, restricted, verified, other_frozen)
+            self.coordinator.join_event_validations(approved, reviewed, context, structure, operation, restricted, verified, other_frozen, started["query_parameter_binding"])
         late_verified = copy.deepcopy(verified)
         late_verified["envelope"]["attempt_no"] = 2
         late_verified["envelope"]["content_hash"] = content_hash(late_verified["envelope"], late_verified["payload"])
         frozen = importlib.import_module("east_v5.agents.252.validator").OrmValidator(ROOT).freeze_orm(restricted, structure, operation)
         with self.assertRaisesRegex(ContractError, "210_ATTEMPT_MISMATCH"):
-            self.coordinator.join_event_validations(approved, reviewed, context, structure, operation, restricted, late_verified, frozen)
+            self.coordinator.join_event_validations(approved, reviewed, context, structure, operation, restricted, late_verified, frozen, started["query_parameter_binding"])
 
     def test_event_join_rejects_same_context_cross_approval_before_260(self) -> None:
         approved, started, structure, operation, _, verified, restricted, frozen, _ = self._actual_event_validation_chain()
@@ -346,7 +353,7 @@ class DataStageCoordinatorTests(unittest.TestCase):
         )
         self.assertNotEqual(artifact_ref(other_approved["envelope"]), reviewed["envelope"]["parent_artifact_refs"][0])
         with self.assertRaisesRegex(ContractError, "210_EVENT_REVIEWED_LINEAGE_REJECTED"):
-            self.coordinator.join_event_validations(other_approved, reviewed, context, structure, operation, restricted, verified, frozen)
+            self.coordinator.join_event_validations(other_approved, reviewed, context, structure, operation, restricted, verified, frozen, started["query_parameter_binding"])
 
     def test_foundation_is_ordered_220_then_real_241_242_then_260_and_010(self) -> None:
         foundation_tests = test_module("agents.260.test_regression")
@@ -442,7 +449,7 @@ class DataStageCoordinatorTests(unittest.TestCase):
         case = source.EventRegressionTests()
         case.setUp()
         try:
-            regression = case.worker.run_event(case.data, case.orm, case.snapshot, case.reviewed, case.context, case.spec, case.db)
+            regression = case.worker.run_event(case.data, case.orm, case.snapshot, case.reviewed, case.context, case.binding, case.spec, case.db)
             with self.assertRaisesRegex(ContractError, "210_RELEASE_TARGET_VERSION_REQUIRED"):
                 self.coordinator.build_event_release(case.review, regression, target_database_version="", target_question_dataset_version="fixture-question-v1")
         finally:
