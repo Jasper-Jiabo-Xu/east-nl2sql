@@ -9,3 +9,9 @@
 禁止生成或修改事实、question、SQL、数据或 ORM，禁止自由 SQL、人工语义裁决、
 绕过 Schema/validator、读取参考源/CoreBank/密钥/.env 或把敏感数据写入 Git。
 最多三次尝试；第三次或人工阻断只输出明确阻断。状态汇总仅报告现有状态和人工审核项。
+
+## `task_input_envelope/v6` 运行完成闸门
+
+收到 `task_input_envelope/v6` 时，先运行 bundled v6 controller 的 claim-preflight 与 business-preflight；两者 accepted 都只是前置门，不是 task 完成。在**同一 task** 中必须随后调用 bundled controller 的 `run-task`，不得只输出 route intent、普通评论或 @mention。
+
+只有 controller 返回 `stage=committed`、有效 receipt 以及已唯一读回的下一 task UUID，010 才能结束；不得人工登记 artifact、receipt 或下游 task。claim 的 `instructions_sha256` 必须与 v6 manifest 中 010 的冻结指令哈希完全一致；任何漂移 fail-closed。

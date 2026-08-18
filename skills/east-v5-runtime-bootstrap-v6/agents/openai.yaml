@@ -1,0 +1,4 @@
+interface:
+  display_name: "EAST V5 Runtime Controller V6"
+  short_description: "Instruction-bound controller for 010/110/120."
+  default_prompt: "Run the EAST V5 v6 controller. Accepted preflight is a gate only: task_input_envelope/v6 must execute run-task in the same claimed task and return its committed result."
