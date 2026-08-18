@@ -170,20 +170,6 @@ def _field_paths(context_payload: dict[str, Any]) -> list[str]:
     return fields
 
 
-def _legacy_field_paths(payload: dict[str, Any]) -> list[str]:
-    """Compatibility only for historical EAS-38 fixtures; new 210 dispatches cannot use it."""
-    candidates = [item for item in _walk_values(payload["specification_mapping"]) if isinstance(item, str)]
-    fields = sorted({item for item in candidates if FIELD_PATH.fullmatch(item)})
-    sql_tables = {table for table in SQL_TABLE.findall(payload["sql_gold"])}
-    if not fields or not sql_tables:
-        _fail("EVENT_SEED_UNRESOLVED")
-    for path in fields:
-        table, field = path.split(".", 1)
-        if table not in sql_tables or not re.search(rf"\b{re.escape(field)}\b", payload["sql_gold"], re.IGNORECASE):
-            _fail("EVENT_SEED_SQL_MISMATCH")
-    return fields
-
-
 def _relationships(payload: dict[str, Any]) -> list[str]:
     matches: set[str] = set()
     for value in _walk_values([payload["specification_mapping"], payload["approved_business_events"]]):
@@ -198,16 +184,11 @@ def _relationships(payload: dict[str, Any]) -> list[str]:
     return sorted(matches)
 
 
-def event_query_rounds(event: dict[str, Any], context: dict[str, Any] | None = None, first_result: dict[str, Any] | None = None) -> list[dict[str, Any]]:
-    """Build query requests from the current approved event package, never fixtures."""
+def event_query_rounds(event: dict[str, Any], context: dict[str, Any], first_result: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+    """Build query requests from the authenticated 210 projection only."""
     envelope, payload = _validate_event_input(event)
-    if context is not None and context.get("envelope", {}).get("artifact_type") == "constraint_asset_package":
-        first_result, context = context, None
-    if context is None:
-        fields = _legacy_field_paths(payload)
-    else:
-        _, context_payload = validate_event_query_context(context, event)
-        fields = _field_paths(context_payload)
+    _, context_payload = validate_event_query_context(context, event)
+    fields = _field_paths(context_payload)
     relations = _relationships(payload)
     tables = sorted({path.split(".", 1)[0] for path in fields} | {table for table in SQL_TABLE.findall(payload["sql_gold"])})
     first = {
@@ -304,27 +285,17 @@ def _wrap_closure(source: dict[str, Any], parents: list[dict[str, Any]], payload
     return package
 
 
-def build_event_closure(event: dict[str, Any], context: dict[str, Any], first_result: dict[str, Any] | None = None, second_result: dict[str, Any] | None = None) -> dict[str, Any]:
-    source, payload = _validate_event_input(event)
-    if second_result is None:
-        # Historical three-argument shape: (event, first_result, second_result).
-        second_result, first_result, context = first_result, context, None
-    if first_result is None or second_result is None:
-        _fail("EVENT_CONTEXT_REQUIRED")
-    if context is None:
-        context_payload = None
-        first, second = event_query_rounds(event, None, first_result)
-    else:
-        _, context_payload = validate_event_query_context(context, event)
-        first, second = event_query_rounds(event, context, first_result)
+def build_event_closure(event: dict[str, Any], context: dict[str, Any], first_result: dict[str, Any], second_result: dict[str, Any]) -> dict[str, Any]:
+    source, _ = _validate_event_input(event)
+    _, context_payload = validate_event_query_context(context, event)
+    first, second = event_query_rounds(event, context, first_result)
     first_ref = artifact_ref(first_result["envelope"])
     second_ref = _validate_asset_result(second_result, source, second["request_id"], first_ref)
-    seeds = _legacy_field_paths(payload) if context_payload is None else _field_paths(context_payload)
+    seeds = _field_paths(context_payload)
     closure_payload = _payload_from_assets(
         {path.split(".", 1)[0] for path in seeds}, set(seeds), [first_result, second_result]
     )
-    parents = [artifact_ref(source), first_ref, second_ref] if context is None else [artifact_ref(source), artifact_ref(context["envelope"]), first_ref, second_ref]
-    return _wrap_closure(source, parents, closure_payload)
+    return _wrap_closure(source, [artifact_ref(source), artifact_ref(context["envelope"]), first_ref, second_ref], closure_payload)
 
 
 def build_closure(profile_package: dict[str, Any], assets: list[dict[str, Any]]) -> dict[str, Any]:

@@ -88,8 +88,8 @@ def _asset(source: dict, request: dict, records: list[dict], parent: dict) -> di
     return {"envelope": envelope, "payload": payload}
 
 
-def _event_results(reviewed: dict) -> tuple[dict, dict]:
-    requests = closure_mod.event_query_rounds(reviewed)
+def _event_results(reviewed: dict, context: dict) -> tuple[dict, dict]:
+    requests = closure_mod.event_query_rounds(reviewed, context)
     source = reviewed["envelope"]
     first = _asset(source, requests[0], [{
         "record_type": "single_field",
@@ -109,6 +109,8 @@ class EventDualPathIntegrationTests(unittest.TestCase):
         self._tmp_dirs = []
         self.coordinator = coordinator_mod.DataStageCoordinator(ROOT)
         self.spec = _rehash(_load("query-specification.json"))
+        self.spec["envelope"]["mode"] = "question_sql"
+        _rehash(self.spec)
         self.approved = self._bind_approved(_load("approved-question-sql.json"), self.spec)
         self.snapshot = self._bind_snapshot(_load("database-read-snapshot.json"))
 
@@ -119,10 +121,6 @@ class EventDualPathIntegrationTests(unittest.TestCase):
 
     def _bind_approved(self, approved: dict, spec: dict) -> dict:
         approved["payload"]["query_specification_package"] = artifact_ref(spec["envelope"])
-        refs = approved["envelope"]["parent_artifact_refs"]
-        if artifact_ref(spec["envelope"]) not in refs:
-            refs.append(artifact_ref(spec["envelope"]))
-        approved["envelope"]["input_hashes"] = [item["content_hash"] for item in refs]
         approved["payload"]["package_hash"] = sha256({key: value for key, value in approved["payload"].items() if key != "package_hash"})
         approved["envelope"]["content_hash"] = content_hash(approved["envelope"], approved["payload"])
         return approved
@@ -141,13 +139,31 @@ class EventDualPathIntegrationTests(unittest.TestCase):
         connection.close()
         return db
 
+    def _formal_sql_error_file(self) -> Path:
+        """A legal copy target whose join comparison fails only at SQL execution.
+
+        The 140/110/210 source remains untouched: the frozen ORM can insert
+        into these tables, then the approved join deterministically encounters
+        the absent collation in the 260 copy's SELECT.
+        """
+        directory = tempfile.TemporaryDirectory()
+        self._tmp_dirs.append(directory)
+        db = Path(directory.name) / "formal-sql-error.sqlite"
+        connection = sqlite3.connect(db)
+        connection.create_collation("COPY_ONLY_COLLATION", lambda left, right: (left > right) - (left < right))
+        connection.executescript("CREATE TABLE FIXTURE_T001 (F001 TEXT COLLATE COPY_ONLY_COLLATION, F002 TEXT); CREATE TABLE FIXTURE_T002 (PK001 TEXT);")
+        connection.commit()
+        connection.close()
+        return db
+
     def _chain(self):
         """Build one same-source 210→220→230→{241→242,251→252} pair."""
         approved = self.approved
-        started = self.coordinator.begin_event(approved)
+        started = self.coordinator.begin_event(approved, self.spec)
         reviewed = started["reviewed_question_sql"]
-        first_asset, second_asset = _event_results(reviewed)
-        structure = closure_mod.build_event_closure(reviewed, first_asset, second_asset)
+        context = started["event_query_context"]
+        first_asset, second_asset = _event_results(reviewed, context)
+        structure = closure_mod.build_event_closure(reviewed, context, first_asset, second_asset)
         operation = operation_mod.OperationClosureBuilder(ROOT).build(structure)
 
         data_builder = data_generator_mod.BoundDataGenerator(ROOT)
@@ -175,10 +191,10 @@ class EventDualPathIntegrationTests(unittest.TestCase):
 
         restricted = orm_generator_mod.RestrictedOrmGenerator(ROOT).build(structure, operation)
         frozen = orm_validator_mod.OrmValidator(ROOT).freeze_orm(restricted, structure, operation)
-        return approved, reviewed, structure, operation, bound, verified, restricted, frozen
+        return approved, reviewed, context, structure, operation, bound, verified, restricted, frozen
 
     def test_dual_path_chain_260_copy_regression_and_210_release_candidate(self):
-        approved, reviewed, structure, operation, bound, verified, restricted, frozen = self._chain()
+        approved, reviewed, context, structure, operation, bound, verified, restricted, frozen = self._chain()
 
         # 241 与 251 必须消费同一操作闭包，槽位一一绑定。
         self.assertEqual(bound["payload"]["operation_closure_ref"], artifact_ref(operation["envelope"]))
@@ -194,9 +210,9 @@ class EventDualPathIntegrationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             formal = self._formal_db(Path(directory))
             before = formal.read_bytes()
-            dispatch = self.coordinator.join_event_validations(approved, reviewed, structure, operation, restricted, verified, frozen)
+            dispatch = self.coordinator.join_event_validations(approved, reviewed, context, structure, operation, restricted, verified, frozen)
             self.assertEqual(dispatch["target"], "260")
-            regression = regression_mod.DatabaseCopyRegression(ROOT).run_event(verified, frozen, self.snapshot, approved, self.spec, formal)
+            regression = regression_mod.DatabaseCopyRegression(ROOT).run_event(verified, frozen, self.snapshot, reviewed, context, self.spec, formal)
             self.assertEqual(regression["payload"]["regression_status"], "passed")
             self.assertEqual(formal.read_bytes(), before)
             self.assertEqual(stub_210.consume(regression, ROOT)["decision"], "accepted")
@@ -208,19 +224,16 @@ class EventDualPathIntegrationTests(unittest.TestCase):
         self.assertIsNone(candidate["payload"]["foundation_regression_report_ref"])
         self.assertTrue(_test_module("contracts.test_stage10_package_contracts").consume_stub("release_candidate", "010", candidate))
 
-    def _failures(self, verified, frozen):
+    def _failures(self, verified, frozen, reviewed, context):
         """用真实 260 产包覆盖五类失败路由，返回 {error_code: (feedback, target)}。"""
         spec = self._refresh_spec(lambda payload: payload.update({"minimum_negative_count": 99}))
         approved_dve = self._bind_approved(copy.deepcopy(self.approved), spec)
         worker = regression_mod.DatabaseCopyRegression(ROOT)
 
-        dve = worker.run_event(verified, frozen, self.snapshot, approved_dve, spec, self._formal_file())
+        dve_started = self.coordinator.begin_event(approved_dve, spec)
+        dve = worker.run_event(verified, frozen, self.snapshot, dve_started["reviewed_question_sql"], dve_started["event_query_context"], spec, self._formal_file())
 
-        approved_sql = copy.deepcopy(self.approved)
-        approved_sql["payload"]["candidate_content"]["sql_gold"] = "SELECT missing FROM FIXTURE_T001"
-        approved_sql["payload"]["package_hash"] = sha256({key: value for key, value in approved_sql["payload"].items() if key != "package_hash"})
-        approved_sql["envelope"]["content_hash"] = content_hash(approved_sql["envelope"], approved_sql["payload"])
-        sql = worker.run_event(verified, frozen, self.snapshot, approved_sql, self.spec, self._formal_file())
+        sql = worker.run_event(verified, frozen, self.snapshot, reviewed, context, self.spec, self._formal_sql_error_file())
 
         orm_broken = copy.deepcopy(frozen)
         plan = orm_broken["payload"]["validated_orm_plan"]
@@ -229,15 +242,15 @@ class EventDualPathIntegrationTests(unittest.TestCase):
         plan["code_hash"] = code_hash
         orm_broken["payload"]["validated_hash"] = code_hash
         orm_broken["envelope"]["content_hash"] = content_hash(orm_broken["envelope"], orm_broken["payload"])
-        orm = worker.run_event(verified, orm_broken, self.snapshot, self.approved, self.spec, self._formal_file())
+        orm = worker.run_event(verified, orm_broken, self.snapshot, reviewed, context, self.spec, self._formal_file())
 
         data_foundation = copy.deepcopy(verified)
         data_foundation["payload"]["validated_data_package"]["data_groups"][0]["records"][0]["existing_record_refs"] = [{"table_id": "FIXTURE_CUSTOMER", "record_key": "not-in-snapshot"}]
         data_foundation["payload"]["validated_hash"] = sha256(data_foundation["payload"]["validated_data_package"])
         data_foundation["envelope"]["content_hash"] = content_hash(data_foundation["envelope"], data_foundation["payload"])
-        foundation = worker.run_event(data_foundation, frozen, self.snapshot, self.approved, self.spec, self._formal_file())
+        foundation = worker.run_event(data_foundation, frozen, self.snapshot, reviewed, context, self.spec, self._formal_file())
 
-        manual = worker.run_event(verified, frozen, self.snapshot, approved_dve, spec, self._formal_file(), attempt_no=3)
+        manual = worker.run_event(verified, frozen, self.snapshot, dve_started["reviewed_question_sql"], dve_started["event_query_context"], spec, self._formal_file(), attempt_no=3)
 
         return {
             "DATA_VALUE_ERROR": (dve, "241"),
@@ -248,14 +261,14 @@ class EventDualPathIntegrationTests(unittest.TestCase):
         }
 
     def test_release_candidate_requires_passed_regression(self):
-        _, _, _, _, _, verified, _, frozen = self._chain()
-        feedback, _ = self._failures(verified, frozen)["DATA_VALUE_ERROR"]
+        _, reviewed, context, _, _, _, verified, _, frozen = self._chain()
+        feedback, _ = self._failures(verified, frozen, reviewed, context)["DATA_VALUE_ERROR"]
         with self.assertRaisesRegex(ContractError, "210_EVENT_REGRESSION_REJECTED"):
             self.coordinator.build_event_release(self.approved, feedback, target_database_version="fixture-db-v1", target_question_dataset_version="fixture-question-v1")
 
     def test_five_real_failure_routes_consumed_by_210_and_routed(self):
-        _, _, _, _, _, verified, _, frozen = self._chain()
-        for code, (feedback, target) in self._failures(verified, frozen).items():
+        _, reviewed, context, _, _, _, verified, _, frozen = self._chain()
+        for code, (feedback, target) in self._failures(verified, frozen, reviewed, context).items():
             with self.subTest(code=code):
                 self.assertEqual(feedback["payload"]["failure_details"]["error_code"], code)
                 self.assertEqual(feedback["payload"]["route_target"], target)
@@ -267,13 +280,15 @@ class EventDualPathIntegrationTests(unittest.TestCase):
                 self.assertEqual(route["kind"], "manual" if target == "manual" else "retry_or_rollback")
 
     def test_retry_escalation_manual_block_and_idempotent_replay(self):
-        _, _, _, _, _, verified, _, frozen = self._chain()
+        _, reviewed, context, _, _, _, verified, _, frozen = self._chain()
         spec = self._refresh_spec(lambda payload: payload.update({"minimum_negative_count": 99}))
         approved_dve = self._bind_approved(copy.deepcopy(self.approved), spec)
         worker = regression_mod.DatabaseCopyRegression(ROOT)
-        attempt1 = worker.run_event(verified, frozen, self.snapshot, approved_dve, spec, self._formal_file(), attempt_no=1)
-        attempt2 = worker.run_event(verified, frozen, self.snapshot, approved_dve, spec, self._formal_file(), attempt_no=2)
-        attempt3 = worker.run_event(verified, frozen, self.snapshot, approved_dve, spec, self._formal_file(), attempt_no=3)
+        started = self.coordinator.begin_event(approved_dve, spec)
+        reviewed, context = started["reviewed_question_sql"], started["event_query_context"]
+        attempt1 = worker.run_event(verified, frozen, self.snapshot, reviewed, context, spec, self._formal_file(), attempt_no=1)
+        attempt2 = worker.run_event(verified, frozen, self.snapshot, reviewed, context, spec, self._formal_file(), attempt_no=2)
+        attempt3 = worker.run_event(verified, frozen, self.snapshot, reviewed, context, spec, self._formal_file(), attempt_no=3)
         self.assertEqual((attempt1["payload"]["failure_details"]["error_code"], attempt1["payload"]["route_target"]), ("DATA_VALUE_ERROR", "241"))
         self.assertEqual((attempt2["payload"]["failure_details"]["error_code"], attempt2["payload"]["route_target"]), ("DATA_VALUE_ERROR", "241"))
         self.assertEqual((attempt3["payload"]["failure_details"]["error_code"], attempt3["payload"]["route_target"]), ("MANUAL_REVIEW_REQUIRED", "manual"))
@@ -282,8 +297,8 @@ class EventDualPathIntegrationTests(unittest.TestCase):
         self.assertEqual(self.coordinator.route_feedback(attempt3)["kind"], "manual")
 
     def test_route_conflict_version_and_hash_drift_rejected(self):
-        _, _, _, _, _, verified, _, frozen = self._chain()
-        feedback, _ = self._failures(verified, frozen)["DATA_VALUE_ERROR"]
+        _, reviewed, context, _, _, _, verified, _, frozen = self._chain()
+        feedback, _ = self._failures(verified, frozen, reviewed, context)["DATA_VALUE_ERROR"]
         conflict = copy.deepcopy(feedback)
         conflict["payload"]["route_target"] = "251"
         conflict["envelope"]["content_hash"] = content_hash(conflict["envelope"], conflict["payload"])
@@ -321,14 +336,14 @@ class EventDualPathIntegrationTests(unittest.TestCase):
             self.coordinator.route_feedback(unknown_field_drift)
 
     def test_210_stub_rejects_schema_title_impersonation_and_hash_drift(self):
-        _, _, _, _, _, verified, _, frozen = self._chain()
+        _, reviewed, context, _, _, _, verified, _, frozen = self._chain()
         # 以 Schema title 冒充 artifact_type 必须被 210 拒绝。
         fake = {"envelope": {"artifact_type": "REGRESSION-PASSED-DATA-ORM", "mode": "event_data"}, "payload": {}}
         with self.assertRaisesRegex(ContractError, "210_STUB_SCHEMA_REJECTED"):
             stub_210.consume(fake, ROOT)
         # 错误 mode/schema 配对必须被拒绝。
         formal = self._formal_file()
-        regression = regression_mod.DatabaseCopyRegression(ROOT).run_event(verified, frozen, self.snapshot, self.approved, self.spec, formal)
+        regression = regression_mod.DatabaseCopyRegression(ROOT).run_event(verified, frozen, self.snapshot, reviewed, context, self.spec, formal)
         wrong_mode = copy.deepcopy(regression)
         wrong_mode["envelope"]["mode"] = "foundation"
         wrong_mode["envelope"]["content_hash"] = content_hash(wrong_mode["envelope"], wrong_mode["payload"])

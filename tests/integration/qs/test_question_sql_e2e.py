@@ -243,7 +243,7 @@ class QuestionSqlE2ETests(unittest.TestCase):
         self.assertEqual((approved["envelope"]["producer_id"], approved["envelope"]["status"]), ("110", "validated"))
         # 210 消费并通过 220 调度，不误启动 data 阶段
         coordinator = DataStageCoordinator(ROOT)
-        self.assertEqual(coordinator.begin_event(approved)["dispatches"][0]["target"], "220")
+        self.assertEqual(coordinator.begin_event(approved, chain["spec"])["dispatches"][0]["target"], "220")
         # 来源与可观察边界全程不丢失
         spec = chain["spec"]["payload"]
         self.assertEqual(approved["payload"]["penalty_fact_package"], spec["penalty_fact_package_ref"])

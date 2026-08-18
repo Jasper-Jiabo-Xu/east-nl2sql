@@ -178,9 +178,9 @@ class FoundationE2ETests(unittest.TestCase):
         self.assertEqual(expansion["regression"]["payload"]["target_count_validation"]["FIXTURE_CUSTOMER"]["target"], 2)
 
     def test_event_missing_object_state_routes_to_explicit_foundation_task(self) -> None:
-        data, orm, snapshot, review, spec, formal_db = self._event_context_with_missing_state()
+        data, orm, snapshot, review, context, spec, formal_db = self._event_context_with_missing_state()
         worker = regression.DatabaseCopyRegression(ROOT)
-        feedback = worker.run_event(data, orm, snapshot, review, spec, formal_db)
+        feedback = worker.run_event(data, orm, snapshot, review, context, spec, formal_db)
         self.assertEqual(feedback["payload"]["failure_details"]["error_code"], "FOUNDATION_REQUIRED")
         self.assertEqual(feedback["payload"]["route_target"], "210")
 
@@ -352,7 +352,7 @@ class FoundationE2ETests(unittest.TestCase):
 
     # ------------------------------------------------------------------ helpers
 
-    def _event_context_with_missing_state(self) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any], Path]:
+    def _event_context_with_missing_state(self) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any], Path]:
         data = copy.deepcopy(importlib.import_module("east_v5.agents.242.probe").run_sanitized_probe(ROOT)["transport"])
         data["envelope"].update({"mode": "event_data", "qa_id": "QA-260"})
         record = data["payload"]["validated_data_package"]["data_groups"][0]["records"][0]
@@ -369,12 +369,29 @@ class FoundationE2ETests(unittest.TestCase):
         spec = _wrap(
             "query_specification_package", "qspec-260",
             {"query_spec_id": "qspec-260", "penalty_fact_package_ref": {"artifact_id": "penalty", "version": 1, "content_hash": "1" * 64}, "observable_fact_package_ref": {"artifact_id": "observable", "version": 1, "content_hash": "2" * 64}, "query_goal": "open account", "must_preserve_fact_refs": ["fact"], "main_object_and_grain": {"main_object": "account", "grain": "FIXTURE_ACCOUNT.CUSTOMER_ID"}, "query_entry": {"entry_table": "FIXTURE_ACCOUNT", "entry_conditions": []}, "related_objects_and_path": [], "filters_and_evidence": [], "return_fields": [{"field_id": "CUSTOMER_ID", "display_name": "customer", "source_table": "FIXTURE_ACCOUNT"}, {"field_id": "STATUS", "display_name": "status", "source_table": "FIXTURE_ACCOUNT"}], "aggregation_dedup_sort_time": {"group_by_fields": ["CUSTOMER_ID"], "distinct_required": True, "order_by": [], "time_window": {"field_id": "STATUS", "window_type": "point"}}, "observability_boundary": {"answerable": ["open"], "unanswerable": []}, "expected_result_shape": {"row_grain": "account", "column_set": ["CUSTOMER_ID", "STATUS"], "aggregation_shape": "none"}, "sql_schema_scope": {"allowed_tables": [{"table_id": "FIXTURE_ACCOUNT", "allowed_fields": ["CUSTOMER_ID", "STATUS"]}]}, "minimum_positive_count": 2, "minimum_negative_count": 1, "condition_coverage": [{"predicate": "open", "positive_types": ["positive"], "negative_types": ["hard_negative"]}], "code_value_coverage": [{"field_id": "STATUS", "target_code_values": ["OPEN"]}], "expected_row_group_count": {"minimum": 1, "target": 1, "tolerance_range": {"low": 0, "high": 0}}, "join_expansion_limit": {"max_multiplier": 1, "max_result_rows": 1}, "query_specification_package_schema_version": "query-specification-v1"},
-            producer_id="140", mode="event_data", status="validated", qa_id="QA-260",
+            producer_id="140", mode="question_sql", status="validated", qa_id="QA-260",
         )
 
         review_payload = {"schema_version": "v5.question-sql-dual-review-passed/v1", "candidate_ref": {"artifact_id": "candidate", "version": 1, "content_hash": "3" * 64}, "candidate_content": {"clear_question": "open accounts", "sql_gold": "SELECT CUSTOMER_ID, STATUS FROM FIXTURE_ACCOUNT WHERE STATUS = 'OPEN'", "sql_explanation": {"select": "s", "from_join": "f", "where": "w", "aggregation": "", "sort": "", "business_meaning": "b"}, "business_event_candidates": [{"event_name": "open", "objective": "o", "objects": ["account"], "state_changes": []}], "specification_mapping": [{"spec_item": "open", "question_fragment": "open", "sql_fragment": "STATUS"}]}, "query_specification_package": artifact_ref(spec["envelope"]), "penalty_fact_package": {"artifact_id": "penalty", "version": 1, "content_hash": "1" * 64}, "observable_fact_package": {"artifact_id": "observable", "version": 1, "content_hash": "2" * 64}, "constraint_evidence_summary": {"tables": ["FIXTURE_ACCOUNT"], "fields": ["STATUS"], "data_elements": [], "relationships": [], "source_refs": ["CA-V0.3.0"]}, "precheck_report": {"decision": "pass", "report_hash": "4" * 64}, "deepseek_review": {"decision": "pass", "issue_level": "none", "reason": "ok", "review_hash": "5" * 64}, "glm_review": {"decision": "pass", "issue_level": "none", "reason": "ok", "review_hash": "6" * 64}, "adjudication": {"decision": "pass", "report_hash": "7" * 64}, "review_round": 1, "package_hash": ""}
         review_payload["package_hash"] = sha256({key: value for key, value in review_payload.items() if key != "package_hash"})
         review = _wrap("question_sql_dual_review_passed", "review-260", review_payload, producer_id="110", mode="event_data", status="validated", qa_id="QA-260", parents=[artifact_ref(spec["envelope"])])
+        context_keys = ("run_id", "qa_id", "trace_id", "attempt_no", "created_at")
+        for package in (orm, snapshot, spec, review):
+            package["envelope"].update({key: data["envelope"][key] for key in context_keys})
+        for package in (orm, snapshot, spec):
+            package["envelope"]["content_hash"] = content_hash(package["envelope"], package["payload"])
+        review["payload"]["query_specification_package"] = artifact_ref(spec["envelope"])
+        review["payload"]["package_hash"] = sha256({key: value for key, value in review["payload"].items() if key != "package_hash"})
+        reports = [
+            {"artifact_id": "precheck", "version": 1, "content_hash": review["payload"]["precheck_report"]["report_hash"]},
+            {"artifact_id": "deepseek", "version": 1, "content_hash": review["payload"]["deepseek_review"]["review_hash"]},
+            {"artifact_id": "glm", "version": 1, "content_hash": review["payload"]["glm_review"]["review_hash"]},
+        ]
+        review["envelope"]["parent_artifact_refs"] = reports
+        review["envelope"]["input_hashes"] = [item["content_hash"] for item in review["envelope"]["parent_artifact_refs"]]
+        review["envelope"]["content_hash"] = content_hash(review["envelope"], review["payload"])
+        started = coordinator_mod.DataStageCoordinator(ROOT).begin_event(review, spec)
+        reviewed, context = started["reviewed_question_sql"], started["event_query_context"]
 
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
@@ -383,7 +400,7 @@ class FoundationE2ETests(unittest.TestCase):
         connection.execute("CREATE TABLE FIXTURE_ACCOUNT (CUSTOMER_ID TEXT, STATUS TEXT)")
         connection.commit()
         connection.close()
-        return data, orm, snapshot, review, spec, formal_db
+        return data, orm, snapshot, reviewed, context, spec, formal_db
 
 
 if __name__ == "__main__":

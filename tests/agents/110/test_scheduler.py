@@ -89,8 +89,9 @@ class SchedulerTests(unittest.TestCase):
         approved = result["approved_package"]
         self.assertEqual((approved["envelope"]["producer_id"], approved["envelope"]["status"]), ("110", "validated"))
         self.assertEqual(approved["payload"]["review_round"], 1)
-        coordinator = importlib.import_module("east_v5.agents.210.scheduler").DataStageCoordinator(ROOT)
-        self.assertEqual(coordinator.begin_event(approved)["dispatches"][0]["target"], "220")
+        # The executable 110 probe binds the immutable 140 package when it
+        # invokes 210; bare 110 provenance may no longer enter event flow.
+        self.assertTrue(run_sanitized_probe(ROOT)["summary"]["downstream_stub_consumed"])
 
     def test_single_no_never_starts_data_and_routes_by_error(self):
         pending = dual(); first, second = reviews(pending, decision180="no", errors180=("QUERY_SPEC_ERROR",))
