@@ -1,0 +1,4 @@
+interface:
+  display_name: "EAST V5 Runtime Controller V5"
+  short_description: "Cwd-confined control-task launcher for 010/110/120."
+  default_prompt: "Run the EAST V5 v5 controller preflight, control-task, audit, or task command using the supplied envelope and claim."

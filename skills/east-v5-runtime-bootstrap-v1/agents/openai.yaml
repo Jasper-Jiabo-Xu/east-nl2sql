@@ -1,0 +1,4 @@
+interface:
+  display_name: "EAST V5 Runtime Bootstrap"
+  short_description: "Fail-closed runtime bootstrap claims for 010/110/120."
+  default_prompt: "Run the EAST V5 runtime bootstrap claim preflight using the attached task envelope."

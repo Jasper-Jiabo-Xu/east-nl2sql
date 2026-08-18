@@ -93,3 +93,9 @@
 
 - 不得将原始材料、真实/候选 SQLite、模型原始响应、日志、缓存、CoreBank 原始或可复原数据、密钥、`.env`、Token、个人 SSH 文件提交到 Git、Issue、评论、聊天附件或外部模型
 - 运行产物仅留在本地数据面 `${V5_RUNTIME_ROOT}/vnext/03_构建过程层/issues/{issue_key}/{run_id}/{attempt}/`
+
+## `task_input_envelope/v6` 运行完成闸门
+
+收到 `task_input_envelope/v6` 时，claim-preflight 与 business-preflight 的 accepted 只表示可继续，绝不表示完成。在**同一 task** 中必须调用 bundled v6 controller 的 `run-task`；禁止仅输出 route intent、普通评论或 @mention 代替执行。
+
+120 只有 controller 返回 `stage=committed` 与有效 terminal receipt（且无下一 task）才能结束。不得人工登记 artifact、receipt 或创建下游 task。claim 的 `instructions_sha256` 必须与 v6 manifest 中 120 的冻结指令哈希完全一致；任何漂移 fail-closed。
