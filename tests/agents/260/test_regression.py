@@ -423,6 +423,18 @@ class EventRegressionTests(unittest.TestCase):
                 with self.assertRaisesRegex(ContractError, "EVENT_CONTEXT_LINEAGE_MISMATCH"):
                     self.worker.run_event(self.data, self.orm, self.snapshot, self.reviewed, context, self.spec, self.db)
 
+    def test_self_consistent_source_question_ref_tamper_rejects_before_copy(self):
+        before = self.db.read_bytes()
+        context = copy.deepcopy(self.context)
+        context["payload"]["source_question_sql_ref"] = {"artifact_id": "other-approved-question-sql", "version": 1, "content_hash": "f" * 64}
+        context["payload"]["projection_hash"] = sha256({key: value for key, value in context["payload"].items() if key != "projection_hash"})
+        context["envelope"]["parent_artifact_refs"] = [context["payload"][key] for key in ("source_query_spec_ref", "source_question_sql_ref", "reviewed_question_sql_ref")]
+        context["envelope"]["input_hashes"] = [ref["content_hash"] for ref in context["envelope"]["parent_artifact_refs"]]
+        context["envelope"]["content_hash"] = content_hash(context["envelope"], context["payload"])
+        with self.assertRaisesRegex(ContractError, "EVENT_CONTEXT_SOURCE_QUESTION_LINEAGE_REJECTED"):
+            self.worker.run_event(self.data, self.orm, self.snapshot, self.reviewed, context, self.spec, self.db)
+        self.assertEqual(before, self.db.read_bytes())
+
     def test_negative_fixture_count_shortfall_is_rejected(self):
         self.spec["payload"]["minimum_negative_count"] = 99; self.refresh_query_refs()
         feedback = self.worker.run_event(self.data, self.orm, self.snapshot, self.reviewed, self.context, self.spec, self.db)

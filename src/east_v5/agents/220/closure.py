@@ -148,6 +148,8 @@ def validate_event_query_context(context: dict[str, Any], reviewed: dict[str, An
         _fail("EVENT_CONTEXT_HASH_DRIFT")
     if payload["reviewed_question_sql_ref"] != artifact_ref(reviewed_envelope):
         _fail("EVENT_CONTEXT_REVIEWED_LINEAGE_REJECTED")
+    if reviewed_envelope["parent_artifact_refs"] != [payload["source_question_sql_ref"]]:
+        _fail("EVENT_CONTEXT_SOURCE_QUESTION_LINEAGE_REJECTED")
     refs = [payload["source_query_spec_ref"], payload["source_question_sql_ref"], payload["reviewed_question_sql_ref"]]
     if envelope["parent_artifact_refs"] != refs or envelope["input_hashes"] != [ref["content_hash"] for ref in refs]:
         _fail("EVENT_CONTEXT_PARENT_LINEAGE_REJECTED")

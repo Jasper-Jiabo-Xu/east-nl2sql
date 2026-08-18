@@ -86,6 +86,17 @@ class ClosureTests(unittest.TestCase):
         with self.assertRaisesRegex(ContractError, "EVENT_CONTEXT_PARENT_LINEAGE_REJECTED"):
             mod.event_query_rounds(reviewed, tampered)
 
+    def test_self_consistent_source_question_ref_tamper_is_rejected(self):
+        reviewed, context, _ = event_source()
+        tampered = copy.deepcopy(context)
+        tampered["payload"]["source_question_sql_ref"] = {"artifact_id": "other-approved-question-sql", "version": 1, "content_hash": "f" * 64}
+        tampered["payload"]["projection_hash"] = sha256({key: value for key, value in tampered["payload"].items() if key != "projection_hash"})
+        tampered["envelope"]["parent_artifact_refs"] = [tampered["payload"][key] for key in ("source_query_spec_ref", "source_question_sql_ref", "reviewed_question_sql_ref")]
+        tampered["envelope"]["input_hashes"] = [ref["content_hash"] for ref in tampered["envelope"]["parent_artifact_refs"]]
+        tampered["envelope"]["content_hash"] = content_hash(tampered["envelope"], tampered["payload"])
+        with self.assertRaisesRegex(ContractError, "EVENT_CONTEXT_SOURCE_QUESTION_LINEAGE_REJECTED"):
+            mod.event_query_rounds(reviewed, tampered)
+
 
 if __name__ == "__main__":
     unittest.main()
