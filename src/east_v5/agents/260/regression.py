@@ -17,6 +17,9 @@ from jsonschema import Draft202012Validator, FormatChecker, ValidationError
 from referencing import Registry, Resource
 
 from east_v5.artifacts import artifact_ref, content_hash, validate_envelope
+_query_binding = importlib.import_module("east_v5.agents.110.query_binding")
+named_placeholders, query_bindings = _query_binding.named_placeholders, _query_binding.query_bindings
+resolve_declaration, validate_declarations = _query_binding.resolve_declaration, _query_binding.validate_declarations
 from east_v5.foundation.compiler import compile_insert_batch
 from east_v5.governance import ContractError, canonical_bytes, load_json, sha256
 
@@ -509,8 +512,8 @@ class DatabaseCopyRegression:
             _fail("INPUT_ENVELOPE_INVALID")
         if envelope.get("status") == "blocked_manual": _fail("UPSTREAM_BLOCKED_MANUAL")
 
-    def validate_event_inputs(self, data: dict[str, Any], orm: dict[str, Any], snapshot: dict[str, Any], reviewed: dict[str, Any], context: dict[str, Any], query_spec: dict[str, Any]) -> None:
-        before = copy.deepcopy((data, orm, snapshot, reviewed, context, query_spec))
+    def validate_event_inputs(self, data: dict[str, Any], orm: dict[str, Any], snapshot: dict[str, Any], reviewed: dict[str, Any], context: dict[str, Any], binding: dict[str, Any], query_spec: dict[str, Any]) -> None:
+        before = copy.deepcopy((data, orm, snapshot, reviewed, context, binding, query_spec))
         for package, kind, producer in ((data, "verified_bound_data", "242"), (orm, "frozen_orm", "252"), (snapshot, "database_read_snapshot", "EAS-19"), (reviewed, "reviewed_question_sql", "210")):
             self._transport(package, kind, producer, "event_data")
             validate_envelope(self.repo_root, package["envelope"], package["payload"])
@@ -519,20 +522,33 @@ class DatabaseCopyRegression:
         self._validate(snapshot, "database-read-snapshot.schema.json", "SCHEMA_VALIDATION_FAILED:DATABASE_SNAPSHOT")
         self._validate(reviewed, "reviewed-question-sql-package.schema.json", "SCHEMA_VALIDATION_FAILED:REVIEWED_QUESTION_SQL")
         _closure.validate_event_query_context(context, reviewed)
+        self._transport(binding, "query_parameter_binding", "110", "event_data")
+        validate_envelope(self.repo_root, binding["envelope"], binding["payload"])
+        self._validate(binding, "query-parameter-binding-package.schema.json", "SCHEMA_VALIDATION_FAILED:QUERY_PARAMETER_BINDING")
         self._transport(query_spec, "query_specification_package", "140", "question_sql")
         validate_envelope(self.repo_root, query_spec["envelope"], query_spec["payload"])
         self._validate(query_spec["payload"], "query-specification-package.schema.json", "SCHEMA_VALIDATION_FAILED:QUERY_SPEC")
         context_payload = context["payload"]
         if context_payload["source_query_spec_ref"] != artifact_ref(query_spec["envelope"]): _fail("QUERY_SPEC_REFERENCE_MISMATCH")
         if context_payload["reviewed_question_sql_ref"] != artifact_ref(reviewed["envelope"]): _fail("REVIEWED_QUESTION_SQL_REFERENCE_MISMATCH")
+        if context_payload["query_parameter_binding_ref"] != artifact_ref(binding["envelope"]): _fail("QUERY_PARAMETER_BINDING_REFERENCE_MISMATCH")
+        if binding["payload"]["source_question_sql_ref"] != context_payload["source_question_sql_ref"] or binding["payload"]["source_query_spec_ref"] != artifact_ref(query_spec["envelope"]): _fail("QUERY_PARAMETER_BINDING_LINEAGE_MISMATCH")
+        candidate_sql = reviewed["payload"]["sql_gold"]
+        if binding["payload"]["sql_hash"] != hashlib.sha256(candidate_sql.strip().encode("utf-8")).hexdigest(): _fail("QUERY_PARAMETER_BINDING_SQL_HASH_DRIFT")
+        names = named_placeholders(candidate_sql)
+        parameters = binding["payload"]["parameters"]
+        if tuple(item["name"] for item in parameters) != names or parameters != sorted(parameters, key=lambda item: item["name"]): _fail("QUERY_PARAMETER_BINDING_SET_DRIFT")
+        if binding["payload"]["binding_hash"] != sha256({key: value for key, value in binding["payload"].items() if key != "binding_hash"}): _fail("QUERY_PARAMETER_BINDING_HASH_DRIFT")
+        for item in parameters:
+            if item != resolve_declaration({"name": item["name"], "source_pointer": item["source_pointer"]}, query_spec): _fail("QUERY_PARAMETER_BINDING_VALUE_DRIFT")
         plan = orm["payload"]["validated_orm_plan"]
         expected = hashlib.sha256(canonical_bytes({"orm_source_code": plan["orm_source_code"], "execution_contract": plan["execution_contract"], "operations": plan["operations"]})).hexdigest()
         if orm["payload"].get("validated_hash") != expected or plan.get("code_hash") != expected: _fail("ORM_HASH_DRIFT")
         if data["payload"]["validated_data_package"].get("database_snapshot_ref") not in (None, artifact_ref(snapshot["envelope"])): _fail("DATABASE_SNAPSHOT_REFERENCE_MISMATCH")
-        for package in (data, orm, snapshot, reviewed, context, query_spec):
+        for package in (data, orm, snapshot, reviewed, context, binding, query_spec):
             if any(package["envelope"][key] != data["envelope"][key] for key in ("run_id", "qa_id", "trace_id", "attempt_no")):
                 _fail("EVENT_CONTEXT_LINEAGE_MISMATCH")
-        if before != (data, orm, snapshot, reviewed, context, query_spec): _fail("INPUT_MUTATED")
+        if before != (data, orm, snapshot, reviewed, context, binding, query_spec): _fail("INPUT_MUTATED")
 
     @staticmethod
     def _rows(data: dict[str, Any]) -> list[dict[str, Any]]:
@@ -615,7 +631,7 @@ class DatabaseCopyRegression:
         if formal_database.read_bytes() != before: _fail("FORMAL_DATABASE_MUTATED")
 
     def feedback(self, data: dict[str, Any], orm: dict[str, Any] | None, snapshot: dict[str, Any], error_code: str, stage: str, detail: str, attempt_no: int, parents: list[dict[str, Any]], *, mode: str = "event_data", sql_error_detail: dict[str, Any] | None = None) -> dict[str, Any]:
-        error_code, route = ("MANUAL_REVIEW_REQUIRED", "manual") if attempt_no == 3 else (error_code, {"DATA_VALUE_ERROR": "241", "ORM_PLAN_ERROR": "251", "FOUNDATION_REQUIRED": "210", "SQL_EXECUTION_ERROR": "010"}.get(error_code, "210"))
+        error_code, route = ("MANUAL_REVIEW_REQUIRED", "manual") if attempt_no == 3 else (error_code, {"DATA_VALUE_ERROR": "241", "ORM_PLAN_ERROR": "251", "FOUNDATION_REQUIRED": "210", "SQL_EXECUTION_ERROR": "010", "QUERY_PARAMETER_BINDING_ERROR": "010"}.get(error_code, "210"))
         payload = {"schema_version": "v5.sql-regression-failed-feedback/v1", "mode": mode, "input_data_refs": [artifact_ref(data["envelope"])], "input_orm_ref": artifact_ref(orm["envelope"]) if orm else None, "sandbox_snapshot_id": snapshot["payload"]["snapshot_id"], "failure_details": {"error_code": error_code, "error_stage": stage, "error_location": "database_copy", "expected_values": [], "actual_values": [detail], "sql_error_detail": sql_error_detail, "regression_metrics": {}}, "route_target": route, "retry_count": attempt_no}
         return self._wrap("sql_regression_failed_feedback", payload, data["envelope"], parents, attempt_no, "rejected", mode=mode)
 
@@ -624,13 +640,14 @@ class DatabaseCopyRegression:
         available = {(item["record_keys"]["table_id"], item["record_keys"]["primary_key"]) for item in snapshot["payload"]["object_state_records"]}
         return any((reference["table_id"], reference["record_key"]) not in available for record in DatabaseCopyRegression._rows(data) for reference in record["existing_record_refs"])
 
-    def run_event(self, data: dict[str, Any], orm: dict[str, Any], snapshot: dict[str, Any], reviewed: dict[str, Any], context: dict[str, Any], query_spec: dict[str, Any], formal_database: Path, *, attempt_no: int = 1) -> dict[str, Any]:
-        self.validate_event_inputs(data, orm, snapshot, reviewed, context, query_spec)
+    def run_event(self, data: dict[str, Any], orm: dict[str, Any], snapshot: dict[str, Any], reviewed: dict[str, Any], context: dict[str, Any], binding: dict[str, Any], query_spec: dict[str, Any], formal_database: Path, *, attempt_no: int = 1) -> dict[str, Any]:
+        self.validate_event_inputs(data, orm, snapshot, reviewed, context, binding, query_spec)
         if attempt_no not in (1, 2, 3): _fail("ATTEMPT_OUT_OF_RANGE")
-        parents = [artifact_ref(item["envelope"]) for item in (data, orm, snapshot, reviewed, context, query_spec)]
+        parents = [artifact_ref(item["envelope"]) for item in (data, orm, snapshot, reviewed, context, binding, query_spec)]
         try:
             if self._foundation_required(data, snapshot): _fail("FOUNDATION_REQUIRED:EXISTING_RECORD_NOT_IN_SNAPSHOT")
-            params = self._bind(data, orm["payload"]["validated_orm_plan"])
+            orm_params = self._bind(data, orm["payload"]["validated_orm_plan"])
+            bindings = query_bindings(binding)
         except ContractError as exc:
             category = "ORM_PLAN_ERROR" if "ORM_PLAN" in str(exc) else ("FOUNDATION_REQUIRED" if "FOUNDATION_REQUIRED" in str(exc) else "DATA_VALUE_ERROR")
             return self.feedback(data, orm, snapshot, category, "binding" if "BINDING" in str(exc) else "regression_gate", str(exc), attempt_no, parents)
@@ -638,20 +655,23 @@ class DatabaseCopyRegression:
             operations: list[dict[str, Any]] = []; namespace: dict[str, Any] = {}
             try:
                 exec(compile(orm["payload"]["validated_orm_plan"]["orm_source_code"], "<frozen_orm>", "exec"), {"__builtins__": {}}, namespace)
-                execution = namespace["apply"](_EventContext(connection, operations), params)
+                execution = namespace["apply"](_EventContext(connection, operations), orm_params)
             except sqlite3.Error as exc:
                 return self.feedback(data, orm, snapshot, "ORM_PLAN_ERROR", "orm_execution", str(exc), attempt_no, parents)
             except (ContractError, Exception) as exc:
                 return self.feedback(data, orm, snapshot, "ORM_PLAN_ERROR", "orm_execution", str(exc), attempt_no, parents)
             sql_gold = reviewed["payload"]["sql_gold"]
             try:
-                rows = connection.execute(sql_gold).fetchall()
+                rows = connection.execute(sql_gold, bindings).fetchall()
             except sqlite3.Error as exc:
-                return self.feedback(data, orm, snapshot, "SQL_EXECUTION_ERROR", "sql_execution", f"sql={sql_gold}; error={exc}", attempt_no, parents, sql_error_detail={"sql_text": sql_gold, "error_message": str(exc), "error_code": str(getattr(exc, "sqlite_errorcode", "SQLITE_ERROR"))})
+                detail = str(exc)
+                is_binding_error = any(marker in detail.lower() for marker in ("binding parameter", "bindings supplied", "unsupported type"))
+                code, stage = ("QUERY_PARAMETER_BINDING_ERROR", "binding") if is_binding_error else ("SQL_EXECUTION_ERROR", "sql_execution")
+                return self.feedback(data, orm, snapshot, code, stage, f"sql={sql_gold}; error={exc}", attempt_no, parents, sql_error_detail={"sql_text": sql_gold, "error_message": detail, "error_code": str(getattr(exc, "sqlite_errorcode", "SQLITE_ERROR"))})
             metrics = self._metrics(rows, query_spec["payload"], self._rows(data))
             if not all(item["passed"] for item in metrics.values()):
                 return self.feedback(data, orm, snapshot, "DATA_VALUE_ERROR", "regression_gate", "DATA_VALUE_ERROR:REGRESSION_GATE", attempt_no, parents)
-        payload = {"schema_version": "v5.regression-passed-data-orm/v1", "regression_package_id": f"regression-{data['envelope']['artifact_id']}", "mode": "event_data", "data_package_refs": [artifact_ref(data["envelope"])], "orm_plan_ref": artifact_ref(orm["envelope"]), "question_sql_ref": context["payload"]["source_question_sql_ref"], "reviewed_question_sql_ref": artifact_ref(reviewed["envelope"]), "event_query_context_ref": artifact_ref(context["envelope"]), "query_spec_ref": artifact_ref(query_spec["envelope"]), "execution_instances": {"params": params, "operations": execution["executed_operation_ids"]}, "sandbox_snapshot_id": snapshot["payload"]["snapshot_id"], "sandbox_execution_report": {"operations": operations, "write_count": execution["write_count"], "rolled_back": False}, "sql_regression_report": {"sql_gold": reviewed["payload"]["sql_gold"], "row_count": len(rows), **metrics}, "executable_package_hash": sha256({"orm": orm["payload"]["validated_hash"], "data": data["payload"]["validated_hash"], "reviewed": reviewed["payload"]["package_hash"], "context": context["payload"]["projection_hash"], "query_spec": query_spec["envelope"]["content_hash"], "params": params}), "regression_status": "passed", "regressed_at": data["payload"]["validated_at"]}
+        payload = {"schema_version": "v5.regression-passed-data-orm/v2", "regression_package_id": f"regression-{data['envelope']['artifact_id']}", "mode": "event_data", "data_package_refs": [artifact_ref(data["envelope"])], "orm_plan_ref": artifact_ref(orm["envelope"]), "question_sql_ref": context["payload"]["source_question_sql_ref"], "reviewed_question_sql_ref": artifact_ref(reviewed["envelope"]), "event_query_context_ref": artifact_ref(context["envelope"]), "query_parameter_binding_ref": artifact_ref(binding["envelope"]), "query_parameter_binding_hash": binding["payload"]["binding_hash"], "query_spec_ref": artifact_ref(query_spec["envelope"]), "execution_instances": {"orm_params": orm_params, "query_binding_names": sorted(bindings), "operations": execution["executed_operation_ids"]}, "sandbox_snapshot_id": snapshot["payload"]["snapshot_id"], "sandbox_execution_report": {"operations": operations, "write_count": execution["write_count"], "rolled_back": False}, "sql_regression_report": {"sql_gold": reviewed["payload"]["sql_gold"], "row_count": len(rows), **metrics}, "executable_package_hash": sha256({"orm": orm["payload"]["validated_hash"], "data": data["payload"]["validated_hash"], "reviewed": reviewed["payload"]["package_hash"], "context": context["payload"]["projection_hash"], "query_spec": query_spec["envelope"]["content_hash"], "binding": binding["payload"]["binding_hash"], "orm_params": orm_params}), "regression_status": "passed", "regressed_at": data["payload"]["validated_at"]}
         return self._wrap("database_copy_regression", payload, data["envelope"], parents, attempt_no, "validated")
 
     @staticmethod

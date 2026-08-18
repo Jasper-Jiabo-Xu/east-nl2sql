@@ -7,6 +7,7 @@ module must never generate records/ORM/SQL or open a database.
 from __future__ import annotations
 
 import copy
+import hashlib
 import importlib
 import json
 import re
@@ -17,6 +18,9 @@ from jsonschema import Draft202012Validator, FormatChecker, ValidationError
 from referencing import Registry, Resource
 
 from east_v5.artifacts import artifact_ref, content_hash, validate_envelope
+_query_binding = importlib.import_module("east_v5.agents.110.query_binding")
+named_placeholders, query_bindings = _query_binding.named_placeholders, _query_binding.query_bindings
+resolve_declaration, validate_declarations = _query_binding.resolve_declaration, _query_binding.validate_declarations
 from east_v5.governance import ContractError, load_json, sha256
 
 from . import foundation
@@ -32,6 +36,7 @@ _ROUTES = {
     "DATA_VALUE_ERROR": "241",
     "ORM_PLAN_ERROR": "251",
     "SQL_EXECUTION_ERROR": "010",
+    "QUERY_PARAMETER_BINDING_ERROR": "010",
     "FOUNDATION_REQUIRED": "210",
     "MANUAL_REVIEW_REQUIRED": "manual",
 }
@@ -230,14 +235,28 @@ class DataStageCoordinator:
             _fail("210_FIELD_PROJECTION_MAPPING_UNRESOLVED")
         return sorted(selected)
 
-    def build_event_query_context(self, approved: dict[str, Any], query_spec: dict[str, Any], reviewed: dict[str, Any] | None = None) -> dict[str, Any]:
+    def _validate_query_parameter_binding(self, binding: dict[str, Any], approved: dict[str, Any], query_spec: dict[str, Any]) -> None:
+        self._validate(binding, "query-parameter-binding-package.schema.json", "210_QUERY_BINDING_REJECTED")
+        env, payload = binding["envelope"], binding["payload"]
+        approved_ref, query_ref = artifact_ref(approved["envelope"]), artifact_ref(query_spec["envelope"])
+        if (payload["source_question_sql_ref"], payload["source_query_spec_ref"]) != (approved_ref, query_ref): _fail("210_QUERY_BINDING_LINEAGE_REJECTED")
+        if env["parent_artifact_refs"] != [approved_ref, query_ref] or env["input_hashes"] != [approved_ref["content_hash"], query_ref["content_hash"]]: _fail("210_QUERY_BINDING_LINEAGE_REJECTED")
+        if (env["run_id"], env["qa_id"], env["trace_id"], env["attempt_no"]) != (approved["envelope"]["run_id"], approved["envelope"]["qa_id"], approved["envelope"]["trace_id"], approved["envelope"]["attempt_no"]): _fail("210_QUERY_BINDING_CONTEXT_DRIFT")
+        candidate = approved["payload"]["candidate_content"]
+        names = validate_declarations(candidate["sql_gold"], candidate["query_parameter_bindings"])
+        if payload["sql_hash"] != hashlib.sha256(candidate["sql_gold"].strip().encode("utf-8")).hexdigest() or payload["binding_hash"] != sha256({key: value for key, value in payload.items() if key != "binding_hash"}): _fail("210_QUERY_BINDING_HASH_DRIFT")
+        expected = sorted((resolve_declaration(item, query_spec) for item in candidate["query_parameter_bindings"]), key=lambda item: item["name"])
+        if tuple(item["name"] for item in expected) != names or payload["parameters"] != expected: _fail("210_QUERY_BINDING_VALUE_DRIFT")
+
+    def build_event_query_context(self, approved: dict[str, Any], query_spec: dict[str, Any], binding: dict[str, Any], reviewed: dict[str, Any] | None = None) -> dict[str, Any]:
         """Project field seeds from frozen sources; never infer them in 220."""
-        before = copy.deepcopy((approved, query_spec, reviewed))
+        before = copy.deepcopy((approved, query_spec, binding, reviewed))
         self._validate(approved, "question-sql-dual-review-passed-package.schema.json", "210_DUAL_REVIEW_REJECTED")
         self._validate_query_specification_package(query_spec)
+        self._validate_query_parameter_binding(binding, approved, query_spec)
         reviewed = self.build_reviewed_question_sql(approved) if reviewed is None else reviewed
         self._validate(reviewed, "reviewed-question-sql-package.schema.json", "210_REVIEWED_INPUT_REJECTED")
-        approved_ref, query_ref, reviewed_ref = (artifact_ref(approved["envelope"]), artifact_ref(query_spec["envelope"]), artifact_ref(reviewed["envelope"]))
+        approved_ref, query_ref, binding_ref, reviewed_ref = (artifact_ref(approved["envelope"]), artifact_ref(query_spec["envelope"]), artifact_ref(binding["envelope"]), artifact_ref(reviewed["envelope"]))
         if (approved["payload"]["query_specification_package"] != query_ref or reviewed["payload"]["query_spec_ref"] != query_ref
                 or reviewed["envelope"]["parent_artifact_refs"] != [approved_ref]):
             _fail("210_EVENT_CONTEXT_LINEAGE_REJECTED")
@@ -257,21 +276,21 @@ class DataStageCoordinator:
             seen_items.add(item["spec_item"])
             projection.append({"spec_item": item["spec_item"], "fields": self._mapping_fields(item.get("sql_fragment"), sql_fields, scope, aliases)})
         projection.sort(key=lambda item: item["spec_item"])
-        payload = {"schema_version": "v5.event-query-context/v1", "source_query_spec_ref": query_ref, "source_question_sql_ref": approved_ref, "reviewed_question_sql_ref": reviewed_ref, "field_projection": projection, "projection_hash": "0" * 64}
+        payload = {"schema_version": "v5.event-query-context/v2", "source_query_spec_ref": query_ref, "source_question_sql_ref": approved_ref, "query_parameter_binding_ref": binding_ref, "reviewed_question_sql_ref": reviewed_ref, "field_projection": projection, "projection_hash": "0" * 64}
         payload["projection_hash"] = sha256({key: value for key, value in payload.items() if key != "projection_hash"})
-        result = self._wrap("event_query_context", f"210-event-context-{approved['envelope']['artifact_id']}", payload, source=approved, mode="event_data", parents=[query_ref, approved_ref, reviewed_ref])
+        result = self._wrap("event_query_context", f"210-event-context-{approved['envelope']['artifact_id']}", payload, source=approved, mode="event_data", parents=[query_ref, approved_ref, binding_ref, reviewed_ref])
         self._validate(result, "event-query-context-package.schema.json", "210_EVENT_CONTEXT_OUTPUT_REJECTED")
-        if before != (approved, query_spec, None if before[2] is None else reviewed):
+        if before != (approved, query_spec, binding, None if before[3] is None else reviewed):
             _fail("210_INPUT_MUTATED")
         return result
 
-    def begin_event(self, approved: dict[str, Any], query_spec: dict[str, Any]) -> dict[str, Any]:
+    def begin_event(self, approved: dict[str, Any], query_spec: dict[str, Any], binding: dict[str, Any]) -> dict[str, Any]:
         """Start event work with 220; 230 requires its authenticated output."""
         reviewed = self.build_reviewed_question_sql(approved)
-        context = self.build_event_query_context(approved, query_spec, reviewed)
+        context = self.build_event_query_context(approved, query_spec, binding, reviewed)
         return {
             "reviewed_question_sql": reviewed,
-            "event_query_context": context,
+            "event_query_context": context, "query_parameter_binding": binding,
             "dispatches": [{"target": "220", "kind": "structure_closure", "reviewed_question_sql_ref": artifact_ref(reviewed["envelope"]), "event_query_context_ref": artifact_ref(context["envelope"])}],
         }
 
@@ -334,6 +353,7 @@ class DataStageCoordinator:
         restricted_orm: dict[str, Any],
         verified_data: dict[str, Any],
         frozen_orm: dict[str, Any],
+        binding: dict[str, Any],
     ) -> dict[str, Any]:
         """Authorize 260 only for one approved root and its validated event branches."""
         self._validate(approved, "question-sql-dual-review-passed-package.schema.json", "210_DUAL_REVIEW_REJECTED")
@@ -373,8 +393,10 @@ class DataStageCoordinator:
         if (frozen_orm["payload"]["source_orm_plan_ref"] != restricted_ref
                 or frozen_orm["envelope"]["parent_artifact_refs"] != [restricted_ref]):
             _fail("210_EVENT_ORM_LINEAGE_REJECTED")
-        self._same_context_and_attempt(approved, reviewed, context, structure, operation, restricted_orm, verified_data, frozen_orm)
-        return {"target": "260", "kind": "database_copy_regression", "mode": "event_data", "verified_data_ref": artifact_ref(verified_data["envelope"]), "frozen_orm_ref": artifact_ref(frozen_orm["envelope"]), "reviewed_question_sql_ref": reviewed_ref, "event_query_context_ref": artifact_ref(context["envelope"]), "approved_question_sql_ref": approved_ref, "query_spec_ref": approved["payload"]["query_specification_package"]}
+        self._validate(binding, "query-parameter-binding-package.schema.json", "210_QUERY_BINDING_REJECTED")
+        if context["payload"]["query_parameter_binding_ref"] != artifact_ref(binding["envelope"]): _fail("210_QUERY_BINDING_CONTEXT_REJECTED")
+        self._same_context_and_attempt(approved, reviewed, context, structure, operation, restricted_orm, verified_data, frozen_orm, binding)
+        return {"target": "260", "kind": "database_copy_regression", "mode": "event_data", "verified_data_ref": artifact_ref(verified_data["envelope"]), "frozen_orm_ref": artifact_ref(frozen_orm["envelope"]), "reviewed_question_sql_ref": reviewed_ref, "event_query_context_ref": artifact_ref(context["envelope"]), "query_parameter_binding_ref": artifact_ref(binding["envelope"]), "approved_question_sql_ref": approved_ref, "query_spec_ref": approved["payload"]["query_specification_package"]}
 
     def begin_foundation(self, task_payload: dict[str, Any], *, run_id: str, trace_id: str, created_at: str, parents: list[dict[str, Any]]) -> dict[str, Any]:
         """Start Foundation with 220 only; 241 requires 220's closure first."""
@@ -449,6 +471,7 @@ class DataStageCoordinator:
             or regression["payload"]["query_spec_ref"] != query_spec_ref
             or regression["payload"]["reviewed_question_sql_ref"] not in regression["envelope"]["parent_artifact_refs"]
             or regression["payload"]["event_query_context_ref"] not in regression["envelope"]["parent_artifact_refs"]
+            or regression["payload"]["query_parameter_binding_ref"] not in regression["envelope"]["parent_artifact_refs"]
         ):
             _fail("210_EVENT_REGRESSION_LINEAGE_REJECTED")
         payload = {
@@ -461,7 +484,7 @@ class DataStageCoordinator:
             "target_question_dataset_version": target_question_dataset_version,
             "idempotency_key": sha256({"mode": "event_data", "approved": artifact_ref(approved["envelope"]), "regression": artifact_ref(regression["envelope"]), "database": target_database_version, "dataset": target_question_dataset_version}),
             "expected_write_summary": {"orm_execution": {"insert_or_update": regression["payload"]["sandbox_execution_report"]["write_count"]}},
-            "package_hashes": {"question_sql": approved["envelope"]["content_hash"], "data": data_refs[0]["content_hash"], "orm": regression["payload"]["orm_plan_ref"]["content_hash"], "regression": regression["envelope"]["content_hash"]},
+            "package_hashes": {"question_sql": approved["envelope"]["content_hash"], "data": data_refs[0]["content_hash"], "orm": regression["payload"]["orm_plan_ref"]["content_hash"], "query_binding": regression["payload"]["query_parameter_binding_hash"], "regression": regression["envelope"]["content_hash"]},
             "resume_qa_ref": None,
         }
         result = self._wrap("release_candidate", f"210-release-event-{regression['envelope']['artifact_id']}", payload, source=regression, mode="event_data", parents=[artifact_ref(approved["envelope"]), artifact_ref(regression["envelope"])])

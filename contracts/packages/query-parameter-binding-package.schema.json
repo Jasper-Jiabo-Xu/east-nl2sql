@@ -1,0 +1,17 @@
+{
+  "$id": "https://east.example/contracts/packages/query-parameter-binding-package/v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "QUERY-PARAMETER-BINDING",
+  "type": "object", "additionalProperties": false, "required": ["envelope", "payload"],
+  "properties": {
+    "envelope": {"allOf": [{"$ref": "https://east.example/contracts/common-envelope/v1"}, {"type": "object", "properties": {"artifact_type": {"const": "query_parameter_binding"}, "producer_id": {"const": "110"}, "mode": {"const": "event_data"}, "status": {"const": "validated"}}}]},
+    "payload": {"type": "object", "additionalProperties": false, "required": ["schema_version", "source_question_sql_ref", "source_query_spec_ref", "sql_hash", "parameters", "binding_hash"], "properties": {
+      "schema_version": {"const": "v5.query-parameter-binding/v1"}, "source_question_sql_ref": {"$ref": "#/$defs/ref"}, "source_query_spec_ref": {"$ref": "#/$defs/ref"}, "sql_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+      "parameters": {"type": "array", "items": {"$ref": "#/$defs/parameter"}}, "binding_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+    }}
+  },
+  "$defs": {
+    "ref": {"type": "object", "additionalProperties": false, "required": ["artifact_id", "version", "content_hash"], "properties": {"artifact_id": {"type": "string", "minLength": 1}, "version": {"type": "integer", "minimum": 1}, "content_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}},
+    "parameter": {"type": "object", "additionalProperties": false, "required": ["name", "source_pointer", "field", "operator", "value", "sqlite_type", "evidence_ref"], "properties": {"name": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"}, "source_pointer": {"type": "string", "pattern": "^/(query_entry/entry_conditions|filters_and_evidence)/(0|[1-9][0-9]*)$"}, "field": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*\\.[A-Za-z_][A-Za-z0-9_]*$"}, "operator": {"type": "string", "minLength": 1}, "value": {"type": ["string", "integer", "number", "null"]}, "sqlite_type": {"enum": ["text", "integer", "real", "null"]}, "evidence_ref": {"type": ["string", "null"]}}}
+  }
+}

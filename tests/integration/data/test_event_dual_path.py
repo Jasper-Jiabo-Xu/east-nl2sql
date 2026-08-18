@@ -39,6 +39,7 @@ sanitized_fixture_mod = importlib.import_module("east_v5.agents.242.sanitized_fi
 orm_generator_mod = importlib.import_module("east_v5.agents.251.generator")
 orm_validator_mod = importlib.import_module("east_v5.agents.252.validator")
 regression_mod = importlib.import_module("east_v5.agents.260.regression")
+question_scheduler_mod = importlib.import_module("east_v5.agents.110.scheduler")
 
 try:
     stub_210 = importlib.import_module("tests.agents.260.approved_210_stub")
@@ -121,6 +122,7 @@ class EventDualPathIntegrationTests(unittest.TestCase):
 
     def _bind_approved(self, approved: dict, spec: dict) -> dict:
         approved["payload"]["query_specification_package"] = artifact_ref(spec["envelope"])
+        approved["payload"]["candidate_content"].setdefault("query_parameter_bindings", [])
         approved["payload"]["package_hash"] = sha256({key: value for key, value in approved["payload"].items() if key != "package_hash"})
         approved["envelope"]["content_hash"] = content_hash(approved["envelope"], approved["payload"])
         return approved
@@ -159,7 +161,8 @@ class EventDualPathIntegrationTests(unittest.TestCase):
     def _chain(self):
         """Build one same-source 210→220→230→{241→242,251→252} pair."""
         approved = self.approved
-        started = self.coordinator.begin_event(approved, self.spec)
+        binding = question_scheduler_mod.QuestionSqlStageScheduler(ROOT).build_query_parameter_binding(approved, self.spec, created_at=TIME)
+        started = self.coordinator.begin_event(approved, self.spec, binding)
         reviewed = started["reviewed_question_sql"]
         context = started["event_query_context"]
         first_asset, second_asset = _event_results(reviewed, context)
@@ -191,10 +194,10 @@ class EventDualPathIntegrationTests(unittest.TestCase):
 
         restricted = orm_generator_mod.RestrictedOrmGenerator(ROOT).build(structure, operation)
         frozen = orm_validator_mod.OrmValidator(ROOT).freeze_orm(restricted, structure, operation)
-        return approved, reviewed, context, structure, operation, bound, verified, restricted, frozen
+        return approved, reviewed, context, binding, structure, operation, bound, verified, restricted, frozen
 
     def test_dual_path_chain_260_copy_regression_and_210_release_candidate(self):
-        approved, reviewed, context, structure, operation, bound, verified, restricted, frozen = self._chain()
+        approved, reviewed, context, binding, structure, operation, bound, verified, restricted, frozen = self._chain()
 
         # 241 与 251 必须消费同一操作闭包，槽位一一绑定。
         self.assertEqual(bound["payload"]["operation_closure_ref"], artifact_ref(operation["envelope"]))
@@ -210,9 +213,9 @@ class EventDualPathIntegrationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             formal = self._formal_db(Path(directory))
             before = formal.read_bytes()
-            dispatch = self.coordinator.join_event_validations(approved, reviewed, context, structure, operation, restricted, verified, frozen)
+            dispatch = self.coordinator.join_event_validations(approved, reviewed, context, structure, operation, restricted, verified, frozen, binding)
             self.assertEqual(dispatch["target"], "260")
-            regression = regression_mod.DatabaseCopyRegression(ROOT).run_event(verified, frozen, self.snapshot, reviewed, context, self.spec, formal)
+            regression = regression_mod.DatabaseCopyRegression(ROOT).run_event(verified, frozen, self.snapshot, reviewed, context, binding, self.spec, formal)
             self.assertEqual(regression["payload"]["regression_status"], "passed")
             self.assertEqual(formal.read_bytes(), before)
             self.assertEqual(stub_210.consume(regression, ROOT)["decision"], "accepted")
@@ -224,16 +227,17 @@ class EventDualPathIntegrationTests(unittest.TestCase):
         self.assertIsNone(candidate["payload"]["foundation_regression_report_ref"])
         self.assertTrue(_test_module("contracts.test_stage10_package_contracts").consume_stub("release_candidate", "010", candidate))
 
-    def _failures(self, verified, frozen, reviewed, context):
+    def _failures(self, verified, frozen, reviewed, context, binding):
         """用真实 260 产包覆盖五类失败路由，返回 {error_code: (feedback, target)}。"""
         spec = self._refresh_spec(lambda payload: payload.update({"minimum_negative_count": 99}))
         approved_dve = self._bind_approved(copy.deepcopy(self.approved), spec)
         worker = regression_mod.DatabaseCopyRegression(ROOT)
 
-        dve_started = self.coordinator.begin_event(approved_dve, spec)
-        dve = worker.run_event(verified, frozen, self.snapshot, dve_started["reviewed_question_sql"], dve_started["event_query_context"], spec, self._formal_file())
+        dve_binding = question_scheduler_mod.QuestionSqlStageScheduler(ROOT).build_query_parameter_binding(approved_dve, spec, created_at=TIME)
+        dve_started = self.coordinator.begin_event(approved_dve, spec, dve_binding)
+        dve = worker.run_event(verified, frozen, self.snapshot, dve_started["reviewed_question_sql"], dve_started["event_query_context"], dve_binding, spec, self._formal_file())
 
-        sql = worker.run_event(verified, frozen, self.snapshot, reviewed, context, self.spec, self._formal_sql_error_file())
+        sql = worker.run_event(verified, frozen, self.snapshot, reviewed, context, binding, self.spec, self._formal_sql_error_file())
 
         orm_broken = copy.deepcopy(frozen)
         plan = orm_broken["payload"]["validated_orm_plan"]
@@ -242,15 +246,15 @@ class EventDualPathIntegrationTests(unittest.TestCase):
         plan["code_hash"] = code_hash
         orm_broken["payload"]["validated_hash"] = code_hash
         orm_broken["envelope"]["content_hash"] = content_hash(orm_broken["envelope"], orm_broken["payload"])
-        orm = worker.run_event(verified, orm_broken, self.snapshot, reviewed, context, self.spec, self._formal_file())
+        orm = worker.run_event(verified, orm_broken, self.snapshot, reviewed, context, binding, self.spec, self._formal_file())
 
         data_foundation = copy.deepcopy(verified)
         data_foundation["payload"]["validated_data_package"]["data_groups"][0]["records"][0]["existing_record_refs"] = [{"table_id": "FIXTURE_CUSTOMER", "record_key": "not-in-snapshot"}]
         data_foundation["payload"]["validated_hash"] = sha256(data_foundation["payload"]["validated_data_package"])
         data_foundation["envelope"]["content_hash"] = content_hash(data_foundation["envelope"], data_foundation["payload"])
-        foundation = worker.run_event(data_foundation, frozen, self.snapshot, reviewed, context, self.spec, self._formal_file())
+        foundation = worker.run_event(data_foundation, frozen, self.snapshot, reviewed, context, binding, self.spec, self._formal_file())
 
-        manual = worker.run_event(verified, frozen, self.snapshot, dve_started["reviewed_question_sql"], dve_started["event_query_context"], spec, self._formal_file(), attempt_no=3)
+        manual = worker.run_event(verified, frozen, self.snapshot, dve_started["reviewed_question_sql"], dve_started["event_query_context"], dve_binding, spec, self._formal_file(), attempt_no=3)
 
         return {
             "DATA_VALUE_ERROR": (dve, "241"),
@@ -261,14 +265,14 @@ class EventDualPathIntegrationTests(unittest.TestCase):
         }
 
     def test_release_candidate_requires_passed_regression(self):
-        _, reviewed, context, _, _, _, verified, _, frozen = self._chain()
-        feedback, _ = self._failures(verified, frozen, reviewed, context)["DATA_VALUE_ERROR"]
+        _, reviewed, context, binding, _, _, _, verified, _, frozen = self._chain()
+        feedback, _ = self._failures(verified, frozen, reviewed, context, binding)["DATA_VALUE_ERROR"]
         with self.assertRaisesRegex(ContractError, "210_EVENT_REGRESSION_REJECTED"):
             self.coordinator.build_event_release(self.approved, feedback, target_database_version="fixture-db-v1", target_question_dataset_version="fixture-question-v1")
 
     def test_five_real_failure_routes_consumed_by_210_and_routed(self):
-        _, reviewed, context, _, _, _, verified, _, frozen = self._chain()
-        for code, (feedback, target) in self._failures(verified, frozen, reviewed, context).items():
+        _, reviewed, context, binding, _, _, _, verified, _, frozen = self._chain()
+        for code, (feedback, target) in self._failures(verified, frozen, reviewed, context, binding).items():
             with self.subTest(code=code):
                 self.assertEqual(feedback["payload"]["failure_details"]["error_code"], code)
                 self.assertEqual(feedback["payload"]["route_target"], target)
@@ -280,15 +284,16 @@ class EventDualPathIntegrationTests(unittest.TestCase):
                 self.assertEqual(route["kind"], "manual" if target == "manual" else "retry_or_rollback")
 
     def test_retry_escalation_manual_block_and_idempotent_replay(self):
-        _, reviewed, context, _, _, _, verified, _, frozen = self._chain()
+        _, reviewed, context, binding, _, _, _, verified, _, frozen = self._chain()
         spec = self._refresh_spec(lambda payload: payload.update({"minimum_negative_count": 99}))
         approved_dve = self._bind_approved(copy.deepcopy(self.approved), spec)
         worker = regression_mod.DatabaseCopyRegression(ROOT)
-        started = self.coordinator.begin_event(approved_dve, spec)
+        retry_binding = question_scheduler_mod.QuestionSqlStageScheduler(ROOT).build_query_parameter_binding(approved_dve, spec, created_at=TIME)
+        started = self.coordinator.begin_event(approved_dve, spec, retry_binding)
         reviewed, context = started["reviewed_question_sql"], started["event_query_context"]
-        attempt1 = worker.run_event(verified, frozen, self.snapshot, reviewed, context, spec, self._formal_file(), attempt_no=1)
-        attempt2 = worker.run_event(verified, frozen, self.snapshot, reviewed, context, spec, self._formal_file(), attempt_no=2)
-        attempt3 = worker.run_event(verified, frozen, self.snapshot, reviewed, context, spec, self._formal_file(), attempt_no=3)
+        attempt1 = worker.run_event(verified, frozen, self.snapshot, reviewed, context, retry_binding, spec, self._formal_file(), attempt_no=1)
+        attempt2 = worker.run_event(verified, frozen, self.snapshot, reviewed, context, retry_binding, spec, self._formal_file(), attempt_no=2)
+        attempt3 = worker.run_event(verified, frozen, self.snapshot, reviewed, context, retry_binding, spec, self._formal_file(), attempt_no=3)
         self.assertEqual((attempt1["payload"]["failure_details"]["error_code"], attempt1["payload"]["route_target"]), ("DATA_VALUE_ERROR", "241"))
         self.assertEqual((attempt2["payload"]["failure_details"]["error_code"], attempt2["payload"]["route_target"]), ("DATA_VALUE_ERROR", "241"))
         self.assertEqual((attempt3["payload"]["failure_details"]["error_code"], attempt3["payload"]["route_target"]), ("MANUAL_REVIEW_REQUIRED", "manual"))
@@ -297,8 +302,8 @@ class EventDualPathIntegrationTests(unittest.TestCase):
         self.assertEqual(self.coordinator.route_feedback(attempt3)["kind"], "manual")
 
     def test_route_conflict_version_and_hash_drift_rejected(self):
-        _, reviewed, context, _, _, _, verified, _, frozen = self._chain()
-        feedback, _ = self._failures(verified, frozen, reviewed, context)["DATA_VALUE_ERROR"]
+        _, reviewed, context, binding, _, _, _, verified, _, frozen = self._chain()
+        feedback, _ = self._failures(verified, frozen, reviewed, context, binding)["DATA_VALUE_ERROR"]
         conflict = copy.deepcopy(feedback)
         conflict["payload"]["route_target"] = "251"
         conflict["envelope"]["content_hash"] = content_hash(conflict["envelope"], conflict["payload"])
@@ -336,14 +341,14 @@ class EventDualPathIntegrationTests(unittest.TestCase):
             self.coordinator.route_feedback(unknown_field_drift)
 
     def test_210_stub_rejects_schema_title_impersonation_and_hash_drift(self):
-        _, reviewed, context, _, _, _, verified, _, frozen = self._chain()
+        _, reviewed, context, binding, _, _, _, verified, _, frozen = self._chain()
         # 以 Schema title 冒充 artifact_type 必须被 210 拒绝。
         fake = {"envelope": {"artifact_type": "REGRESSION-PASSED-DATA-ORM", "mode": "event_data"}, "payload": {}}
         with self.assertRaisesRegex(ContractError, "210_STUB_SCHEMA_REJECTED"):
             stub_210.consume(fake, ROOT)
         # 错误 mode/schema 配对必须被拒绝。
         formal = self._formal_file()
-        regression = regression_mod.DatabaseCopyRegression(ROOT).run_event(verified, frozen, self.snapshot, reviewed, context, self.spec, formal)
+        regression = regression_mod.DatabaseCopyRegression(ROOT).run_event(verified, frozen, self.snapshot, reviewed, context, binding, self.spec, formal)
         wrong_mode = copy.deepcopy(regression)
         wrong_mode["envelope"]["mode"] = "foundation"
         wrong_mode["envelope"]["content_hash"] = content_hash(wrong_mode["envelope"], wrong_mode["payload"])

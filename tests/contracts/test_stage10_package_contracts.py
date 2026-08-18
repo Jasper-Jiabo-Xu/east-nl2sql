@@ -84,6 +84,7 @@ def dual_review_passed() -> dict[str, object]:
                 "select": "F1", "from_join": "T1", "where": "无", "aggregation": "无", "sort": "无", "business_meaning": "脱敏说明"},
             "business_event_candidates": [{"event_name": "开户", "objective": "开户", "objects": ["客户"], "state_changes": []}],
             "specification_mapping": [{"spec_item": "S1", "question_fragment": "问题", "sql_fragment": "F1"}],
+            "query_parameter_bindings": [],
         },
         "query_specification_package": ref("query-spec", "b"), "penalty_fact_package": ref("penalty", "c"),
         "observable_fact_package": ref("observable", "d"),
@@ -111,7 +112,7 @@ def release_candidate(mode: str = "event_data", *, resume_qa_ref: dict[str, obje
         "foundation_regression_report_ref": None if event else ref("foundation-regression", "5"),
         "target_database_version": "fixture-db-v1", "target_question_dataset_version": "fixture-question-v1" if event else None,
         "idempotency_key": f"stage10-{mode}-1", "expected_write_summary": {"T1": {"insert": 1, "update": 0}},
-        "package_hashes": ({"question_sql": "6" * 64, "data": "7" * 64, "orm": "8" * 64, "regression": "9" * 64} if event else {"foundation_task": "a" * 64, "data": "b" * 64, "write_batch": "c" * 64, "regression_report": "d" * 64}),
+        "package_hashes": ({"question_sql": "6" * 64, "data": "7" * 64, "orm": "8" * 64, "query_binding": "9" * 64, "regression": "a" * 64} if event else {"foundation_task": "a" * 64, "data": "b" * 64, "write_batch": "c" * 64, "regression_report": "d" * 64}),
         "resume_qa_ref": resume_qa_ref,
     }
     return package("release_candidate", payload, producer="210", mode=mode)

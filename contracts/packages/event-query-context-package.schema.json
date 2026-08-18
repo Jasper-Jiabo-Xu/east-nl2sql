@@ -1,5 +1,5 @@
 {
-  "$id": "https://east.example/contracts/packages/event-query-context-package/v1",
+  "$id": "https://east.example/contracts/packages/event-query-context-package/v2",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "EVENT-QUERY-CONTEXT",
   "type": "object", "additionalProperties": false, "required": ["envelope", "payload"],
@@ -9,11 +9,12 @@
       {"type": "object", "properties": {"artifact_type": {"const": "event_query_context"}, "producer_id": {"const": "210"}, "mode": {"const": "event_data"}}}
     ]},
     "payload": {"type": "object", "additionalProperties": false,
-      "required": ["schema_version", "source_query_spec_ref", "source_question_sql_ref", "reviewed_question_sql_ref", "field_projection", "projection_hash"],
+      "required": ["schema_version", "source_query_spec_ref", "source_question_sql_ref", "query_parameter_binding_ref", "reviewed_question_sql_ref", "field_projection", "projection_hash"],
       "properties": {
-        "schema_version": {"const": "v5.event-query-context/v1"},
+        "schema_version": {"const": "v5.event-query-context/v2"},
         "source_query_spec_ref": {"$ref": "#/$defs/ref"},
         "source_question_sql_ref": {"$ref": "#/$defs/ref"},
+        "query_parameter_binding_ref": {"$ref": "#/$defs/ref"},
         "reviewed_question_sql_ref": {"$ref": "#/$defs/ref"},
         "field_projection": {"type": "array", "minItems": 1, "items": {"type": "object", "additionalProperties": false, "required": ["spec_item", "fields"], "properties": {"spec_item": {"type": "string", "minLength": 1}, "fields": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*\\.[A-Za-z_][A-Za-z0-9_]*$"}}}}},
         "projection_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"}

@@ -22,7 +22,7 @@ REVIEWED_QUESTION_SQL_FIELDS = {
     "evidence_refs", "precheck_report_ref", "deepseek_review_ref",
     "glm_review_ref", "package_hash", "approved_at",
 }
-EVENT_QUERY_CONTEXT_FIELDS = {"schema_version", "source_query_spec_ref", "source_question_sql_ref", "reviewed_question_sql_ref", "field_projection", "projection_hash"}
+EVENT_QUERY_CONTEXT_FIELDS = {"schema_version", "source_query_spec_ref", "source_question_sql_ref", "query_parameter_binding_ref", "reviewed_question_sql_ref", "field_projection", "projection_hash"}
 STRUCTURE_FIELDS = {"schema_version", "constraint_asset_version", "graph_version", "tables", "fields", "references"}
 FOUNDATION_STRUCTURE_FIELDS = STRUCTURE_FIELDS | {"foundation_task_ref"}
 FIELD_PATH = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)$")
@@ -146,11 +146,13 @@ def validate_event_query_context(context: dict[str, Any], reviewed: dict[str, An
         _fail("EVENT_CONTEXT_SCHEMA_INVALID")
     if payload["projection_hash"] != _hash({key: value for key, value in payload.items() if key != "projection_hash"}):
         _fail("EVENT_CONTEXT_HASH_DRIFT")
+    if payload["schema_version"] != "v5.event-query-context/v2":
+        _fail("EVENT_CONTEXT_VERSION_REJECTED")
     if payload["reviewed_question_sql_ref"] != artifact_ref(reviewed_envelope):
         _fail("EVENT_CONTEXT_REVIEWED_LINEAGE_REJECTED")
     if reviewed_envelope["parent_artifact_refs"] != [payload["source_question_sql_ref"]]:
         _fail("EVENT_CONTEXT_SOURCE_QUESTION_LINEAGE_REJECTED")
-    refs = [payload["source_query_spec_ref"], payload["source_question_sql_ref"], payload["reviewed_question_sql_ref"]]
+    refs = [payload["source_query_spec_ref"], payload["source_question_sql_ref"], payload["query_parameter_binding_ref"], payload["reviewed_question_sql_ref"]]
     if envelope["parent_artifact_refs"] != refs or envelope["input_hashes"] != [ref["content_hash"] for ref in refs]:
         _fail("EVENT_CONTEXT_PARENT_LINEAGE_REJECTED")
     for key in ("run_id", "qa_id", "trace_id", "attempt_no"):

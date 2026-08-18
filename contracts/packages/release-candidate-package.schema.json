@@ -71,10 +71,10 @@
     "artifact_ref_or_null": {"anyOf": [{"$ref": "#/$defs/artifact_ref"}, {"type": "null"}]},
     "event_hashes": {
       "type": "object", "additionalProperties": false,
-      "required": ["question_sql", "data", "orm", "regression"],
+      "required": ["question_sql", "data", "orm", "query_binding", "regression"],
       "properties": {
         "question_sql": {"$ref": "#/$defs/hash"}, "data": {"$ref": "#/$defs/hash"},
-        "orm": {"$ref": "#/$defs/hash"}, "regression": {"$ref": "#/$defs/hash"}
+        "orm": {"$ref": "#/$defs/hash"}, "query_binding": {"$ref": "#/$defs/hash"}, "regression": {"$ref": "#/$defs/hash"}
       }
     },
     "foundation_hashes": {

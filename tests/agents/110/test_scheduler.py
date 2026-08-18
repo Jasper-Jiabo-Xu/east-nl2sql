@@ -84,14 +84,32 @@ class SchedulerTests(unittest.TestCase):
 
     def test_double_yes_builds_approved_package_and_210_consumes_it(self):
         pending = dual(); first, second = reviews(pending)
-        result = self.scheduler.collect_reviews(pending, [second, first], created_at=TIME)
+        result = self.scheduler.collect_reviews(pending, [second, first], spec(), created_at=TIME)
         self.assertEqual((result["target"], result["kind"]), ("210", "question_sql_dual_review_passed"))
         approved = result["approved_package"]
+        self.assertEqual(result["query_parameter_binding"]["payload"]["parameters"], [])
         self.assertEqual((approved["envelope"]["producer_id"], approved["envelope"]["status"]), ("110", "validated"))
         self.assertEqual(approved["payload"]["review_round"], 1)
         # The executable 110 probe binds the immutable 140 package when it
         # invokes 210; bare 110 provenance may no longer enter event flow.
         self.assertTrue(run_sanitized_probe(ROOT)["summary"]["downstream_stub_consumed"])
+
+    def test_named_binding_is_frozen_from_query_spec_and_context_v2_carries_ref(self):
+        query = spec()
+        query["payload"]["query_entry"]["entry_conditions"] = [{"field_id": "F1", "operator": "=", "value": "x' OR 1=1 --"}]
+        query["envelope"]["content_hash"] = content_hash(query["envelope"], query["payload"])
+        sql = "SELECT T1.F1 FROM T1 WHERE T1.F1 = :needle /* :not_a_parameter */"
+        candidate = {"sql_gold": sql, "query_parameter_bindings": [{"name": "needle", "source_pointer": "/query_entry/entry_conditions/0"}], "clear_question": "筛查机构", "sql_explanation": {"select": "字段", "from_join": "T1", "where": "冻结条件", "aggregation": "无", "sort": "固定", "business_meaning": "筛查"}, "business_event_candidates": [{"event_name": "筛查", "objective": "筛查", "objects": ["机构"], "state_changes": []}], "specification_mapping": [{"spec_item": item, "question_fragment": "筛查机构", "sql_fragment": "T1.F1" if item == "return_fields" else sql} for item in MAPPED_SPEC_ITEMS]}
+        pending = PendingPrecheckBuilder(ROOT).build_pending_precheck(query, run_id="run110", qa_id="QA110", created_at=TIME, **candidate)
+        checker = PrecheckAgent(ROOT); dual_review = checker.build_dual_review(pending, query, checker.precheck(pending, query, checked_at=TIME), created_at=TIME)
+        first, second = reviews(dual_review)
+        result = self.scheduler.collect_reviews(dual_review, [first, second], query, created_at=TIME)
+        binding = result["query_parameter_binding"]
+        self.assertEqual(binding["payload"]["parameters"][0]["value"], "x' OR 1=1 --")
+        coordinator = importlib.import_module("east_v5.agents.210.scheduler").DataStageCoordinator(ROOT)
+        context = coordinator.begin_event(result["approved_package"], query, binding)["event_query_context"]
+        self.assertEqual(context["payload"]["schema_version"], "v5.event-query-context/v2")
+        self.assertEqual(context["payload"]["query_parameter_binding_ref"], artifact_ref(binding["envelope"]))
 
     def test_single_no_never_starts_data_and_routes_by_error(self):
         pending = dual(); first, second = reviews(pending, decision180="no", errors180=("QUERY_SPEC_ERROR",))

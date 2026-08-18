@@ -87,9 +87,11 @@ class FormalReleaseCommitter:
         hashes = body["package_hashes"]
         if hashes["question_sql"] != approved["envelope"]["content_hash"] or hashes["regression"] != regression["envelope"]["content_hash"]:
             _fail("010_EVENT_PACKAGE_HASH_DRIFT")
-        if len(report["data_package_refs"]) != 1 or hashes["data"] != report["data_package_refs"][0]["content_hash"] or hashes["orm"] != report["orm_plan_ref"]["content_hash"]:
+        if len(report["data_package_refs"]) != 1 or hashes["data"] != report["data_package_refs"][0]["content_hash"] or hashes["orm"] != report["orm_plan_ref"]["content_hash"] or hashes["query_binding"] != report["query_parameter_binding_hash"]:
             _fail("010_EVENT_PACKAGE_HASH_DRIFT")
         if report["question_sql_ref"] != artifact_ref(approved["envelope"]):
+            _fail("010_EVENT_REGRESSION_LINEAGE_DRIFT")
+        if report["query_parameter_binding_ref"] not in regression["envelope"]["parent_artifact_refs"]:
             _fail("010_EVENT_REGRESSION_LINEAGE_DRIFT")
         return self._event_operations(report["sandbox_execution_report"]["operations"], body["expected_write_summary"])
 
@@ -151,9 +153,10 @@ class FormalReleaseCommitter:
         """Cross-stage SQL execution failure has exactly one legal destination: 110."""
         self._validate(feedback, "sql-regression-failed-feedback.schema.json", "010_SQL_FEEDBACK_REJECTED")
         body = feedback["payload"]
-        if body["failure_details"]["error_code"] != "SQL_EXECUTION_ERROR" or body["route_target"] != "010":
+        if body["failure_details"]["error_code"] not in {"SQL_EXECUTION_ERROR", "QUERY_PARAMETER_BINDING_ERROR"} or body["route_target"] != "010":
             _fail("010_SQL_FEEDBACK_ROUTE_REJECTED")
-        return {"target": "110", "kind": "sql_gold_repair", "feedback_ref": artifact_ref(feedback["envelope"]), "attempt_no": body["retry_count"]}
+        kind = "query_parameter_binding_repair" if body["failure_details"]["error_code"] == "QUERY_PARAMETER_BINDING_ERROR" else "sql_gold_repair"
+        return {"target": "110", "kind": kind, "feedback_ref": artifact_ref(feedback["envelope"]), "attempt_no": body["retry_count"]}
 
     @staticmethod
     def status_report(stage_statuses: list[dict[str, Any]]) -> dict[str, Any]:

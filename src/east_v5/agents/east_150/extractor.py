@@ -13,6 +13,9 @@ from jsonschema import Draft202012Validator, ValidationError
 from referencing import Registry, Resource
 
 from east_v5.artifacts import ArtifactRegistry, artifact_ref, content_hash, validate_envelope
+_query_binding = import_module("east_v5.agents.110.query_binding")
+named_placeholders = _query_binding.named_placeholders
+validate_declarations = _query_binding.validate_declarations
 from east_v5.governance import ContractError, load_json
 
 validate_reviewed_question_sql = import_module("east_v5.agents.220.closure").validate_reviewed_question_sql
@@ -67,6 +70,7 @@ _LOCATION_CHANGE_MAP = {
     "sql_explanation": frozenset({"sql_explanation"}),
     "business_event_candidates": frozenset({"business_event_candidates"}),
     "specification_mapping": frozenset({"specification_mapping"}),
+    "query_parameter_bindings": frozenset({"sql_gold", "query_parameter_bindings"}),
     "evidence_refs": frozenset({"evidence_refs"}),
     "fact": frozenset({"clear_question", "specification_mapping", "evidence_refs"}),
 }
@@ -323,7 +327,7 @@ class PendingPrecheckBuilder:
         clear_question: str | None = None, sql_explanation: dict[str, str] | None = None,
         business_event_candidates: list[dict[str, Any]] | None = None, specification_mapping: list[dict[str, str]] | None = None, version: int = 1, attempt_no: int = 1,
         supersedes_ref: dict[str, Any] | None = None, parents: list[dict[str, Any]] | None = None,
-        status: str = "candidate", created_at: str | None = None, evidence_refs: list[str] | None = None, artifact_id: str | None = None,
+        status: str = "candidate", created_at: str | None = None, evidence_refs: list[str] | None = None, query_parameter_bindings: list[dict[str, str]] | None = None, artifact_id: str | None = None,
     ) -> dict[str, Any]:
         self.validate_query_spec(query_spec)
         spec_envelope, spec = query_spec["envelope"], query_spec["payload"]
@@ -334,6 +338,10 @@ class PendingPrecheckBuilder:
         if (version == 1) != (supersedes_ref is None):
             _fail("VERSION_OVERWRITE_ATTEMPTED")
         self._validate_sql(sql_gold, spec["sql_schema_scope"])
+        # Every candidate carries an explicit declaration, including the empty
+        # list for SQL without parameters.  160 repeats this deterministically.
+        declarations = [] if query_parameter_bindings is None and not named_placeholders(sql_gold) else query_parameter_bindings
+        validate_declarations(sql_gold, declarations)
         if clear_question is None or sql_explanation is None or business_event_candidates is None or specification_mapping is None:
             _fail("GENERATED_FIELDS_REQUIRED")
         question = clear_question
@@ -357,7 +365,7 @@ class PendingPrecheckBuilder:
             "candidate_id": f"150-{run_id}-{qa_id}", "query_spec_ref": artifact_ref(spec_envelope),
             "penalty_fact_package_ref": spec["penalty_fact_package_ref"],
             "observable_fact_package_ref": spec["observable_fact_package_ref"],
-            "clear_question": question, "sql_gold": sql_gold,
+            "clear_question": question, "sql_gold": sql_gold, "query_parameter_bindings": declarations,
             "sql_explanation": sql_explanation,
             "business_event_candidates": business_event_candidates,
             "specification_mapping": mapping,

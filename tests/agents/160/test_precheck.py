@@ -40,7 +40,7 @@ def spec():
     p = {"query_spec_id": "qspec-160", "penalty_fact_package_ref": {"artifact_id": "penalty", "version": 1, "content_hash": "a" * 64},
          "observable_fact_package_ref": {"artifact_id": "observable", "version": 1, "content_hash": "b" * 64},
          "query_goal": "脱敏风险筛查", "must_preserve_fact_refs": ["fact-1"], "main_object_and_grain": {"main_object": "机构", "grain": "记录"},
-         "query_entry": {"entry_table": "T1", "entry_conditions": []}, "related_objects_and_path": [], "filters_and_evidence": [],
+         "query_entry": {"entry_table": "T1", "entry_conditions": [{"field_id": "F1", "operator": "=", "value": "x"}]}, "related_objects_and_path": [], "filters_and_evidence": [],
          "return_fields": [{"field_id": "F1", "display_name": "字段1", "source_table": "T1"}],
          "aggregation_dedup_sort_time": {"group_by_fields": []}, "observability_boundary": {"answerable": ["风险"], "unanswerable": []},
          "expected_result_shape": {"row_grain": "记录", "column_set": ["F1"], "aggregation_shape": "none"},
@@ -55,6 +55,7 @@ def candidate(sql, suffix=""):
     question = "筛查机构" + suffix
     return {"sql_gold": sql, "clear_question": question,
             "sql_explanation": {"select": "机构字段" + suffix, "from_join": "限定关联" + suffix, "where": "固定条件" + suffix, "aggregation": "无" + suffix, "sort": "固定排序" + suffix, "business_meaning": "风险筛查" + suffix},
+            "query_parameter_bindings": [{"name": "v", "source_pointer": "/query_entry/entry_conditions/0"}] if ":v" in sql else [],
             "business_event_candidates": [{"event_name": "筛查" + suffix, "objective": "风险筛查" + suffix, "objects": ["机构"], "state_changes": ["识别" + suffix]}],
             "specification_mapping": [{"spec_item": item, "question_fragment": question, "sql_fragment": sql} for item in MAPPED_SPEC_ITEMS]}
 

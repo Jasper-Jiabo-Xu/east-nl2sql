@@ -140,6 +140,7 @@ def candidate_fields(sql, question=QUESTION):
         "sql_explanation": {"select": "处罚主体与违规行为字段", "from_join": "EAST_D001", "where": "处罚主体等于指定值", "aggregation": "无", "sort": "固定排序", "business_meaning": "风险筛查"},
         "business_event_candidates": [{"event_name": "筛查", "objective": "风险筛查", "objects": ["某自然人"], "state_changes": ["识别"]}],
         "specification_mapping": [{"spec_item": item, "question_fragment": question, "sql_fragment": sql} for item in MAPPED_SPEC_ITEMS],
+        "query_parameter_bindings": [{"name": "v", "source_pointer": "/query_entry/entry_conditions/0"}],
     }
 
 
@@ -237,13 +238,14 @@ class QuestionSqlE2ETests(unittest.TestCase):
         dual = chain["dual"]
         r170 = review_170(dual, report_170_yes())
         r180 = review_180(dual, report_180_yes())
-        result = self.scheduler.collect_reviews(dual, [r180, r170], created_at=TIME)
+        result = self.scheduler.collect_reviews(dual, [r180, r170], chain["spec"], created_at=TIME)
         self.assertEqual((result["target"], result["kind"]), ("210", "question_sql_dual_review_passed"))
         approved = result["approved_package"]
         self.assertEqual((approved["envelope"]["producer_id"], approved["envelope"]["status"]), ("110", "validated"))
         # 210 消费并通过 220 调度，不误启动 data 阶段
         coordinator = DataStageCoordinator(ROOT)
-        self.assertEqual(coordinator.begin_event(approved, chain["spec"])["dispatches"][0]["target"], "220")
+        binding = self.scheduler.build_query_parameter_binding(approved, chain["spec"], created_at=TIME)
+        self.assertEqual(coordinator.begin_event(approved, chain["spec"], binding)["dispatches"][0]["target"], "220")
         # 来源与可观察边界全程不丢失
         spec = chain["spec"]["payload"]
         self.assertEqual(approved["payload"]["penalty_fact_package"], spec["penalty_fact_package_ref"])
@@ -265,6 +267,8 @@ class QuestionSqlE2ETests(unittest.TestCase):
         chain = build_full_chain()
         spec, builder, checker = chain["spec"], PendingPrecheckBuilder(ROOT), PrecheckAgent(ROOT)
         bad = forge_invalid(chain["pending"], "SELECT EAST_D001.F9 FROM EAST_D001")
+        bad["payload"]["query_parameter_bindings"] = []
+        bad["envelope"]["content_hash"] = content_hash(bad["envelope"], bad["payload"])
         result = checker.precheck(bad, spec, checked_at=TIME)
         self.assertEqual(result["decision"], "fail")
         self.assertIn("PC-SQL-005", {item["failed_rule_ids"][0] for item in result["failed_items"]})
@@ -416,7 +420,7 @@ class QuestionSqlE2ETests(unittest.TestCase):
         source_snapshot = copy.deepcopy(first["source"])
         penalty_snapshot = copy.deepcopy(first["penalty"])
         dual_before = copy.deepcopy(first["dual"])
-        self.scheduler.collect_reviews(first["dual"], [review_180(first["dual"], report_180_yes()), review_170(first["dual"], report_170_yes())], created_at=TIME)
+        self.scheduler.collect_reviews(first["dual"], [review_180(first["dual"], report_180_yes()), review_170(first["dual"], report_170_yes())], first["spec"], created_at=TIME)
         self.assertEqual(first["source"], source_snapshot)
         self.assertEqual(first["penalty"], penalty_snapshot)
         self.assertEqual(first["dual"], dual_before)
