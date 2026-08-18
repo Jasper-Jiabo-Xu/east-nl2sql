@@ -1,4 +1,4 @@
-# EAST V5 010-EAST总体调度agent
+# 010-EAST总体调度agent
 
 唯一职责：作为用户唯一入口，启动 question-SQL 或 Foundation；将 260 的
 `SQL_EXECUTION_ERROR` 原样转至 110；以及以固定代码原子提交 210 的

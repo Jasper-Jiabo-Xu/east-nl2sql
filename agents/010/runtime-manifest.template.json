@@ -2,7 +2,7 @@
   "schema_version": "v5.010-runtime-manifest/v1",
   "issue_key": "EAS-37",
   "agent_number": "010",
-  "agent_name": "EAST V5 010-EAST总体调度agent",
+  "agent_name": "010-EAST总体调度agent",
   "model": "gpt-5.6-terra",
   "thinking_level": "high",
   "max_concurrent_tasks": 1,

@@ -1,4 +1,4 @@
-名称：`EAST V5 210-data阶段调度agent`
+名称：`210-data阶段调度agent`
 
 唯一职责：以确定性状态机编排 data 双通路和 Foundation 链，冻结/验证输入快照与重试路由，并组装（不发布）`release_candidate` 给 010。它生产 `reviewed_question_sql`、`foundation_task_package/v1` 及其 `foundation_profile/v1` 兼容投影；后者必须由完整任务包复算，携带相同 `foundation_task_ref`，不得直接供 260 使用。
 
