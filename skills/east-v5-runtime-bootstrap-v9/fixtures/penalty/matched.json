@@ -1,0 +1,101 @@
+{
+  "source_document_id": "PENALTY-DEMO-001",
+  "doc_id": "demo-001",
+  "list_source_ref": {
+    "relative_path": "sanitized/list.xlsx",
+    "sheet_name": "bank_punish_detail_list",
+    "row_number": 2,
+    "file_sha256": "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
+    "row_sha256": "b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b200"
+  },
+  "text_source_ref": {
+    "relative_path": "sanitized/text.xlsx",
+    "sheet_name": "bank_punish_detail_txt",
+    "row_number": 2,
+    "file_sha256": "c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4",
+    "row_sha256": "d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d400"
+  },
+  "join_status": "matched",
+  "common_field_conflicts": [],
+  "decision_document_number_raw": "示例罚决字〔2023〕第1号",
+  "punished_person_name_raw": "示例人甲",
+  "punished_org_name_raw": null,
+  "legal_representative_name_raw": null,
+  "violation_facts_raw": "违反信贷管理规定，存在违规发放贷款行为",
+  "penalty_basis_raw": "《示例法》第X条",
+  "penalty_decision_raw": "警告并罚款人民币30万元",
+  "decision_authority_raw": "示例监管局",
+  "decision_date_raw": "2023-06-15",
+  "disclosure_recommendation_raw": null,
+  "list_document_title_raw": "行政处罚信息公开表",
+  "list_publish_date_raw": "2023-06-15",
+  "list_document_source_raw": "示例监管局",
+  "list_source_url": "https://example.gov.cn/sanitized/list/001",
+  "text_document_title_raw": "行政处罚决定书",
+  "text_publish_date_raw": "2023-06-15",
+  "text_document_source_raw": "示例监管局",
+  "text_source_url": "https://example.gov.cn/sanitized/text/001",
+  "full_text_raw": "示例人甲因违反信贷管理规定被处罚。经查，示例人甲在担任某银行信贷部总经理期间，存在违规发放贷款行为。依据《示例法》第X条，处以警告并罚款人民币30万元。",
+  "full_text_status": "available",
+  "source_spans": [
+    {
+      "source_span_id": "span-0001",
+      "char_start": 0,
+      "char_end": 18,
+      "line_start": 1,
+      "line_end": 1,
+      "text": "示例人甲因违反信贷管理规定被处罚。"
+    },
+    {
+      "source_span_id": "span-0002",
+      "char_start": 18,
+      "char_end": 43,
+      "line_start": 1,
+      "line_end": 1,
+      "text": "经查，示例人甲在担任某银行信贷部总经理期间，"
+    },
+    {
+      "source_span_id": "span-0003",
+      "char_start": 43,
+      "char_end": 56,
+      "line_start": 1,
+      "line_end": 1,
+      "text": "存在违规发放贷款行为。"
+    },
+    {
+      "source_span_id": "span-0004",
+      "char_start": 56,
+      "char_end": 72,
+      "line_start": 1,
+      "line_end": 1,
+      "text": "依据《示例法》第X条，"
+    },
+    {
+      "source_span_id": "span-0005",
+      "char_start": 72,
+      "char_end": 90,
+      "line_start": 1,
+      "line_end": 1,
+      "text": "处以警告并罚款人民币30万元。"
+    }
+  ],
+  "source_snapshot": {
+    "files": [
+      {
+        "relative_path": "sanitized/list.xlsx",
+        "sheet_name": "bank_punish_detail_list",
+        "file_sha256": "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
+        "row_count": 5,
+        "collected_at": "2026-08-13T00:00:00+00:00"
+      },
+      {
+        "relative_path": "sanitized/text.xlsx",
+        "sheet_name": "bank_punish_detail_txt",
+        "file_sha256": "c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4",
+        "row_count": 5,
+        "collected_at": "2026-08-13T00:00:00+00:00"
+      }
+    ]
+  },
+  "source_package_schema_version": "penalty-source-v1"
+}
