@@ -8,6 +8,8 @@ platform launcher may use to create the next task.
 from __future__ import annotations
 
 import hashlib
+import json
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -109,3 +111,34 @@ class RuntimeAdapter:
             raise RuntimeAdapterError("RUNTIME_INPUT_RESOLUTION_REJECTED") from exc
         receipt = task_execution_receipt(task_id=task_id, issue_id=self.envelope["issue_id"], agent_id=self.envelope["target_agent_uuid"], runtime_id=runtime_id, input_ref=reference, output_ref=reference, run_id=self.envelope["run_id"], trace_id=self.envelope["trace_id"], qa_id=self.envelope["qa_id"], attempt=self.envelope["attempt"], route_target=self.envelope["expected_output"]["route_target"])
         return {"input_package": record, "receipt": receipt, "next_dispatch": {"target": self.envelope["expected_output"]["route_target"], "input_ref": reference, "receipt_hash": receipt["content_hash"]}}
+
+    def launch_next_task(self, *, receipt: dict[str, Any], platform_parent_issue_id: str, project_id: str, target_agent_id: str, target_agent_uuid: str, expected_output: dict[str, str], runner: Any = subprocess.run) -> dict[str, Any]:
+        """Create one platform task only after receipt verification, then read its UUID.
+
+        `runner` is injectable solely for contract tests.  The production path
+        invokes the supported Multica CLI and accepts no model/business payload.
+        """
+        receipt_copy = dict(receipt)
+        supplied = receipt_copy.pop("content_hash", None)
+        if supplied != _sha(receipt_copy) or receipt_copy.get("schema_version") != "task_execution_receipt/v1":
+            _fail("RUNTIME_RECEIPT_HASH_DRIFT")
+        if receipt_copy.get("output_ref") != self.envelope.get("input_ref") and receipt_copy.get("input_ref") is not None:
+            _fail("RUNTIME_RECEIPT_INPUT_DRIFT")
+        if not all(isinstance(value, str) and value for value in (platform_parent_issue_id, project_id, target_agent_id, target_agent_uuid)):
+            _fail("RUNTIME_LAUNCH_ID_INVALID")
+        if not isinstance(expected_output, dict) or set(expected_output) != {"artifact_type", "producer_id", "route_target"}:
+            _fail("RUNTIME_LAUNCH_CONTRACT_INVALID")
+        next_envelope = {**self.envelope, "target_agent_id": target_agent_id, "target_agent_uuid": target_agent_uuid, "input_ref": receipt_copy["output_ref"], "expected_output": expected_output}
+        title = f"EAS runtime {self.envelope['run_id']} {target_agent_id} attempt {self.envelope['attempt']}"
+        created = runner(["multica", "issue", "create", "--title", title, "--description", json.dumps(next_envelope, ensure_ascii=False, sort_keys=True), "--parent", platform_parent_issue_id, "--assignee-id", target_agent_uuid, "--status", "todo", "--project", project_id, "--output", "json"], check=True, capture_output=True, text=True)
+        try:
+            issue_id = json.loads(created.stdout)["id"]
+            listed = runner(["multica", "issue", "runs", issue_id, "--output", "json"], check=True, capture_output=True, text=True)
+            runs = json.loads(listed.stdout)
+            task = next(item for item in runs if item.get("agent_id") == target_agent_uuid and item.get("issue_id") == issue_id)
+        except (KeyError, StopIteration, json.JSONDecodeError, TypeError) as exc:
+            raise RuntimeAdapterError("RUNTIME_TASK_UUID_UNAVAILABLE") from exc
+        task_id = task.get("id")
+        if not isinstance(task_id, str) or not task_id:
+            _fail("RUNTIME_TASK_UUID_UNAVAILABLE")
+        return {"issue_id": issue_id, "task_id": task_id, "input_ref": next_envelope["input_ref"], "target_agent_uuid": target_agent_uuid}

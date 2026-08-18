@@ -5,6 +5,7 @@ import importlib
 import sys
 import tempfile
 import unittest
+from types import SimpleNamespace
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -32,6 +33,15 @@ class RuntimeAdapterTests(unittest.TestCase):
             consumed = RuntimeAdapter(ROOT, roots, consumer_envelope).consume_input(task_id="task-110", runtime_id="runtime-110")
             self.assertEqual(consumed["next_dispatch"]["target"], "120")
             self.assertEqual(consumed["receipt"]["output_ref"], artifact_ref(package["envelope"]))
+
+            calls = []
+            def runner(command, **_kwargs):
+                calls.append(command)
+                if command[2] == "create": return SimpleNamespace(stdout='{"id":"next-issue"}')
+                return SimpleNamespace(stdout='[{"id":"next-task","issue_id":"next-issue","agent_id":"120-uuid"}]')
+            launched = RuntimeAdapter(ROOT, roots, consumer_envelope).launch_next_task(receipt=consumed["receipt"], platform_parent_issue_id="parent-issue", project_id="project", target_agent_id="120", target_agent_uuid="120-uuid", expected_output={"artifact_type": "penalty_fact_package", "producer_id": "120", "route_target": "130"}, runner=runner)
+            self.assertEqual((launched["issue_id"], launched["task_id"]), ("next-issue", "next-task"))
+            self.assertEqual([call[2] for call in calls], ["create", "runs"])
 
     def test_rejects_route_before_registry_write(self) -> None:
         envelope = {"schema_version": "task_input_envelope/v1", "adapter_version": "east-v5-runtime-adapter/v1", "issue_id": "EAS-70", "run_id": "probe-run", "trace_id": "probe-trace", "qa_id": "QA", "attempt": 2, "target_agent_id": "010", "target_agent_uuid": "010-uuid", "root_binding_id": "b" * 64, "input_ref": {"artifact_id": "source", "version": 1, "content_hash": "a" * 64}, "expected_output": {"artifact_type": "penalty_source_package", "producer_id": "010", "route_target": "110"}}
