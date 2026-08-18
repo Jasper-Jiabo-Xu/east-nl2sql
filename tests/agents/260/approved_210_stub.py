@@ -58,7 +58,7 @@ def consume(package: dict[str, Any], root: Path) -> dict[str, str]:
         raise ContractError("210_STUB_SCHEMA_REJECTED") from exc
     if artifact_type == "database_copy_regression":
         refs = package["envelope"]["parent_artifact_refs"]
-        if mode == "event_data" and (len(refs) != 5 or package["payload"]["query_spec_ref"] not in refs):
+        if mode == "event_data" and (len(refs) != 6 or package["payload"]["query_spec_ref"] not in refs or package["payload"].get("event_query_context_ref") not in refs):
             raise ContractError("210_STUB_LINEAGE_REJECTED")
         if mode == "foundation" and (len(refs) != 4 or package["payload"]["foundation_task_ref"] not in refs or package["payload"]["structure_closure_ref"] not in refs):
             raise ContractError("210_STUB_LINEAGE_REJECTED")

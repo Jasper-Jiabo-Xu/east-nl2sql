@@ -41,12 +41,16 @@
               "required": ["modes", "payload_schema", "package_schema"],
               "properties": {
                 "producer": {"const": "210"},
-                "consumers": {"const": ["150", "220"]},
+                "consumers": {"const": ["150", "220", "260"]},
                 "modes": {"const": ["event"]},
                 "payload_schema": {"const": "v5.reviewed-question-sql/v1"},
                 "package_schema": {"const": "contracts/packages/reviewed-question-sql-package.schema.json"}
               }
             }
+          },
+          {
+            "if": {"properties": {"id": {"const": "event_query_context"}}},
+            "then": {"required": ["modes", "payload_schema", "package_schema"], "properties": {"producer": {"const": "210"}, "consumers": {"const": ["220", "260"]}, "modes": {"const": ["event"]}, "payload_schema": {"const": "v5.event-query-context/v1"}, "package_schema": {"const": "contracts/packages/event-query-context-package.schema.json"}}}
           },
           {
             "if": {"properties": {"id": {"const": "release_candidate"}}},

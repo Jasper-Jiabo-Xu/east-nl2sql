@@ -23,7 +23,7 @@ CONTRACTS = {
         "package_schema": "contracts/packages/question-sql-dual-review-passed-package.schema.json",
     },
     "reviewed_question_sql": {
-        "producer": "210", "consumers": ["150", "220"], "modes": ["event"],
+        "producer": "210", "consumers": ["150", "220", "260"], "modes": ["event"],
         "payload_schema": "v5.reviewed-question-sql/v1",
         "package_schema": "contracts/packages/reviewed-question-sql-package.schema.json",
     },

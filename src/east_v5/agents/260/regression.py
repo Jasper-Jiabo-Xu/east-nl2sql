@@ -509,32 +509,30 @@ class DatabaseCopyRegression:
             _fail("INPUT_ENVELOPE_INVALID")
         if envelope.get("status") == "blocked_manual": _fail("UPSTREAM_BLOCKED_MANUAL")
 
-    def validate_event_inputs(self, data: dict[str, Any], orm: dict[str, Any], snapshot: dict[str, Any], review: dict[str, Any], query_spec: dict[str, Any]) -> None:
-        before = copy.deepcopy((data, orm, snapshot, review, query_spec))
-        for package, kind, producer in ((data, "verified_bound_data", "242"), (orm, "frozen_orm", "252"), (snapshot, "database_read_snapshot", "EAS-19"), (review, "question_sql_dual_review_passed", "110"), (query_spec, "query_specification_package", "140")):
+    def validate_event_inputs(self, data: dict[str, Any], orm: dict[str, Any], snapshot: dict[str, Any], reviewed: dict[str, Any], context: dict[str, Any], query_spec: dict[str, Any]) -> None:
+        before = copy.deepcopy((data, orm, snapshot, reviewed, context, query_spec))
+        for package, kind, producer in ((data, "verified_bound_data", "242"), (orm, "frozen_orm", "252"), (snapshot, "database_read_snapshot", "EAS-19"), (reviewed, "reviewed_question_sql", "210")):
             self._transport(package, kind, producer, "event_data")
-            if package is review:
-                # 110 passed output is introduced by this frozen contract and
-                # is intentionally not a legacy catalog entry.
-                from east_v5.artifacts.schema import validate_common_envelope_schema
-                validate_common_envelope_schema(self.repo_root, package["envelope"])
-                if package["envelope"]["content_hash"] != content_hash(package["envelope"], package["payload"]): _fail("CONTENT_HASH_DRIFT")
-            else:
-                validate_envelope(self.repo_root, package["envelope"], package["payload"])
+            validate_envelope(self.repo_root, package["envelope"], package["payload"])
         self._validate(data, "verified-bound-data-package.schema.json", "SCHEMA_VALIDATION_FAILED:VERIFIED_BOUND_DATA")
         self._validate(orm, "frozen-orm-package.schema.json", "SCHEMA_VALIDATION_FAILED:FROZEN_ORM")
         self._validate(snapshot, "database-read-snapshot.schema.json", "SCHEMA_VALIDATION_FAILED:DATABASE_SNAPSHOT")
-        self._validate(review, "question-sql-dual-review-passed-package.schema.json", "SCHEMA_VALIDATION_FAILED:QUESTION_SQL_DUAL_REVIEW_PASSED")
+        self._validate(reviewed, "reviewed-question-sql-package.schema.json", "SCHEMA_VALIDATION_FAILED:REVIEWED_QUESTION_SQL")
+        _closure.validate_event_query_context(context, reviewed)
+        self._transport(query_spec, "query_specification_package", "140", "question_sql")
+        validate_envelope(self.repo_root, query_spec["envelope"], query_spec["payload"])
         self._validate(query_spec["payload"], "query-specification-package.schema.json", "SCHEMA_VALIDATION_FAILED:QUERY_SPEC")
-        r = review["payload"]
-        if r["query_specification_package"] != artifact_ref(query_spec["envelope"]): _fail("QUERY_SPEC_REFERENCE_MISMATCH")
-        if r["package_hash"] != sha256({key: value for key, value in r.items() if key != "package_hash"}): _fail("QUESTION_SQL_PACKAGE_HASH_DRIFT")
-        if r["query_specification_package"] not in review["envelope"]["parent_artifact_refs"]: _fail("QUESTION_SQL_PARENT_REFERENCE_MISSING")
+        context_payload = context["payload"]
+        if context_payload["source_query_spec_ref"] != artifact_ref(query_spec["envelope"]): _fail("QUERY_SPEC_REFERENCE_MISMATCH")
+        if context_payload["reviewed_question_sql_ref"] != artifact_ref(reviewed["envelope"]): _fail("REVIEWED_QUESTION_SQL_REFERENCE_MISMATCH")
         plan = orm["payload"]["validated_orm_plan"]
         expected = hashlib.sha256(canonical_bytes({"orm_source_code": plan["orm_source_code"], "execution_contract": plan["execution_contract"], "operations": plan["operations"]})).hexdigest()
         if orm["payload"].get("validated_hash") != expected or plan.get("code_hash") != expected: _fail("ORM_HASH_DRIFT")
         if data["payload"]["validated_data_package"].get("database_snapshot_ref") not in (None, artifact_ref(snapshot["envelope"])): _fail("DATABASE_SNAPSHOT_REFERENCE_MISMATCH")
-        if before != (data, orm, snapshot, review, query_spec): _fail("INPUT_MUTATED")
+        for package in (data, orm, snapshot, reviewed, context, query_spec):
+            if any(package["envelope"][key] != data["envelope"][key] for key in ("run_id", "qa_id", "trace_id", "attempt_no")):
+                _fail("EVENT_CONTEXT_LINEAGE_MISMATCH")
+        if before != (data, orm, snapshot, reviewed, context, query_spec): _fail("INPUT_MUTATED")
 
     @staticmethod
     def _rows(data: dict[str, Any]) -> list[dict[str, Any]]:
@@ -626,10 +624,10 @@ class DatabaseCopyRegression:
         available = {(item["record_keys"]["table_id"], item["record_keys"]["primary_key"]) for item in snapshot["payload"]["object_state_records"]}
         return any((reference["table_id"], reference["record_key"]) not in available for record in DatabaseCopyRegression._rows(data) for reference in record["existing_record_refs"])
 
-    def run_event(self, data: dict[str, Any], orm: dict[str, Any], snapshot: dict[str, Any], review: dict[str, Any], query_spec: dict[str, Any], formal_database: Path, *, attempt_no: int = 1) -> dict[str, Any]:
-        self.validate_event_inputs(data, orm, snapshot, review, query_spec)
+    def run_event(self, data: dict[str, Any], orm: dict[str, Any], snapshot: dict[str, Any], reviewed: dict[str, Any], context: dict[str, Any], query_spec: dict[str, Any], formal_database: Path, *, attempt_no: int = 1) -> dict[str, Any]:
+        self.validate_event_inputs(data, orm, snapshot, reviewed, context, query_spec)
         if attempt_no not in (1, 2, 3): _fail("ATTEMPT_OUT_OF_RANGE")
-        parents = [artifact_ref(item["envelope"]) for item in (data, orm, snapshot, review, query_spec)]
+        parents = [artifact_ref(item["envelope"]) for item in (data, orm, snapshot, reviewed, context, query_spec)]
         try:
             if self._foundation_required(data, snapshot): _fail("FOUNDATION_REQUIRED:EXISTING_RECORD_NOT_IN_SNAPSHOT")
             params = self._bind(data, orm["payload"]["validated_orm_plan"])
@@ -645,7 +643,7 @@ class DatabaseCopyRegression:
                 return self.feedback(data, orm, snapshot, "ORM_PLAN_ERROR", "orm_execution", str(exc), attempt_no, parents)
             except (ContractError, Exception) as exc:
                 return self.feedback(data, orm, snapshot, "ORM_PLAN_ERROR", "orm_execution", str(exc), attempt_no, parents)
-            sql_gold = review["payload"]["candidate_content"]["sql_gold"]
+            sql_gold = reviewed["payload"]["sql_gold"]
             try:
                 rows = connection.execute(sql_gold).fetchall()
             except sqlite3.Error as exc:
@@ -653,7 +651,7 @@ class DatabaseCopyRegression:
             metrics = self._metrics(rows, query_spec["payload"], self._rows(data))
             if not all(item["passed"] for item in metrics.values()):
                 return self.feedback(data, orm, snapshot, "DATA_VALUE_ERROR", "regression_gate", "DATA_VALUE_ERROR:REGRESSION_GATE", attempt_no, parents)
-        payload = {"schema_version": "v5.regression-passed-data-orm/v1", "regression_package_id": f"regression-{data['envelope']['artifact_id']}", "mode": "event_data", "data_package_refs": [artifact_ref(data["envelope"])], "orm_plan_ref": artifact_ref(orm["envelope"]), "question_sql_ref": artifact_ref(review["envelope"]), "query_spec_ref": artifact_ref(query_spec["envelope"]), "execution_instances": {"params": params, "operations": execution["executed_operation_ids"]}, "sandbox_snapshot_id": snapshot["payload"]["snapshot_id"], "sandbox_execution_report": {"operations": operations, "write_count": execution["write_count"], "rolled_back": False}, "sql_regression_report": {"sql_gold": review["payload"]["candidate_content"]["sql_gold"], "row_count": len(rows), **metrics}, "executable_package_hash": sha256({"orm": orm["payload"]["validated_hash"], "data": data["payload"]["validated_hash"], "review": review["payload"]["package_hash"], "query_spec": query_spec["envelope"]["content_hash"], "params": params}), "regression_status": "passed", "regressed_at": data["payload"]["validated_at"]}
+        payload = {"schema_version": "v5.regression-passed-data-orm/v1", "regression_package_id": f"regression-{data['envelope']['artifact_id']}", "mode": "event_data", "data_package_refs": [artifact_ref(data["envelope"])], "orm_plan_ref": artifact_ref(orm["envelope"]), "question_sql_ref": context["payload"]["source_question_sql_ref"], "reviewed_question_sql_ref": artifact_ref(reviewed["envelope"]), "event_query_context_ref": artifact_ref(context["envelope"]), "query_spec_ref": artifact_ref(query_spec["envelope"]), "execution_instances": {"params": params, "operations": execution["executed_operation_ids"]}, "sandbox_snapshot_id": snapshot["payload"]["snapshot_id"], "sandbox_execution_report": {"operations": operations, "write_count": execution["write_count"], "rolled_back": False}, "sql_regression_report": {"sql_gold": reviewed["payload"]["sql_gold"], "row_count": len(rows), **metrics}, "executable_package_hash": sha256({"orm": orm["payload"]["validated_hash"], "data": data["payload"]["validated_hash"], "reviewed": reviewed["payload"]["package_hash"], "context": context["payload"]["projection_hash"], "query_spec": query_spec["envelope"]["content_hash"], "params": params}), "regression_status": "passed", "regressed_at": data["payload"]["validated_at"]}
         return self._wrap("database_copy_regression", payload, data["envelope"], parents, attempt_no, "validated")
 
     @staticmethod

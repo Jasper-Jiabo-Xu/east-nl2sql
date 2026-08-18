@@ -22,6 +22,7 @@ REVIEWED_QUESTION_SQL_FIELDS = {
     "evidence_refs", "precheck_report_ref", "deepseek_review_ref",
     "glm_review_ref", "package_hash", "approved_at",
 }
+EVENT_QUERY_CONTEXT_FIELDS = {"schema_version", "source_query_spec_ref", "source_question_sql_ref", "reviewed_question_sql_ref", "field_projection", "projection_hash"}
 STRUCTURE_FIELDS = {"schema_version", "constraint_asset_version", "graph_version", "tables", "fields", "references"}
 FOUNDATION_STRUCTURE_FIELDS = STRUCTURE_FIELDS | {"foundation_task_ref"}
 FIELD_PATH = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)$")
@@ -134,17 +135,40 @@ def _walk_values(value: Any) -> Iterable[Any]:
         yield value
 
 
-def _field_paths(payload: dict[str, Any]) -> list[str]:
-    """Extract seeds only from approved mapping and verify them against sql_gold."""
-    candidates = [item for item in _walk_values(payload["specification_mapping"]) if isinstance(item, str)]
-    fields = sorted({item for item in candidates if FIELD_PATH.fullmatch(item)})
-    sql_tables = {table for table in SQL_TABLE.findall(payload["sql_gold"])}
-    if not fields or not sql_tables:
-        _fail("EVENT_SEED_UNRESOLVED")
-    for path in fields:
-        table, field = path.split(".", 1)
-        if table not in sql_tables or not re.search(rf"\b{re.escape(field)}\b", payload["sql_gold"], re.IGNORECASE):
-            _fail("EVENT_SEED_SQL_MISMATCH")
+def validate_event_query_context(context: dict[str, Any], reviewed: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Authenticate the 210-only field projection used by every event consumer."""
+    reviewed_envelope, _ = _validate_event_input(reviewed)
+    if set(context) != {"envelope", "payload"}:
+        _fail("EVENT_CONTEXT_TRANSPORT_INVALID")
+    envelope, payload = context["envelope"], context["payload"]
+    validate_envelope(REPO_ROOT, envelope, payload)
+    if set(payload) != EVENT_QUERY_CONTEXT_FIELDS:
+        _fail("EVENT_CONTEXT_SCHEMA_INVALID")
+    if payload["projection_hash"] != _hash({key: value for key, value in payload.items() if key != "projection_hash"}):
+        _fail("EVENT_CONTEXT_HASH_DRIFT")
+    if payload["reviewed_question_sql_ref"] != artifact_ref(reviewed_envelope):
+        _fail("EVENT_CONTEXT_REVIEWED_LINEAGE_REJECTED")
+    if reviewed_envelope["parent_artifact_refs"] != [payload["source_question_sql_ref"]]:
+        _fail("EVENT_CONTEXT_SOURCE_QUESTION_LINEAGE_REJECTED")
+    refs = [payload["source_query_spec_ref"], payload["source_question_sql_ref"], payload["reviewed_question_sql_ref"]]
+    if envelope["parent_artifact_refs"] != refs or envelope["input_hashes"] != [ref["content_hash"] for ref in refs]:
+        _fail("EVENT_CONTEXT_PARENT_LINEAGE_REJECTED")
+    for key in ("run_id", "qa_id", "trace_id", "attempt_no"):
+        if envelope[key] != reviewed_envelope[key]:
+            _fail("EVENT_CONTEXT_LINEAGE_MISMATCH")
+    seen: set[str] = set()
+    for item in payload["field_projection"]:
+        if item["spec_item"] in seen or item["fields"] != sorted(set(item["fields"])):
+            _fail("EVENT_CONTEXT_PROJECTION_INVALID")
+        seen.add(item["spec_item"])
+    return envelope, payload
+
+
+def _field_paths(context_payload: dict[str, Any]) -> list[str]:
+    """Read only the frozen 210 projection; never parse mapping/SQL in 220."""
+    fields = sorted({field for item in context_payload["field_projection"] for field in item["fields"]})
+    if not fields or any(not FIELD_PATH.fullmatch(field) for field in fields):
+        _fail("EVENT_CONTEXT_PROJECTION_INVALID")
     return fields
 
 
@@ -162,10 +186,11 @@ def _relationships(payload: dict[str, Any]) -> list[str]:
     return sorted(matches)
 
 
-def event_query_rounds(event: dict[str, Any], first_result: dict[str, Any] | None = None) -> list[dict[str, Any]]:
-    """Build query requests from the current approved event package, never fixtures."""
+def event_query_rounds(event: dict[str, Any], context: dict[str, Any], first_result: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+    """Build query requests from the authenticated 210 projection only."""
     envelope, payload = _validate_event_input(event)
-    fields = _field_paths(payload)
+    _, context_payload = validate_event_query_context(context, event)
+    fields = _field_paths(context_payload)
     relations = _relationships(payload)
     tables = sorted({path.split(".", 1)[0] for path in fields} | {table for table in SQL_TABLE.findall(payload["sql_gold"])})
     first = {
@@ -262,16 +287,17 @@ def _wrap_closure(source: dict[str, Any], parents: list[dict[str, Any]], payload
     return package
 
 
-def build_event_closure(event: dict[str, Any], first_result: dict[str, Any], second_result: dict[str, Any]) -> dict[str, Any]:
-    source, payload = _validate_event_input(event)
-    first, second = event_query_rounds(event, first_result)
+def build_event_closure(event: dict[str, Any], context: dict[str, Any], first_result: dict[str, Any], second_result: dict[str, Any]) -> dict[str, Any]:
+    source, _ = _validate_event_input(event)
+    _, context_payload = validate_event_query_context(context, event)
+    first, second = event_query_rounds(event, context, first_result)
     first_ref = artifact_ref(first_result["envelope"])
     second_ref = _validate_asset_result(second_result, source, second["request_id"], first_ref)
-    seeds = _field_paths(payload)
+    seeds = _field_paths(context_payload)
     closure_payload = _payload_from_assets(
         {path.split(".", 1)[0] for path in seeds}, set(seeds), [first_result, second_result]
     )
-    return _wrap_closure(source, [artifact_ref(source), first_ref, second_ref], closure_payload)
+    return _wrap_closure(source, [artifact_ref(source), artifact_ref(context["envelope"]), first_ref, second_ref], closure_payload)
 
 
 def build_closure(profile_package: dict[str, Any], assets: list[dict[str, Any]]) -> dict[str, Any]:

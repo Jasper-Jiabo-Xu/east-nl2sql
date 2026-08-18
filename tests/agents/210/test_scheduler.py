@@ -69,6 +69,31 @@ def dual_review() -> dict[str, object]:
     return wrap("question_sql_dual_review_passed", "110", payload, parents=[precheck, deepseek, glm])
 
 
+def query_spec_for(approved: dict[str, object]) -> dict[str, object]:
+    """Approved, sanitized 140 package aligned to this one 110 run."""
+    payload = {
+        "query_spec_id": "qspec-210", "penalty_fact_package_ref": ref("penalty", "7"), "observable_fact_package_ref": ref("observable", "8"),
+        "query_goal": "sanitized", "must_preserve_fact_refs": ["fact"], "main_object_and_grain": {"main_object": "account", "grain": "FIXTURE_ACCOUNT.STATUS"},
+        "query_entry": {"entry_table": "FIXTURE_ACCOUNT", "entry_conditions": []}, "related_objects_and_path": [], "filters_and_evidence": [],
+        "return_fields": [{"field_id": "STATUS", "display_name": "status", "source_table": "FIXTURE_ACCOUNT"}],
+        "aggregation_dedup_sort_time": {"group_by_fields": ["STATUS"], "distinct_required": True, "order_by": [], "time_window": {"field_id": "STATUS", "window_type": "point"}},
+        "observability_boundary": {"answerable": ["sanitized"], "unanswerable": []}, "expected_result_shape": {"row_grain": "account", "column_set": ["STATUS"], "aggregation_shape": "none"},
+        "sql_schema_scope": {"allowed_tables": [{"table_id": "FIXTURE_ACCOUNT", "allowed_fields": ["STATUS"]}]}, "minimum_positive_count": 1, "minimum_negative_count": 1,
+        "condition_coverage": [], "code_value_coverage": [{"field_id": "STATUS", "target_code_values": ["OPEN"]}], "expected_row_group_count": {"minimum": 1, "target": 1, "tolerance_range": {"low": 0, "high": 0}},
+        "join_expansion_limit": {"max_multiplier": 1, "max_result_rows": 1}, "query_specification_package_schema_version": "query-specification-v1",
+    }
+    spec = wrap("query_specification_package", "140", payload, mode="question_sql")
+    spec["envelope"].update({key: approved["envelope"][key] for key in ("run_id", "qa_id", "trace_id", "attempt_no", "created_at")})
+    spec["envelope"]["content_hash"] = content_hash(spec["envelope"], spec["payload"])
+    return spec
+
+
+def bind_query_spec(approved: dict[str, object], spec: dict[str, object]) -> None:
+    approved["payload"]["query_specification_package"] = artifact_ref(spec["envelope"])
+    approved["payload"]["package_hash"] = sha256({key: value for key, value in approved["payload"].items() if key != "package_hash"})
+    approved["envelope"]["content_hash"] = content_hash(approved["envelope"], approved["payload"])
+
+
 def feedback(code: str, target: str, *, attempt: int = 1, mode: str = "event_data") -> dict[str, object]:
     payload = {
         "schema_version": "v5.sql-regression-failed-feedback/v1", "mode": mode,
@@ -100,18 +125,21 @@ class DataStageCoordinatorTests(unittest.TestCase):
         approved["payload"]["candidate_content"]["business_event_candidates"][0]["state_changes"] = [
             "FIXTURE_T001.F001->FIXTURE_T002.PK001",
         ]
-        if query_spec_ref is not None:
-            approved["payload"]["query_specification_package"] = copy.deepcopy(query_spec_ref)
-            approved["envelope"]["parent_artifact_refs"].append(copy.deepcopy(query_spec_ref))
-            approved["envelope"]["input_hashes"] = [item["content_hash"] for item in approved["envelope"]["parent_artifact_refs"]]
-        approved["payload"]["package_hash"] = sha256({key: value for key, value in approved["payload"].items() if key != "package_hash"})
-        approved["envelope"]["content_hash"] = content_hash(approved["envelope"], approved["payload"])
-        started = self.coordinator.begin_event(approved)
+        spec = query_spec_for(approved)
+        spec["payload"]["query_spec_id"] = "qspec-211"
+        spec["payload"]["sql_schema_scope"] = {"allowed_tables": [{"table_id": "FIXTURE_T001", "allowed_fields": ["F001", "F002"]}, {"table_id": "FIXTURE_T002", "allowed_fields": ["PK001"]}]}
+        spec["payload"]["return_fields"] = [{"field_id": "F001", "display_name": "one", "source_table": "FIXTURE_T001"}, {"field_id": "F002", "display_name": "two", "source_table": "FIXTURE_T001"}, {"field_id": "PK001", "display_name": "key", "source_table": "FIXTURE_T002"}]
+        spec["envelope"]["content_hash"] = content_hash(spec["envelope"], spec["payload"])
+        # A bare ref cannot substitute for the immutable 140 package.  Tests
+        # requesting one keep this real local 140 package and bind it below.
+        bind_query_spec(approved, spec)
+        started = self.coordinator.begin_event(approved, spec)
         reviewed = started["reviewed_question_sql"]
+        context = started["event_query_context"]
         closure_tests = test_module("agents.220.test_closure")
-        _, first_asset, second_asset = closure_tests.event_results(reviewed)
+        _, first_asset, second_asset = closure_tests.event_results(reviewed, context)
         closure_mod = importlib.import_module("east_v5.agents.220.closure")
-        structure = closure_mod.build_event_closure(reviewed, first_asset, second_asset)
+        structure = closure_mod.build_event_closure(reviewed, context, first_asset, second_asset)
         operation_builder = importlib.import_module("east_v5.agents.230.builder").OperationClosureBuilder(ROOT)
         operation = operation_builder.build(structure)
         return approved, started, structure, operation, operation_builder
@@ -148,55 +176,60 @@ class DataStageCoordinatorTests(unittest.TestCase):
         frozen = importlib.import_module("east_v5.agents.252.validator").OrmValidator(ROOT).freeze_orm(restricted, structure, operation)
         return approved, started, structure, operation, bound, verified, restricted, frozen, operation_builder
 
-    @staticmethod
-    def _prepare_same_source_event_regression(case: object) -> None:
-        """Retarget the real 260 fixture to the same sanitized T001/T002 chain."""
-        spec = case.spec
-        spec["envelope"].update({"run_id": "210-test-run", "qa_id": "QA-210", "trace_id": "210-test-trace"})
-        payload = spec["payload"]
-        payload.update({
-            "query_goal": "sanitized T001 lookup",
-            "main_object_and_grain": {"main_object": "fixture_t001", "grain": "FIXTURE_T001.F001"},
-            "query_entry": {"entry_table": "FIXTURE_T001", "entry_conditions": []},
-            "related_objects_and_path": [{"object_name": "fixture_t002", "table_id": "FIXTURE_T002", "relation_type": "reference", "join_fields": [{"from_field": "FIXTURE_T001.F001", "to_field": "FIXTURE_T002.PK001"}]}],
-            "filters_and_evidence": [],
-            "return_fields": [{"field_id": "F001", "display_name": "sanitized F001", "source_table": "FIXTURE_T001"}, {"field_id": "F002", "display_name": "sanitized F002", "source_table": "FIXTURE_T001"}],
-            "aggregation_dedup_sort_time": {"group_by_fields": ["F001"], "distinct_required": True, "order_by": [], "time_window": {"field_id": "F001", "window_type": "point"}},
-            "observability_boundary": {"answerable": ["sanitized"], "unanswerable": []},
-            "expected_result_shape": {"row_grain": "fixture_t001", "column_set": ["F001", "F002"], "aggregation_shape": "none"},
-            "sql_schema_scope": {"allowed_tables": [{"table_id": "FIXTURE_T001", "allowed_fields": ["F001", "F002"]}, {"table_id": "FIXTURE_T002", "allowed_fields": ["PK001"]}]},
-            "minimum_positive_count": 1, "minimum_negative_count": 1,
-            "condition_coverage": [], "code_value_coverage": [{"field_id": "F001", "target_code_values": ["A"]}],
-            "expected_row_group_count": {"minimum": 1, "target": 1, "tolerance_range": {"low": 0, "high": 0}},
-            "join_expansion_limit": {"max_multiplier": 1, "max_result_rows": 1},
-        })
-        spec["envelope"]["content_hash"] = content_hash(spec["envelope"], payload)
-        case.snapshot["envelope"].update({"run_id": "210-test-run", "qa_id": "QA-210", "trace_id": "210-test-trace"})
-        case.snapshot["envelope"]["content_hash"] = content_hash(case.snapshot["envelope"], case.snapshot["payload"])
-
     def test_event_start_produces_distinct_reviewed_artifact_and_only_220_dispatch(self) -> None:
         approved = dual_review()
+        spec = query_spec_for(approved); bind_query_spec(approved, spec)
         before = copy.deepcopy(approved)
-        result = self.coordinator.begin_event(approved)
+        result = self.coordinator.begin_event(approved, spec)
         reviewed = result["reviewed_question_sql"]
         self.assertEqual(approved, before)
         self.assertEqual((reviewed["envelope"]["artifact_type"], reviewed["envelope"]["producer_id"]), ("reviewed_question_sql", "210"))
         self.assertNotEqual(reviewed["envelope"]["artifact_id"], approved["envelope"]["artifact_id"])
         self.assertEqual([item["target"] for item in result["dispatches"]], ["220"])
-        self.assertEqual(result["dispatches"][0]["input_ref"], artifact_ref(reviewed["envelope"]))
+        self.assertEqual(result["dispatches"][0]["reviewed_question_sql_ref"], artifact_ref(reviewed["envelope"]))
+        self.assertEqual(result["dispatches"][0]["event_query_context_ref"], artifact_ref(result["event_query_context"]["envelope"]))
+        context = result["event_query_context"]
+        self.assertNotIn(artifact_ref(spec["envelope"]), approved["envelope"]["parent_artifact_refs"])
+        self.assertEqual(context["envelope"]["parent_artifact_refs"], [artifact_ref(spec["envelope"]), artifact_ref(approved["envelope"]), artifact_ref(reviewed["envelope"])])
+        self.assertEqual(context["envelope"]["input_hashes"], [item["content_hash"] for item in context["envelope"]["parent_artifact_refs"]])
 
     def test_event_start_rejects_missing_review_lineage_and_hash_drift(self) -> None:
         missing = dual_review()
+        spec = query_spec_for(missing); bind_query_spec(missing, spec)
         missing["envelope"]["parent_artifact_refs"] = missing["envelope"]["parent_artifact_refs"][:2]
         missing["envelope"]["input_hashes"] = [item["content_hash"] for item in missing["envelope"]["parent_artifact_refs"]]
         missing["envelope"]["content_hash"] = content_hash(missing["envelope"], missing["payload"])
         with self.assertRaisesRegex(ContractError, "210_SOURCE_LINEAGE_MISSING:glm"):
-            self.coordinator.begin_event(missing)
+            self.coordinator.begin_event(missing, spec)
         drift = dual_review()
+        spec = query_spec_for(drift); bind_query_spec(drift, spec)
         drift["payload"]["package_hash"] = "0" * 64
         drift["envelope"]["content_hash"] = content_hash(drift["envelope"], drift["payload"])
         with self.assertRaisesRegex(ContractError, "210_DUAL_REVIEW_HASH_DRIFT"):
-            self.coordinator.begin_event(drift)
+            self.coordinator.begin_event(drift, spec)
+
+    def test_event_projection_alias_unknown_ambiguous_and_out_of_scope_are_rejected(self) -> None:
+        def source(sql: str, fragment: str) -> tuple[dict[str, object], dict[str, object]]:
+            approved = dual_review()
+            approved["payload"]["candidate_content"]["sql_gold"] = sql
+            approved["payload"]["candidate_content"]["specification_mapping"] = [{"spec_item": "mapped", "question_fragment": "mapped", "sql_fragment": fragment}]
+            approved["payload"]["package_hash"] = sha256({key: value for key, value in approved["payload"].items() if key != "package_hash"})
+            approved["envelope"]["content_hash"] = content_hash(approved["envelope"], approved["payload"])
+            spec = query_spec_for(approved)
+            spec["payload"]["sql_schema_scope"] = {"allowed_tables": [{"table_id": "FIXTURE_T001", "allowed_fields": ["F001"]}, {"table_id": "FIXTURE_T002", "allowed_fields": ["F001"]}]}
+            spec["envelope"]["content_hash"] = content_hash(spec["envelope"], spec["payload"])
+            bind_query_spec(approved, spec)
+            return approved, spec
+
+        approved, spec = source("SELECT T1.F001 FROM FIXTURE_T001 T1", "T9.F001")
+        with self.assertRaisesRegex(ContractError, "210_FIELD_PROJECTION_ALIAS_AMBIGUOUS"):
+            self.coordinator.begin_event(approved, spec)
+        approved, spec = source("SELECT T1.F001, T2.F001 FROM FIXTURE_T001 T1 JOIN FIXTURE_T002 T2 ON T1.F001 = T2.F001", "F001")
+        with self.assertRaisesRegex(ContractError, "210_FIELD_PROJECTION_ALIAS_AMBIGUOUS"):
+            self.coordinator.begin_event(approved, spec)
+        approved, spec = source("SELECT T1.SECRET FROM FIXTURE_T001 T1", "T1.SECRET")
+        with self.assertRaisesRegex(ContractError, "210_FIELD_PROJECTION_SCOPE_VIOLATION"):
+            self.coordinator.begin_event(approved, spec)
 
     def test_260_fixed_error_routes_and_conflicts_are_rejected(self) -> None:
         for code, target in (("DATA_VALUE_ERROR", "241"), ("ORM_PLAN_ERROR", "251"), ("SQL_EXECUTION_ERROR", "010"), ("FOUNDATION_REQUIRED", "210"), ("MANUAL_REVIEW_REQUIRED", "manual")):
@@ -216,39 +249,38 @@ class DataStageCoordinatorTests(unittest.TestCase):
     def test_event_is_ordered_220_then_real_230_241_242_251_252_and_same_source_260_authorization(self) -> None:
         approved, started, structure, operation, bound, verified, restricted, frozen, operation_builder = self._actual_event_validation_chain()
         reviewed = started["reviewed_question_sql"]
+        context = started["event_query_context"]
         self.assertEqual([item["target"] for item in started["dispatches"]], ["220"])
-        operation_dispatch = self.coordinator.dispatch_event_operation(reviewed, structure)
+        operation_dispatch = self.coordinator.dispatch_event_operation(reviewed, context, structure)
         self.assertEqual(operation_dispatch["target"], "230")
         self.assertEqual(operation_dispatch["structure_closure_ref"], artifact_ref(structure["envelope"]))
         closure_mod = importlib.import_module("east_v5.agents.220.closure")
         self.assertEqual(closure_mod.consume_downstream_stub("230", structure)["consumer"], "230")
-        branches = self.coordinator.dispatch_event_branches(reviewed, structure, operation)
+        branches = self.coordinator.dispatch_event_branches(reviewed, context, structure, operation)
         self.assertEqual([item["target"] for item in branches], ["241", "251"])
         self.assertEqual(operation_builder.consume_downstream_stub("241", operation)["consumer"], "241")
         self.assertEqual(bound["payload"]["structure_closure_ref"], artifact_ref(structure["envelope"]))
         self.assertEqual(verified["payload"]["source_data_package_ref"], artifact_ref(bound["envelope"]))
         self.assertEqual(frozen["envelope"]["producer_id"], "252")
-        dispatch = self.coordinator.join_event_validations(approved, reviewed, structure, operation, restricted, verified, frozen)
+        dispatch = self.coordinator.join_event_validations(approved, reviewed, context, structure, operation, restricted, verified, frozen)
         self.assertEqual(dispatch["target"], "260")
 
-    def test_event_same_source_242_and_252_run_through_260_release_and_010(self) -> None:
+    def test_event_140_110_210_260_release_and_010(self) -> None:
         source = test_module("agents.260.test_regression")
         case = source.EventRegressionTests()
         case.setUp()
         try:
-            self._prepare_same_source_event_regression(case)
-            approved, started, structure, operation, _, verified, restricted, frozen, _ = self._actual_event_validation_chain(query_spec_ref=artifact_ref(case.spec["envelope"]))
-            import sqlite3
-            connection = sqlite3.connect(case.db)
-            connection.execute("CREATE TABLE FIXTURE_T001 (F001 TEXT, F002 TEXT)")
-            connection.execute("CREATE TABLE FIXTURE_T002 (PK001 TEXT)")
-            connection.commit()
-            connection.close()
-            dispatch = self.coordinator.join_event_validations(approved, started["reviewed_question_sql"], structure, operation, restricted, verified, frozen)
-            self.assertEqual(dispatch["target"], "260")
-            regression = case.worker.run_event(verified, frozen, case.snapshot, approved, case.spec, case.db)
+            regression = case.worker.run_event(
+                case.data,
+                case.orm,
+                case.snapshot,
+                case.reviewed,
+                case.context,
+                case.spec,
+                case.db,
+            )
             self.assertEqual(regression["payload"]["regression_status"], "passed")
-            candidate = self.coordinator.build_event_release(approved, regression, target_database_version="fixture-db-v1", target_question_dataset_version="fixture-question-v1")
+            candidate = self.coordinator.build_event_release(case.review, regression, target_database_version="fixture-db-v1", target_question_dataset_version="fixture-question-v1")
             consumer = test_module("contracts.test_stage10_package_contracts")
             self.assertTrue(consumer.consume_stub("release_candidate", "010", candidate))
         finally:
@@ -257,28 +289,30 @@ class DataStageCoordinatorTests(unittest.TestCase):
     def test_event_rejects_unknown_unbound_and_blocked_manual_closures(self) -> None:
         _, started, structure, operation, _ = self._real_event_closures()
         reviewed = started["reviewed_question_sql"]
+        context = started["event_query_context"]
         unknown = copy.deepcopy(structure)
         unknown["payload"]["unexpected"] = True
         unknown["envelope"]["content_hash"] = content_hash(unknown["envelope"], unknown["payload"])
         with self.assertRaisesRegex(ContractError, "210_EVENT_STRUCTURE_REJECTED"):
-            self.coordinator.dispatch_event_operation(reviewed, unknown)
+            self.coordinator.dispatch_event_operation(reviewed, context, unknown)
 
         unbound = copy.deepcopy(operation)
         unbound["envelope"]["parent_artifact_refs"] = [ref("other-structure", "f")]
         unbound["envelope"]["input_hashes"] = ["f" * 64]
         unbound["envelope"]["content_hash"] = content_hash(unbound["envelope"], unbound["payload"])
         with self.assertRaisesRegex(ContractError, "210_EVENT_OPERATION_LINEAGE_REJECTED"):
-            self.coordinator.dispatch_event_branches(reviewed, structure, unbound)
+            self.coordinator.dispatch_event_branches(reviewed, context, structure, unbound)
 
         blocked = copy.deepcopy(operation)
         blocked["envelope"]["status"] = "blocked_manual"
         blocked["envelope"]["content_hash"] = content_hash(blocked["envelope"], blocked["payload"])
         with self.assertRaisesRegex(ContractError, "210_EVENT_CLOSURE_STATE_REJECTED"):
-            self.coordinator.dispatch_event_branches(reviewed, structure, blocked)
+            self.coordinator.dispatch_event_branches(reviewed, context, structure, blocked)
 
     def test_event_join_rejects_same_context_cross_closure_mix_before_260(self) -> None:
         approved, started, structure, operation, _, verified, restricted, _, operation_builder = self._actual_event_validation_chain()
         reviewed = started["reviewed_question_sql"]
+        context = started["event_query_context"]
         other_structure = copy.deepcopy(structure)
         other_structure["envelope"]["artifact_id"] += "-other"
         other_structure["envelope"]["content_hash"] = content_hash(other_structure["envelope"], other_structure["payload"])
@@ -290,17 +324,18 @@ class DataStageCoordinatorTests(unittest.TestCase):
             (other_frozen["envelope"]["run_id"], other_frozen["envelope"]["qa_id"], other_frozen["envelope"]["trace_id"], other_frozen["envelope"]["attempt_no"]),
         )
         with self.assertRaisesRegex(ContractError, "210_EVENT_ORM_LINEAGE_REJECTED"):
-            self.coordinator.join_event_validations(approved, reviewed, structure, operation, restricted, verified, other_frozen)
+            self.coordinator.join_event_validations(approved, reviewed, context, structure, operation, restricted, verified, other_frozen)
         late_verified = copy.deepcopy(verified)
         late_verified["envelope"]["attempt_no"] = 2
         late_verified["envelope"]["content_hash"] = content_hash(late_verified["envelope"], late_verified["payload"])
         frozen = importlib.import_module("east_v5.agents.252.validator").OrmValidator(ROOT).freeze_orm(restricted, structure, operation)
         with self.assertRaisesRegex(ContractError, "210_ATTEMPT_MISMATCH"):
-            self.coordinator.join_event_validations(approved, reviewed, structure, operation, restricted, late_verified, frozen)
+            self.coordinator.join_event_validations(approved, reviewed, context, structure, operation, restricted, late_verified, frozen)
 
     def test_event_join_rejects_same_context_cross_approval_before_260(self) -> None:
         approved, started, structure, operation, _, verified, restricted, frozen, _ = self._actual_event_validation_chain()
         reviewed = started["reviewed_question_sql"]
+        context = started["event_query_context"]
         other_approved = copy.deepcopy(approved)
         other_approved["payload"]["candidate_content"]["clear_question"] = "另一条脱敏审批问题"
         other_approved["payload"]["package_hash"] = sha256({key: value for key, value in other_approved["payload"].items() if key != "package_hash"})
@@ -311,7 +346,7 @@ class DataStageCoordinatorTests(unittest.TestCase):
         )
         self.assertNotEqual(artifact_ref(other_approved["envelope"]), reviewed["envelope"]["parent_artifact_refs"][0])
         with self.assertRaisesRegex(ContractError, "210_EVENT_REVIEWED_LINEAGE_REJECTED"):
-            self.coordinator.join_event_validations(other_approved, reviewed, structure, operation, restricted, verified, frozen)
+            self.coordinator.join_event_validations(other_approved, reviewed, context, structure, operation, restricted, verified, frozen)
 
     def test_foundation_is_ordered_220_then_real_241_242_then_260_and_010(self) -> None:
         foundation_tests = test_module("agents.260.test_regression")
@@ -407,7 +442,7 @@ class DataStageCoordinatorTests(unittest.TestCase):
         case = source.EventRegressionTests()
         case.setUp()
         try:
-            regression = case.worker.run_event(case.data, case.orm, case.snapshot, case.review, case.spec, case.db)
+            regression = case.worker.run_event(case.data, case.orm, case.snapshot, case.reviewed, case.context, case.spec, case.db)
             with self.assertRaisesRegex(ContractError, "210_RELEASE_TARGET_VERSION_REQUIRED"):
                 self.coordinator.build_event_release(case.review, regression, target_database_version="", target_question_dataset_version="fixture-question-v1")
         finally:

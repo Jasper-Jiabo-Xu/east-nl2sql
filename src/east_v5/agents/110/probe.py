@@ -36,7 +36,7 @@ def run_sanitized_probe(root: Path) -> dict[str, Any]:
     r170 = DeepSeekReviewAgent(root).review(dual, {"reviewer_id": "170", "decision": "yes", "error_types": [], "error_details": [], "evidence_refs": [], "route_suggestion": "150"}, created_at=TIME)
     r180 = GLMReviewerAgent(root, _GLM()).review(dual, created_at=TIME)
     joined = QuestionSqlStageScheduler(root).collect_reviews(dual, [r180, r170], created_at=TIME)
-    data = importlib.import_module("east_v5.agents.210.scheduler").DataStageCoordinator(root).begin_event(joined["approved_package"])
+    data = importlib.import_module("east_v5.agents.210.scheduler").DataStageCoordinator(root).begin_event(joined["approved_package"], spec)
     return {"summary": {"double_yes_to_210": joined["target"] == "210", "downstream_stub_consumed": data["dispatches"][0]["target"] == "220", "approved_hash": joined["approved_package"]["envelope"]["content_hash"]}}
 
 
