@@ -1,0 +1,70 @@
+#!/usr/bin/env python3
+"""Single executable entrypoint for the immutable v8 workspace Skill."""
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+REQUIRED = ("east_v5/governance.py", "east_v5/artifacts/registry.py", "east_v5/runtime/controller_core.py", "manifest.json")
+
+
+def _load(path: str) -> dict[str, object]:
+    value = json.loads(Path(path).read_text(encoding="utf-8"))
+    if not isinstance(value, dict):
+        raise ValueError("RUNTIME_TASK_INPUT_INVALID")
+    return value
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("command", choices=("claim-preflight", "business-preflight", "root-transport-preflight", "launcher-control-preflight", "orphan-audit", "run-task"))
+    parser.add_argument("--envelope-file", required=True)
+    parser.add_argument("--claim-file", required=True)
+    parser.add_argument("--task-id")
+    parser.add_argument("--runtime-id")
+    parser.add_argument("--launcher-record")
+    parser.add_argument("--launcher-fail", action="store_true")
+    args = parser.parse_args(argv)
+    if not all((ROOT / relative).is_file() for relative in REQUIRED):
+        print("RUNTIME_SKILL_DEPENDENCY_MISSING", file=sys.stderr)
+        return 2
+    sys.path.insert(0, str(ROOT))
+    from east_v5.runtime import ControllerError, RuntimeController
+    try:
+        controller = RuntimeController(ROOT, _load(args.envelope_file), _load(args.claim_file))
+        if args.command in {"claim-preflight", "business-preflight"}:
+            print(json.dumps(controller.preflight(business=args.command == "business-preflight"), ensure_ascii=False, sort_keys=True))
+            return 0
+        if args.command == "root-transport-preflight":
+            print(json.dumps(controller.root_transport_preflight(), ensure_ascii=False, sort_keys=True))
+            return 0
+        if args.command == "orphan-audit":
+            root = controller.runtime_root / "east-v5-runtime" / "issues" / controller.envelope["issue_id"] / controller.envelope["run_id"] / str(controller.envelope["attempt"])
+            staged = sorted(path.name for path in root.glob("staged-*.json")) if root.exists() else []
+            print(json.dumps({"status": "orphaned_staged" if staged else "not_observed", "staged": staged}, sort_keys=True))
+            return 0
+        if args.command == "launcher-control-preflight":
+            if not args.task_id or not args.runtime_id:
+                raise ControllerError("RUNTIME_RUN_ARGUMENT_MISSING")
+            if controller.envelope["target_agent_id"] == "110":
+                result = controller.launcher_control_consume(task_id=args.task_id, runtime_id=args.runtime_id)
+            else:
+                record = Path(args.launcher_record).resolve() if args.launcher_record else None
+                result = controller.launcher_control_preflight(task_id=args.task_id, runtime_id=args.runtime_id, launcher_record=record, launcher_fail=args.launcher_fail)
+            print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+            return 0
+        if not args.task_id or not args.runtime_id:
+            raise ControllerError("RUNTIME_RUN_ARGUMENT_MISSING")
+        record = Path(args.launcher_record).resolve() if args.launcher_record else None
+        print(json.dumps(controller.run_task(task_id=args.task_id, runtime_id=args.runtime_id, launcher_record=record, launcher_fail=args.launcher_fail), ensure_ascii=False, sort_keys=True))
+        return 0
+    except (OSError, ValueError, ControllerError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
