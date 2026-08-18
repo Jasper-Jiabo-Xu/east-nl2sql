@@ -241,6 +241,8 @@ class DataStageCoordinator:
         approved_ref, query_ref = artifact_ref(approved["envelope"]), artifact_ref(query_spec["envelope"])
         if (payload["source_question_sql_ref"], payload["source_query_spec_ref"]) != (approved_ref, query_ref): _fail("210_QUERY_BINDING_LINEAGE_REJECTED")
         if env["parent_artifact_refs"] != [approved_ref, query_ref] or env["input_hashes"] != [approved_ref["content_hash"], query_ref["content_hash"]]: _fail("210_QUERY_BINDING_LINEAGE_REJECTED")
+        if env["version"] != approved["envelope"]["version"] or env["version"] != query_spec["envelope"]["version"]:
+            _fail("210_QUERY_BINDING_VERSION_DRIFT")
         if (env["run_id"], env["qa_id"], env["trace_id"], env["attempt_no"]) != (approved["envelope"]["run_id"], approved["envelope"]["qa_id"], approved["envelope"]["trace_id"], approved["envelope"]["attempt_no"]): _fail("210_QUERY_BINDING_CONTEXT_DRIFT")
         candidate = approved["payload"]["candidate_content"]
         names = validate_declarations(candidate["sql_gold"], candidate["query_parameter_bindings"])
