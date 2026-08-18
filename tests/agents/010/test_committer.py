@@ -90,22 +90,15 @@ class FormalReleaseCommitterTests(unittest.TestCase):
                 self.assertEqual(connection.execute("SELECT database_version FROM formal_release_state WHERE state_id = 1").fetchone()[0], "fixture-db-v1")
 
     def test_foundation_commit_consumes_real_260_frozen_batch(self) -> None:
-        source = importlib.import_module("tests.agents.260.test_regression")
-        case = source.FoundationRegressionTests(); case.setUp()
-        try:
-            copy_db, regression_formal = sqlite3.connect(":memory:"), sqlite3.connect(":memory:")
-            for db in (copy_db, regression_formal):
-                db.execute("CREATE TABLE FIXTURE_CUSTOMER (C001 TEXT PRIMARY KEY, C002 TEXT)")
-            report = source.regression.run_foundation_regression(ROOT, case.task, case.closure, case.verified, case.snapshot, copy_db, regression_formal, set())
-            candidate = importlib.import_module("east_v5.agents.210.scheduler").DataStageCoordinator(ROOT).build_foundation_release(case.task, report)
-            connection = formal_store()
-            receipt = self.committer.commit(candidate, connection, foundation_task=case.task, foundation_regression=report)
-            self.assertEqual(receipt["payload"]["commit_status"], "committed")
-            self.assertEqual(receipt["payload"]["question_sql_record_id"], None)
-            self.assertEqual(connection.execute("SELECT COUNT(*) FROM FIXTURE_CUSTOMER").fetchone()[0], 1)
-            self.assertEqual(self.committer.commit(candidate, connection), receipt)
-        finally:
-            case.tearDown()
+        fixture = importlib.import_module("east_v5.agents.010.sanitized_foundation_fixture")
+        material = fixture.build_sanitized_foundation_260_material(ROOT)
+        candidate = importlib.import_module("east_v5.agents.210.scheduler").DataStageCoordinator(ROOT).build_foundation_release(material.task, material.regression_report)
+        connection = formal_store()
+        receipt = self.committer.commit(candidate, connection, foundation_task=material.task, foundation_regression=material.regression_report)
+        self.assertEqual(receipt["payload"]["commit_status"], "committed")
+        self.assertEqual(receipt["payload"]["question_sql_record_id"], None)
+        self.assertEqual(connection.execute("SELECT COUNT(*) FROM FIXTURE_CUSTOMER").fetchone()[0], 1)
+        self.assertEqual(self.committer.commit(candidate, connection), receipt)
 
     def test_only_sql_execution_error_is_routed_to_110(self) -> None:
         payload = {"schema_version": "v5.sql-regression-failed-feedback/v1", "mode": "event_data", "input_data_refs": [ref("data", "a")], "input_orm_ref": ref("orm", "b"), "sandbox_snapshot_id": "snapshot", "failure_details": {"error_code": "SQL_EXECUTION_ERROR", "error_stage": "sql_execution", "error_location": "fixture", "expected_values": [], "actual_values": [], "sql_error_detail": {"sql_text": "SELECT", "error_code": "SQLITE_ERROR", "error_message": "fixture"}, "regression_metrics": {}}, "route_target": "010", "retry_count": 1}
