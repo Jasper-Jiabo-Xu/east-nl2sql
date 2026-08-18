@@ -59,10 +59,17 @@ class RuntimeAdapter:
             _fail("RUNTIME_TASK_INPUT_ATTEMPT_INVALID")
         if not all(isinstance(envelope[key], str) and envelope[key] for key in ("issue_id", "run_id", "trace_id", "qa_id", "target_agent_id", "target_agent_uuid", "root_binding_id")):
             _fail("RUNTIME_TASK_INPUT_VALUE_INVALID")
-        _ref(envelope["input_ref"], "INPUT")
         expected = envelope["expected_output"]
         if not isinstance(expected, dict) or set(expected) != {"artifact_type", "producer_id", "route_target"} or not all(isinstance(expected[key], str) and expected[key] for key in expected):
             _fail("RUNTIME_EXPECTED_OUTPUT_INVALID")
+        initial = envelope["target_agent_id"] == "010" and envelope["input_ref"] is None
+        if initial:
+            if (expected["artifact_type"], expected["producer_id"]) != ("penalty_source_package", "010"):
+                _fail("RUNTIME_INITIAL_OUTPUT_CONTRACT_INVALID")
+        elif envelope["input_ref"] is None:
+            _fail("RUNTIME_INPUT_REF_REQUIRED")
+        else:
+            _ref(envelope["input_ref"], "INPUT")
         self.repo_root, self.envelope = repo_root.resolve(), envelope.copy()
         self.registry = ArtifactRegistry(self.repo_root, roots, envelope["issue_id"], envelope["run_id"], envelope["attempt"])
 

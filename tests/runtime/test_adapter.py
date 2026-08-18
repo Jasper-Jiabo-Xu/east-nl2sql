@@ -23,11 +23,12 @@ class RuntimeAdapterTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             base = Path(tmp)
             roots = {"repo_root": str(base / "repo"), "runtime_root": str(base / "runtime"), "reference_root": str(base / "reference"), "reference_read_only": True}
-            envelope = {"schema_version": "task_input_envelope/v1", "adapter_version": "east-v5-runtime-adapter/v1", "issue_id": "EAS-70", "run_id": "probe-run", "trace_id": "probe-trace", "qa_id": package["envelope"]["qa_id"], "attempt": 2, "target_agent_id": "010", "target_agent_uuid": "010-uuid", "root_binding_id": "b" * 64, "input_ref": artifact_ref(package["envelope"]), "expected_output": {"artifact_type": "penalty_source_package", "producer_id": "010", "route_target": "110"}}
+            envelope = {"schema_version": "task_input_envelope/v1", "adapter_version": "east-v5-runtime-adapter/v1", "issue_id": "EAS-70", "run_id": "probe-run", "trace_id": "probe-trace", "qa_id": package["envelope"]["qa_id"], "attempt": 2, "target_agent_id": "010", "target_agent_uuid": "010-uuid", "root_binding_id": "b" * 64, "input_ref": None, "expected_output": {"artifact_type": "penalty_source_package", "producer_id": "010", "route_target": "110"}}
             result = RuntimeAdapter(ROOT, roots, envelope).register_output(package, task_id="task-010", runtime_id="runtime-010")
             self.assertEqual(result["next_dispatch"]["target"], "110")
             self.assertEqual(result["receipt"]["output_ref"], artifact_ref(package["envelope"]))
-            consumer_envelope = {**envelope, "target_agent_id": "110", "target_agent_uuid": "110-uuid", "expected_output": {"artifact_type": "penalty_source_package", "producer_id": "010", "route_target": "120"}}
+            self.assertIsNone(result["receipt"]["input_ref"])
+            consumer_envelope = {**envelope, "target_agent_id": "110", "target_agent_uuid": "110-uuid", "input_ref": artifact_ref(package["envelope"]), "expected_output": {"artifact_type": "penalty_source_package", "producer_id": "010", "route_target": "120"}}
             consumed = RuntimeAdapter(ROOT, roots, consumer_envelope).consume_input(task_id="task-110", runtime_id="runtime-110")
             self.assertEqual(consumed["next_dispatch"]["target"], "120")
             self.assertEqual(consumed["receipt"]["output_ref"], artifact_ref(package["envelope"]))
