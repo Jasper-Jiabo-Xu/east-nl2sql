@@ -1,0 +1,43 @@
+{
+  "$id": "https://east.example/contracts/packages/formal-release-receipt/v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "FORMAL-RELEASE-RECEIPT",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["envelope", "payload"],
+  "properties": {
+    "envelope": {
+      "allOf": [
+        {"$ref": "https://east.example/contracts/common-envelope/v1"},
+        {"type": "object", "properties": {"artifact_type": {"const": "release_receipt"}, "producer_id": {"const": "010"}, "mode": {"enum": ["event_data", "foundation"]}, "status": {"const": "approved"}}}
+      ]
+    },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["release_id", "release_candidate_ref", "commit_status", "database_version_before", "database_version_after", "written_rows_by_table", "question_sql_record_id", "idempotency_key", "committed_package_hash", "manifest_location", "trace_location", "committed_at", "failure_detail"],
+      "properties": {
+        "release_id": {"type": "string", "minLength": 1},
+        "release_candidate_ref": {"$ref": "#/$defs/ref"},
+        "commit_status": {"enum": ["committed", "rolled_back", "failed"]},
+        "database_version_before": {"type": "string", "minLength": 1},
+        "database_version_after": {"type": "string", "minLength": 1},
+        "written_rows_by_table": {"type": "object", "minProperties": 1, "additionalProperties": {"$ref": "#/$defs/write_summary"}},
+        "question_sql_record_id": {"type": ["string", "null"]},
+        "idempotency_key": {"type": "string", "minLength": 1},
+        "committed_package_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "manifest_location": {"type": "string", "minLength": 1},
+        "trace_location": {"type": "string", "minLength": 1},
+        "committed_at": {"type": "string", "format": "date-time"},
+        "failure_detail": {"type": ["string", "null"]}
+      },
+      "allOf": [
+        {"if": {"properties": {"commit_status": {"const": "committed"}}}, "then": {"properties": {"failure_detail": {"const": null}}}}
+      ]
+    }
+  },
+  "$defs": {
+    "ref": {"type": "object", "additionalProperties": false, "required": ["artifact_id", "version", "content_hash"], "properties": {"artifact_id": {"type": "string", "minLength": 1}, "version": {"type": "integer", "minimum": 1}, "content_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}},
+    "write_summary": {"type": "object", "additionalProperties": false, "required": ["insert", "update", "primary_key_digest"], "properties": {"insert": {"type": "integer", "minimum": 0}, "update": {"type": "integer", "minimum": 0}, "primary_key_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}}
+  }
+}
