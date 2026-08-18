@@ -1,0 +1,49 @@
+{
+  "envelope": {
+    "artifact_id": "qspec-eas39",
+    "artifact_type": "query_specification_package",
+    "run_id": "eas39-run",
+    "qa_id": "QA-EAS39",
+    "version": 1,
+    "schema_version": "COMMON-ENVELOPE/v1",
+    "content_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+    "supersedes_ref": null,
+    "attempt_no": 1,
+    "producer_id": "140",
+    "parent_artifact_refs": [],
+    "input_hashes": [],
+    "status": "validated",
+    "mode": "event_data",
+    "created_at": "2026-08-17T00:00:00+00:00",
+    "trace_id": "eas39-trace",
+    "storage_locator": null
+  },
+  "payload": {
+    "query_spec_id": "qspec-039",
+    "penalty_fact_package_ref": {"artifact_id": "penalty", "version": 1, "content_hash": "7777777777777777777777777777777777777777777777777777777777777777"},
+    "observable_fact_package_ref": {"artifact_id": "observable", "version": 1, "content_hash": "8888888888888888888888888888888888888888888888888888888888888888"},
+    "query_goal": "sanitized T001 lookup",
+    "must_preserve_fact_refs": ["fact"],
+    "main_object_and_grain": {"main_object": "fixture_t001", "grain": "FIXTURE_T001.F001"},
+    "query_entry": {"entry_table": "FIXTURE_T001", "entry_conditions": []},
+    "related_objects_and_path": [
+      {"object_name": "fixture_t002", "table_id": "FIXTURE_T002", "relation_type": "reference", "join_fields": [{"from_field": "FIXTURE_T001.F001", "to_field": "FIXTURE_T002.PK001"}]}
+    ],
+    "filters_and_evidence": [],
+    "return_fields": [
+      {"field_id": "F001", "display_name": "sanitized F001", "source_table": "FIXTURE_T001"},
+      {"field_id": "F002", "display_name": "sanitized F002", "source_table": "FIXTURE_T001"}
+    ],
+    "aggregation_dedup_sort_time": {"group_by_fields": ["F001"], "distinct_required": true, "order_by": [], "time_window": {"field_id": "F001", "window_type": "point"}},
+    "observability_boundary": {"answerable": ["sanitized"], "unanswerable": []},
+    "expected_result_shape": {"row_grain": "fixture_t001", "column_set": ["F001", "F002"], "aggregation_shape": "none"},
+    "sql_schema_scope": {"allowed_tables": [{"table_id": "FIXTURE_T001", "allowed_fields": ["F001", "F002"]}, {"table_id": "FIXTURE_T002", "allowed_fields": ["PK001"]}]},
+    "minimum_positive_count": 1,
+    "minimum_negative_count": 1,
+    "condition_coverage": [],
+    "code_value_coverage": [{"field_id": "F001", "target_code_values": ["A"]}],
+    "expected_row_group_count": {"minimum": 1, "target": 1, "tolerance_range": {"low": 0, "high": 0}},
+    "join_expansion_limit": {"max_multiplier": 1, "max_result_rows": 1},
+    "query_specification_package_schema_version": "query-specification-v1"
+  }
+}

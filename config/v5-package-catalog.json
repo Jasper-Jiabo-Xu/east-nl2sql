@@ -20,7 +20,7 @@
     {"id": "database_read_snapshot", "producer": "EAS-19", "consumers": ["241"], "modes": ["event", "foundation"], "payload_schema": "v5.database-read-snapshot/v1", "package_schema": "contracts/packages/database-read-snapshot.schema.json"},
     {"id": "data_validation_failed_feedback", "producer": "242", "consumers": ["241"], "payload_schema": "v5.data-validation-failed-feedback/v1", "package_schema": "contracts/packages/data-validation-failed-feedback.schema.json"},
     {"id": "orm_validation_failed_feedback", "producer": "252", "consumers": ["251"], "payload_schema": "v5.orm-validation-failed-feedback/v1", "package_schema": "contracts/packages/orm-validation-failed-feedback-package.schema.json"},
-    {"id": "sql_regression_failed_feedback", "producer": "260", "consumers": ["150", "241"], "payload_schema": "v5.sql-regression-failed-feedback/v1", "package_schema": "contracts/packages/sql-regression-failed-feedback.schema.json"},
+    {"id": "sql_regression_failed_feedback", "producer": "260", "consumers": ["210"], "payload_schema": "v5.sql-regression-failed-feedback/v1", "package_schema": "contracts/packages/sql-regression-failed-feedback.schema.json"},
     {"id": "sql_regression_route_record", "producer": "110", "consumers": ["150"], "payload_schema": "v5.sql-regression-route-record/v1", "package_schema": "contracts/packages/sql-regression-route-record.schema.json"},
     {"id": "penalty_source_package", "producer": "010", "consumers": ["120"]},
     {"id": "penalty_fact_package", "producer": "120", "consumers": ["130", "140", "150", "170", "180"]},

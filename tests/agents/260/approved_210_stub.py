@@ -135,6 +135,6 @@ def consume(package: dict[str, Any], root: Path) -> dict[str, str]:
                 if not state or sum(expected.values()) != target["target"] or sum(after.values()) != target["actual"] or target["actual"] != state["after"]:
                     raise ContractError("210_STUB_EXECUTION_FACT_REJECTED")
         return {"decision": "accepted", "kind": "success"}
-    if package["payload"]["route_target"] not in {"210", "manual", "241", "251"}:
+    if package["payload"]["route_target"] not in {"210", "manual", "241", "251", "010"}:
         raise ContractError("210_STUB_ROUTE_REJECTED")
     return {"decision": "accepted", "kind": "feedback"}
