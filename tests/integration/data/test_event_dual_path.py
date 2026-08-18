@@ -29,6 +29,8 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from east_v5.artifacts import artifact_ref, content_hash
 from east_v5.governance import ContractError, canonical_bytes, sha256
+from east_v5.agents.east_150 import MAPPED_SPEC_ITEMS, PendingPrecheckBuilder
+from east_v5.agents.east_180.reviewer import GLMReviewerAgent
 
 coordinator_mod = importlib.import_module("east_v5.agents.210.scheduler")
 closure_mod = importlib.import_module("east_v5.agents.220.closure")
@@ -40,6 +42,9 @@ orm_generator_mod = importlib.import_module("east_v5.agents.251.generator")
 orm_validator_mod = importlib.import_module("east_v5.agents.252.validator")
 regression_mod = importlib.import_module("east_v5.agents.260.regression")
 question_scheduler_mod = importlib.import_module("east_v5.agents.110.scheduler")
+committer_mod = importlib.import_module("east_v5.agents.010.committer")
+precheck_mod = importlib.import_module("east_v5.agents.160.precheck")
+review_170_mod = importlib.import_module("east_v5.agents.170.review")
 
 try:
     stub_210 = importlib.import_module("tests.agents.260.approved_210_stub")
@@ -58,6 +63,11 @@ def _test_module(package: str):
 
 
 TIME = "2026-08-17T00:00:00+00:00"
+
+
+class _ScriptedGLM:
+    def review(self, _request):
+        return json.dumps({"reviewer_id": "180", "decision": "yes", "error_types": [], "error_details": [], "evidence_refs": [{"kind": "fixture", "ref": "data-chain", "description": "脱敏"}], "route_suggestion": "150"})
 
 
 def _load(name: str) -> dict:
@@ -110,9 +120,10 @@ class EventDualPathIntegrationTests(unittest.TestCase):
         self._tmp_dirs = []
         self.coordinator = coordinator_mod.DataStageCoordinator(ROOT)
         self.spec = _rehash(_load("query-specification.json"))
+        self.spec["payload"]["query_entry"]["entry_conditions"] = [{"field_id": "F001", "operator": "=", "value": "A"}]
         self.spec["envelope"]["mode"] = "question_sql"
         _rehash(self.spec)
-        self.approved = self._bind_approved(_load("approved-question-sql.json"), self.spec)
+        self.approved, self.binding = self._approved_via_real_question_sql_chain(self.spec)
         self.snapshot = self._bind_snapshot(_load("database-read-snapshot.json"))
 
     def _bind_snapshot(self, snapshot: dict) -> dict:
@@ -122,10 +133,31 @@ class EventDualPathIntegrationTests(unittest.TestCase):
 
     def _bind_approved(self, approved: dict, spec: dict) -> dict:
         approved["payload"]["query_specification_package"] = artifact_ref(spec["envelope"])
-        approved["payload"]["candidate_content"].setdefault("query_parameter_bindings", [])
+        candidate = approved["payload"]["candidate_content"]
+        candidate["sql_gold"] = "SELECT T1.F001, T1.F002 FROM FIXTURE_T001 T1 JOIN FIXTURE_T002 T2 ON T1.F001 = T2.PK001 WHERE T1.F001 = :account_value"
+        candidate["query_parameter_bindings"] = [{"name": "account_value", "source_pointer": "/query_entry/entry_conditions/0/value"}]
         approved["payload"]["package_hash"] = sha256({key: value for key, value in approved["payload"].items() if key != "package_hash"})
         approved["envelope"]["content_hash"] = content_hash(approved["envelope"], approved["payload"])
         return approved
+
+    def _approved_via_real_question_sql_chain(self, spec: dict) -> tuple[dict, dict]:
+        """Exercise 140→150→160→170/180→110 without hand-writing a 110 package."""
+        candidate = _load("approved-question-sql.json")["payload"]["candidate_content"]
+        candidate["sql_gold"] = "SELECT T1.F001, T1.F002 FROM FIXTURE_T001 T1 JOIN FIXTURE_T002 T2 ON T1.F001 = T2.PK001 WHERE T1.F001 = :account_value"
+        candidate["query_parameter_bindings"] = [{"name": "account_value", "source_pointer": "/query_entry/entry_conditions/0/value"}]
+        fragments = ("T1.F001", "T1.F002", "T2.PK001")
+        candidate["specification_mapping"] = [{"spec_item": item, "question_fragment": candidate["clear_question"], "sql_fragment": fragments[index % len(fragments)]} for index, item in enumerate(MAPPED_SPEC_ITEMS)]
+        builder = PendingPrecheckBuilder(ROOT)
+        pending = builder.build_pending_precheck(spec, run_id=spec["envelope"]["run_id"], qa_id=spec["envelope"]["qa_id"], created_at=TIME, **candidate)
+        checker = precheck_mod.PrecheckAgent(ROOT)
+        precheck = checker.precheck(pending, spec, checked_at=TIME)
+        self.assertEqual(precheck["decision"], "pass")
+        dual = checker.build_dual_review(pending, spec, precheck, created_at=TIME)
+        review_170 = review_170_mod.DeepSeekReviewAgent(ROOT).review(dual, {"reviewer_id": "170", "decision": "yes", "error_types": [], "error_details": [], "evidence_refs": [], "route_suggestion": "150"}, created_at=TIME)
+        review_180 = GLMReviewerAgent(ROOT, _ScriptedGLM()).review(dual, created_at=TIME)
+        result = question_scheduler_mod.QuestionSqlStageScheduler(ROOT).collect_reviews(dual, [review_170, review_180], spec, created_at=TIME)
+        self.assertEqual(result["target"], "210")
+        return result["approved_package"], result["query_parameter_binding"]
 
     def _refresh_spec(self, mutate) -> dict:
         spec = copy.deepcopy(self.spec)
@@ -161,7 +193,7 @@ class EventDualPathIntegrationTests(unittest.TestCase):
     def _chain(self):
         """Build one same-source 210→220→230→{241→242,251→252} pair."""
         approved = self.approved
-        binding = question_scheduler_mod.QuestionSqlStageScheduler(ROOT).build_query_parameter_binding(approved, self.spec, created_at=TIME)
+        binding = self.binding if approved is self.approved else question_scheduler_mod.QuestionSqlStageScheduler(ROOT).build_query_parameter_binding(approved, self.spec, created_at=TIME)
         started = self.coordinator.begin_event(approved, self.spec, binding)
         reviewed = started["reviewed_question_sql"]
         context = started["event_query_context"]
@@ -217,6 +249,10 @@ class EventDualPathIntegrationTests(unittest.TestCase):
             self.assertEqual(dispatch["target"], "260")
             regression = regression_mod.DatabaseCopyRegression(ROOT).run_event(verified, frozen, self.snapshot, reviewed, context, binding, self.spec, formal)
             self.assertEqual(regression["payload"]["regression_status"], "passed")
+            self.assertEqual(binding["payload"]["parameters"], [{"name": "account_value", "source_pointer": "/query_entry/entry_conditions/0/value", "field": "FIXTURE_T001.F001", "operator": "=", "value": self.spec["payload"]["query_entry"]["entry_conditions"][0]["value"], "sqlite_type": "text", "evidence_ref": None}])
+            self.assertEqual(regression["payload"]["execution_instances"]["query_binding_names"], ["account_value"])
+            self.assertEqual(regression["payload"]["sql_regression_report"]["row_count"], 1)
+            self.assertEqual(binding["payload"]["sql_hash"], hashlib.sha256(approved["payload"]["candidate_content"]["sql_gold"].strip().encode("utf-8")).hexdigest())
             self.assertEqual(formal.read_bytes(), before)
             self.assertEqual(stub_210.consume(regression, ROOT)["decision"], "accepted")
 
@@ -226,6 +262,15 @@ class EventDualPathIntegrationTests(unittest.TestCase):
         self.assertEqual(candidate["payload"]["release_mode"], "event_data")
         self.assertIsNone(candidate["payload"]["foundation_regression_report_ref"])
         self.assertTrue(_test_module("contracts.test_stage10_package_contracts").consume_stub("release_candidate", "010", candidate))
+        self.assertEqual(len(committer_mod.FormalReleaseCommitter(ROOT)._validate_event(candidate, approved, regression)), regression["payload"]["sandbox_execution_report"]["write_count"])
+
+        replay = question_scheduler_mod.QuestionSqlStageScheduler(ROOT).build_query_parameter_binding(approved, self.spec, created_at=TIME)
+        self.assertEqual(replay, binding)
+        changed_spec = self._refresh_spec(lambda payload: payload["query_entry"]["entry_conditions"][0].update({"value": "B"}))
+        changed_approved = self._bind_approved(copy.deepcopy(approved), changed_spec)
+        changed_binding = question_scheduler_mod.QuestionSqlStageScheduler(ROOT).build_query_parameter_binding(changed_approved, changed_spec, created_at=TIME)
+        with self.assertRaises(ContractError):
+            regression_mod.DatabaseCopyRegression(ROOT).validate_event_inputs(verified, frozen, self.snapshot, reviewed, context, changed_binding, changed_spec)
 
     def _failures(self, verified, frozen, reviewed, context, binding):
         """用真实 260 产包覆盖五类失败路由，返回 {error_code: (feedback, target)}。"""

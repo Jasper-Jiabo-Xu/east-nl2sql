@@ -18,6 +18,7 @@ from east_v5.governance import ContractError, sha256
 PrecheckAgent = importlib.import_module("east_v5.agents.160.precheck").PrecheckAgent
 DeepSeekReviewAgent = importlib.import_module("east_v5.agents.170.review").DeepSeekReviewAgent
 QuestionSqlStageScheduler = importlib.import_module("east_v5.agents.110.scheduler").QuestionSqlStageScheduler
+binding_mod = importlib.import_module("east_v5.agents.110.query_binding")
 run_sanitized_probe = importlib.import_module("east_v5.agents.110.probe").run_sanitized_probe
 
 TIME = "2026-08-17T00:00:00+00:00"
@@ -99,7 +100,7 @@ class SchedulerTests(unittest.TestCase):
         query["payload"]["query_entry"]["entry_conditions"] = [{"field_id": "F1", "operator": "=", "value": "x' OR 1=1 --"}]
         query["envelope"]["content_hash"] = content_hash(query["envelope"], query["payload"])
         sql = "SELECT T1.F1 FROM T1 WHERE T1.F1 = :needle /* :not_a_parameter */"
-        candidate = {"sql_gold": sql, "query_parameter_bindings": [{"name": "needle", "source_pointer": "/query_entry/entry_conditions/0"}], "clear_question": "筛查机构", "sql_explanation": {"select": "字段", "from_join": "T1", "where": "冻结条件", "aggregation": "无", "sort": "固定", "business_meaning": "筛查"}, "business_event_candidates": [{"event_name": "筛查", "objective": "筛查", "objects": ["机构"], "state_changes": []}], "specification_mapping": [{"spec_item": item, "question_fragment": "筛查机构", "sql_fragment": "T1.F1" if item == "return_fields" else sql} for item in MAPPED_SPEC_ITEMS]}
+        candidate = {"sql_gold": sql, "query_parameter_bindings": [{"name": "needle", "source_pointer": "/query_entry/entry_conditions/0/value"}], "clear_question": "筛查机构", "sql_explanation": {"select": "字段", "from_join": "T1", "where": "冻结条件", "aggregation": "无", "sort": "固定", "business_meaning": "筛查"}, "business_event_candidates": [{"event_name": "筛查", "objective": "筛查", "objects": ["机构"], "state_changes": []}], "specification_mapping": [{"spec_item": item, "question_fragment": "筛查机构", "sql_fragment": "T1.F1" if item == "return_fields" else sql} for item in MAPPED_SPEC_ITEMS]}
         pending = PendingPrecheckBuilder(ROOT).build_pending_precheck(query, run_id="run110", qa_id="QA110", created_at=TIME, **candidate)
         checker = PrecheckAgent(ROOT); dual_review = checker.build_dual_review(pending, query, checker.precheck(pending, query, checked_at=TIME), created_at=TIME)
         first, second = reviews(dual_review)
@@ -110,6 +111,32 @@ class SchedulerTests(unittest.TestCase):
         context = coordinator.begin_event(result["approved_package"], query, binding)["event_query_context"]
         self.assertEqual(context["payload"]["schema_version"], "v5.event-query-context/v2")
         self.assertEqual(context["payload"]["query_parameter_binding_ref"], artifact_ref(binding["envelope"]))
+
+    def test_named_parameter_lexer_and_exact_value_pointers_cover_v1_surface(self):
+        sql = "SELECT :alpha, :alpha, ':literal', \"quoted:literal\", `tick:literal`, [bracket:literal] -- :line\n/* :block */ WHERE T1.F1 = :beta"
+        self.assertEqual(binding_mod.named_placeholders(sql), ("alpha", "beta"))
+        for rejected in ("SELECT ?", "SELECT ?1", "SELECT @name", "SELECT $name", "SELECT :ok, ?"):
+            with self.subTest(rejected=rejected):
+                with self.assertRaisesRegex(ContractError, "QUERY_PARAMETER_STYLE_REJECTED"):
+                    binding_mod.named_placeholders(rejected)
+        declarations = [{"name": "alpha", "source_pointer": "/query_entry/entry_conditions/0/value"}, {"name": "beta", "source_pointer": "/filters_and_evidence/0/value"}]
+        self.assertEqual(binding_mod.validate_declarations(sql, declarations), ("alpha", "beta"))
+        for invalid in (declarations[:1], declarations + [{"name": "extra", "source_pointer": "/query_entry/entry_conditions/0/value"}], [declarations[0], declarations[0]], [{"name": "alpha", "source_pointer": "/query_entry/entry_conditions/0"}]):
+            with self.subTest(invalid=invalid):
+                with self.assertRaises(ContractError):
+                    binding_mod.validate_declarations(sql, invalid)
+
+        payload = {"query_entry": {"entry_table": "T1", "entry_conditions": [{"field_id": "F1", "operator": "=", "value": "text"}, {"field_id": "F2", "operator": ">", "value": 7}, {"field_id": "F2", "operator": ">", "value": 1.5}, {"field_id": "F1", "operator": "IS", "value": None}]}, "filters_and_evidence": [{"field_id": "F2", "operator": "=", "value": 8, "evidence_ref": "fixture"}], "sql_schema_scope": {"allowed_tables": [{"table_id": "T1", "allowed_fields": ["F1", "F2"]}]}}
+        package = {"payload": payload}
+        expected = [("/query_entry/entry_conditions/0/value", "text", "text"), ("/query_entry/entry_conditions/1/value", 7, "integer"), ("/query_entry/entry_conditions/2/value", 1.5, "real"), ("/query_entry/entry_conditions/3/value", None, "null"), ("/filters_and_evidence/0/value", 8, "integer")]
+        for index, (pointer, value, sqlite_type) in enumerate(expected):
+            with self.subTest(pointer=pointer):
+                result = binding_mod.resolve_declaration({"name": f"p{index}", "source_pointer": pointer}, package)
+                self.assertEqual((result["value"], result["sqlite_type"]), (value, sqlite_type))
+        for pointer in ("/query_entry/entry_conditions/4/value", "/filters_and_evidence/1/value", "/query_entry/entry_conditions/0", "/query_entry/entry_conditions/0/field_id"):
+            with self.subTest(pointer=pointer):
+                with self.assertRaises(ContractError):
+                    binding_mod.resolve_declaration({"name": "bad", "source_pointer": pointer}, package)
 
     def test_single_no_never_starts_data_and_routes_by_error(self):
         pending = dual(); first, second = reviews(pending, decision180="no", errors180=("QUERY_SPEC_ERROR",))

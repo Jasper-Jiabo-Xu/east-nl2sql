@@ -475,6 +475,7 @@ class DataStageCoordinator:
         ):
             _fail("210_EVENT_REGRESSION_LINEAGE_REJECTED")
         payload = {
+            "schema_version": "v5.release-candidate/v2",
             "release_candidate_id": f"210-release-event-{regression['payload']['regression_package_id']}",
             "release_mode": "event_data",
             "approved_question_sql_ref": artifact_ref(approved["envelope"]),
@@ -513,6 +514,7 @@ class DataStageCoordinator:
             _fail("210_FOUNDATION_REGRESSION_HASH_DRIFT")
         expected = {table: {"insert": item["planned_count"], "update": 0} for table, item in payload_260["table_write_summary"].items()}
         payload = {
+            "schema_version": "v5.release-candidate/v2",
             "release_candidate_id": f"210-release-foundation-{payload_260['foundation_regression_report_id']}",
             "release_mode": "foundation",
             "approved_question_sql_ref": None,

@@ -29,7 +29,7 @@ CONTRACTS = {
     },
     "release_candidate": {
         "producer": "210", "consumers": ["010"], "modes": ["event", "foundation"],
-        "payload_schema": "v5.release-candidate/v1",
+        "payload_schema": "v5.release-candidate/v2",
         "package_schema": "contracts/packages/release-candidate-package.schema.json",
     },
 }
@@ -106,7 +106,7 @@ def reviewed_question_sql() -> dict[str, object]:
 def release_candidate(mode: str = "event_data", *, resume_qa_ref: dict[str, object] | None = None) -> dict[str, object]:
     event = mode == "event_data"
     payload = {
-        "release_candidate_id": f"release-{mode}", "release_mode": mode,
+        "schema_version": "v5.release-candidate/v2", "release_candidate_id": f"release-{mode}", "release_mode": mode,
         "approved_question_sql_ref": ref("approved-question", "3") if event else None,
         "event_regression_passed_ref": ref("event-regression", "4") if event else None,
         "foundation_regression_report_ref": None if event else ref("foundation-regression", "5"),
@@ -168,6 +168,11 @@ class Stage10PackageContractTests(unittest.TestCase):
         leaked["envelope"]["content_hash"] = content_hash(leaked["envelope"], leaked["payload"])
         with self.assertRaisesRegex(ContractError, "RELEASE_CANDIDATE_STUB_REJECTED"):
             consume_stub("release_candidate", "010", leaked)
+        legacy = release_candidate()
+        legacy["payload"]["schema_version"] = "v5.release-candidate/v1"
+        legacy["envelope"]["content_hash"] = content_hash(legacy["envelope"], legacy["payload"])
+        with self.assertRaisesRegex(ContractError, "RELEASE_CANDIDATE_STUB_REJECTED"):
+            consume_stub("release_candidate", "010", legacy)
 
     def test_resume_qa_ref_is_a_strict_artifact_reference_or_null(self) -> None:
         expansion = release_candidate("foundation", resume_qa_ref=ref("resume-qa", "e"))

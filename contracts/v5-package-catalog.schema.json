@@ -64,7 +64,7 @@
                 "producer": {"const": "210"},
                 "consumers": {"const": ["010"]},
                 "modes": {"const": ["event", "foundation"]},
-                "payload_schema": {"const": "v5.release-candidate/v1"},
+                "payload_schema": {"const": "v5.release-candidate/v2"},
                 "package_schema": {"const": "contracts/packages/release-candidate-package.schema.json"}
               }
             }

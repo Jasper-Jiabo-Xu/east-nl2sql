@@ -13,7 +13,7 @@ from east_v5.governance import ContractError
 
 
 _NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
-_POINTER = re.compile(r"^/(query_entry/entry_conditions|filters_and_evidence)/(0|[1-9][0-9]*)$")
+_POINTER = re.compile(r"^/(query_entry/entry_conditions|filters_and_evidence)/(0|[1-9][0-9]*)/value$")
 _NULL_OPERATORS = {"IS", "IS NOT"}
 
 

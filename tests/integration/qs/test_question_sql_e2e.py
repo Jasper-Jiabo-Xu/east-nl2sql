@@ -140,7 +140,7 @@ def candidate_fields(sql, question=QUESTION):
         "sql_explanation": {"select": "处罚主体与违规行为字段", "from_join": "EAST_D001", "where": "处罚主体等于指定值", "aggregation": "无", "sort": "固定排序", "business_meaning": "风险筛查"},
         "business_event_candidates": [{"event_name": "筛查", "objective": "风险筛查", "objects": ["某自然人"], "state_changes": ["识别"]}],
         "specification_mapping": [{"spec_item": item, "question_fragment": question, "sql_fragment": sql} for item in MAPPED_SPEC_ITEMS],
-        "query_parameter_bindings": [{"name": "v", "source_pointer": "/query_entry/entry_conditions/0"}],
+        "query_parameter_bindings": [{"name": "v", "source_pointer": "/query_entry/entry_conditions/0/value"}],
     }
 
 

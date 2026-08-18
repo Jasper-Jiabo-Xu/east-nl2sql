@@ -1,5 +1,5 @@
 {
-  "$id": "https://east.example/contracts/packages/release-candidate-package/v1",
+  "$id": "https://east.example/contracts/packages/release-candidate-package/v2",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "FORMAL-RELEASE-CANDIDATE",
   "type": "object",
@@ -15,8 +15,9 @@
     "payload": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["release_candidate_id", "release_mode", "approved_question_sql_ref", "event_regression_passed_ref", "foundation_regression_report_ref", "target_database_version", "target_question_dataset_version", "idempotency_key", "expected_write_summary", "package_hashes", "resume_qa_ref"],
+      "required": ["schema_version", "release_candidate_id", "release_mode", "approved_question_sql_ref", "event_regression_passed_ref", "foundation_regression_report_ref", "target_database_version", "target_question_dataset_version", "idempotency_key", "expected_write_summary", "package_hashes", "resume_qa_ref"],
       "properties": {
+        "schema_version": {"const": "v5.release-candidate/v2"},
         "release_candidate_id": {"type": "string", "minLength": 1},
         "release_mode": {"enum": ["event_data", "foundation"]},
         "approved_question_sql_ref": {"$ref": "#/$defs/artifact_ref_or_null"},

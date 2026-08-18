@@ -55,7 +55,7 @@ def candidate(sql, suffix=""):
     question = "筛查机构" + suffix
     return {"sql_gold": sql, "clear_question": question,
             "sql_explanation": {"select": "机构字段" + suffix, "from_join": "限定关联" + suffix, "where": "固定条件" + suffix, "aggregation": "无" + suffix, "sort": "固定排序" + suffix, "business_meaning": "风险筛查" + suffix},
-            "query_parameter_bindings": [{"name": "v", "source_pointer": "/query_entry/entry_conditions/0"}] if ":v" in sql else [],
+            "query_parameter_bindings": [{"name": "v", "source_pointer": "/query_entry/entry_conditions/0/value"}] if ":v" in sql else [],
             "business_event_candidates": [{"event_name": "筛查" + suffix, "objective": "风险筛查" + suffix, "objects": ["机构"], "state_changes": ["识别" + suffix]}],
             "specification_mapping": [{"spec_item": item, "question_fragment": question, "sql_fragment": sql} for item in MAPPED_SPEC_ITEMS]}
 
