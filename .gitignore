@@ -29,6 +29,8 @@ runtime/
 !skills/east-v5-runtime-bootstrap-v5/east_v5/runtime/**
 !skills/east-v5-runtime-bootstrap-v6/east_v5/runtime/
 !skills/east-v5-runtime-bootstrap-v6/east_v5/runtime/**
+!skills/east-v5-runtime-bootstrap-v7/east_v5/runtime/
+!skills/east-v5-runtime-bootstrap-v7/east_v5/runtime/**
 vnext/
 deepseek-key/
 GLM-key/
