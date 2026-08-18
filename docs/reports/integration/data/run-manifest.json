@@ -1,10 +1,10 @@
 {
   "schema_version": "v5.integration-run-manifest/v1",
   "issue_key": "EAS-39",
-  "title": "data 业务事件双通路联调（返工）",
+  "title": "data 业务事件双通路联调（返工 · 证据补齐）",
   "implementation_owner": "7d50dabd-40f8-40a1-807f-041eeed941a9",
-  "base_sha": "bec2b033598d715b76078acfed31d539e4413e2e",
-  "generated_at": "2026-08-18T00:00:00+00:00",
+  "base_sha": "5388c085a5a12214458bc3a5ee6084aca14ea847",
+  "generated_at": "2026-08-18T02:00:00+00:00",
   "route_semantics": {
     "route_target_meaning": "next_business_destination",
     "sql_execution_error_route_target": "010"
@@ -26,7 +26,7 @@
     "fixtures/integration/data/approved-question-sql.json": "6db27eb81024511fb8bf630e411346afbabf0b7ce248fb8f077bac135eb71394",
     "fixtures/integration/data/query-specification.json": "542f46084ffcab020cb5ce3b623bffcfae86c30293442e4b3b49d445e9d5c61c",
     "fixtures/integration/data/database-read-snapshot.json": "e5fb06eab5128595ba26ff59bc3b5c3d70b22ba3296c2285c96b1653ffa0764f",
-    "tests/integration/data/test_event_dual_path.py": "de1bc43042fd64f58bd03df6c21874c0840c2612d2b162b1fac381867c319f8b"
+    "tests/integration/data/test_event_dual_path.py": "d2d0e3516b29d14edb27220ec2e4ba364a8fc39c120d0ab6e6522acff427b858"
   },
   "output_artifacts": {
     "reviewed_artifact_id": "210-reviewed-eas39-approved",
@@ -45,5 +45,21 @@
     "integration_tests_passed": 6,
     "full_suite": "scripts/v5.py check -> Ran 347 tests ... OK"
   },
+  "rejection_evidence": [
+    {
+      "case": "payload.schema_version drift",
+      "mutation": "v5.sql-regression-failed-feedback/v1 -> v5.sql-regression-failed-feedback/v2",
+      "content_hash_recomputed": true,
+      "stub_result": "210_STUB_SCHEMA_REJECTED",
+      "route_feedback_result": "210_260_FEEDBACK_REJECTED"
+    },
+    {
+      "case": "unknown payload field",
+      "mutation": "add payload.unexpected_extra_field",
+      "content_hash_recomputed": true,
+      "stub_result": "210_STUB_SCHEMA_REJECTED",
+      "route_feedback_result": "210_260_FEEDBACK_REJECTED"
+    }
+  ],
   "conclusion": "passed"
 }

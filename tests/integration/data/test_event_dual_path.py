@@ -303,6 +303,22 @@ class EventDualPathIntegrationTests(unittest.TestCase):
         bad_target["envelope"]["content_hash"] = content_hash(bad_target["envelope"], bad_target["payload"])
         with self.assertRaisesRegex(ContractError, "210_STUB_ROUTE_REJECTED"):
             stub_210.consume(bad_target, ROOT)
+        # payload.schema_version 漂移（重算 content_hash，证明拒绝源于 Schema const 而非旧哈希）。
+        schema_version_drift = copy.deepcopy(feedback)
+        schema_version_drift["payload"]["schema_version"] = "v5.sql-regression-failed-feedback/v2"
+        schema_version_drift["envelope"]["content_hash"] = content_hash(schema_version_drift["envelope"], schema_version_drift["payload"])
+        with self.assertRaisesRegex(ContractError, "210_STUB_SCHEMA_REJECTED"):
+            stub_210.consume(schema_version_drift, ROOT)
+        with self.assertRaisesRegex(ContractError, "210_260_FEEDBACK_REJECTED"):
+            self.coordinator.route_feedback(schema_version_drift)
+        # 未知 payload 字段（重算 content_hash，证明严格 Schema additionalProperties:false 拒绝）。
+        unknown_field_drift = copy.deepcopy(feedback)
+        unknown_field_drift["payload"]["unexpected_extra_field"] = "x"
+        unknown_field_drift["envelope"]["content_hash"] = content_hash(unknown_field_drift["envelope"], unknown_field_drift["payload"])
+        with self.assertRaisesRegex(ContractError, "210_STUB_SCHEMA_REJECTED"):
+            stub_210.consume(unknown_field_drift, ROOT)
+        with self.assertRaisesRegex(ContractError, "210_260_FEEDBACK_REJECTED"):
+            self.coordinator.route_feedback(unknown_field_drift)
 
     def test_210_stub_rejects_schema_title_impersonation_and_hash_drift(self):
         _, _, _, _, _, verified, _, frozen = self._chain()

@@ -1,8 +1,8 @@
-# EAS-39 data 业务事件双通路联调验收报告（返工）
+# EAS-39 data 业务事件双通路联调验收报告（返工 · 证据补齐）
 
 - issue_key: EAS-39（[V5-INT-DATA-001] data 业务事件双通路联调）
 - 实施负责人: EAST DeepSeek 构建员（`7d50dabd-40f8-40a1-807f-041eeed941a9`）
-- base_sha / checkout_ref: `bec2b033598d715b76078acfed31d539e4413e2e`（PR #38 精确 head）
+- base_sha / checkout_ref: `5388c085a5a12214458bc3a5ee6084aca14ea847`（上一轮返工 head，Sol 复审对象）
 - 报告日期: 2026-08-18
 
 ## 结论
@@ -13,14 +13,23 @@
 - 260 真实 `SQL_EXECUTION_ERROR` 失败包现产出 `route_target=010`；210 直接消费、校验该包并确定性返回 010 路由。
 - `sql_regression_failed_feedback` catalog 直接消费者统一为 `[210]`，未新增别名包、未改变其他错误码业务目的地。
 - 五类失败路由均以「真实 260 产包 → 真实 210 消费并确定性路由」为整链证据，无手写反馈包。
-- 补齐机器可读运行清单、三次重试/人工阻断、幂等重放、版本与哈希漂移拒绝；正式库未写入。
+- 补齐机器可读运行清单、三次重试/人工阻断、幂等重放；正式库未写入。
+- 拒绝证据补齐（Sol 复审唯一未通过项）：基于真实 260 失败包新增 `payload.schema_version` 漂移与未知 payload 字段两类反例，重算 content_hash 后分别交给 210 Stub 与 `route_feedback`，断言 `210_STUB_SCHEMA_REJECTED` / `210_260_FEEDBACK_REJECTED`，证明拒绝源于 Schema 约束而非旧哈希。
 
-## 返工代码改动（最小扩展）
+## 返工代码改动（第一轮：路由语义，最小扩展）
 
 - `src/east_v5/agents/260/regression.py:620`：`feedback()` 路由表新增 `"SQL_EXECUTION_ERROR": "010"`（原默认落 `210`）。
 - `config/v5-package-catalog.json`：`sql_regression_failed_feedback` consumers `["150","241"]` → `["210"]`。
 - `tests/agents/260/approved_210_stub.py:138`：210 直接消费接受的 `route_target` 集合加入 `"010"`。
 - `tests/agents/260/test_regression.py`：SQL 错误路由断言 `210` → `010`。
+
+## 返工代码改动（第二轮：拒绝证据补齐，最小扩展）
+
+仅修改本 Issue 允许路径，未改动已验收的 260 路由实现、210 语义或 catalog：
+
+- `tests/integration/data/test_event_dual_path.py`：`test_route_conflict_version_and_hash_drift_rejected` 新增 `payload.schema_version` 漂移与未知 payload 字段两类反例（均重算 content_hash，分别经 210 Stub 与 `route_feedback` 断言 `210_STUB_SCHEMA_REJECTED` / `210_260_FEEDBACK_REJECTED`）。
+- `docs/reports/integration/data/run-manifest.json`：新增拒绝证据映射、更新 base_sha 与文件哈希。
+- 本报告。
 
 ## 范围与拓扑
 
@@ -66,7 +75,7 @@
 2. `test_release_candidate_requires_passed_regression`：真实 260 失败反馈不得组装为发布候选（`210_EVENT_REGRESSION_REJECTED`）。
 3. `test_five_real_failure_routes_consumed_by_210_and_routed`：五类失败均用真实 260 `run_event` 产包 → 210 Stub 直接消费（`kind=feedback`）→ `route_feedback` 确定性返回 `241/251/010/210/manual`。
 4. `test_retry_escalation_manual_block_and_idempotent_replay`：DATA_VALUE_ERROR 第 1/2 次 → 241，第 3 次 → MANUAL_REVIEW_REQUIRED/manual；同一失败包重复消费/路由结果一致（幂等重放）。
-5. `test_route_conflict_version_and_hash_drift_rejected`：route_target 冲突、retry_count/attempt_no 漂移、内容哈希漂移、210 不认识的业务目的地均被拒绝。
+5. `test_route_conflict_version_and_hash_drift_rejected`：route_target 冲突、retry_count/attempt_no 漂移（attempt 隔离）、内容哈希漂移、210 不认识的业务目的地、`payload.schema_version` 漂移（`v2`）与未知 payload 字段均被拒绝；后两者重算 content_hash 后分别由 210 Stub 与 `route_feedback` 拒绝（`210_STUB_SCHEMA_REJECTED` / `210_260_FEEDBACK_REJECTED`），证明拒绝源于 Schema 约束而非旧哈希。
 6. `test_210_stub_rejects_schema_title_impersonation_and_hash_drift`：拒绝 Schema title 冒充 artifact_type、错误 mode/schema 配对、内容哈希漂移。
 
 ## 下游消费结果
