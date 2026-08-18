@@ -11,6 +11,14 @@ __pycache__/
 *.key
 id_rsa
 runtime/
+# EAS-70 control-plane source/contract/test modules are not runtime data.
+# Keep all other directories named runtime (including local data planes) ignored.
+!src/east_v5/runtime/
+!src/east_v5/runtime/**
+!contracts/runtime/
+!contracts/runtime/**
+!tests/runtime/
+!tests/runtime/**
 vnext/
 deepseek-key/
 GLM-key/
