@@ -2,7 +2,8 @@
   "schema_version": "v5.package-catalog/v1",
   "packages": [
     {"id": "question_sql_dual_review_passed", "producer": "110", "consumers": ["210"], "modes": ["event"], "payload_schema": "v5.question-sql-dual-review-passed/v1", "package_schema": "contracts/packages/question-sql-dual-review-passed-package.schema.json"},
-    {"id": "reviewed_question_sql", "producer": "210", "consumers": ["150", "220"], "modes": ["event"], "payload_schema": "v5.reviewed-question-sql/v1", "package_schema": "contracts/packages/reviewed-question-sql-package.schema.json"},
+    {"id": "reviewed_question_sql", "producer": "210", "consumers": ["150", "220", "260"], "modes": ["event"], "payload_schema": "v5.reviewed-question-sql/v1", "package_schema": "contracts/packages/reviewed-question-sql-package.schema.json"},
+    {"id": "event_query_context", "producer": "210", "consumers": ["220", "260"], "modes": ["event"], "payload_schema": "v5.event-query-context/v1", "package_schema": "contracts/packages/event-query-context-package.schema.json"},
     {"id": "structure_closure", "producer": "220", "consumers": ["230", "241", "251", "252", "260"]},
     {"id": "operation_closure", "producer": "230", "consumers": ["241", "251"], "modes": ["event"]},
     {"id": "bound_data", "producer": "241", "consumers": ["242"]},
@@ -29,7 +30,7 @@
     {"id": "constraint_asset_package", "producer": "000", "consumers": ["130", "220"], "description": "约束资产查询结果包"},
     {"id": "east_observable_mapping_candidate", "producer": "130", "consumers": ["130"], "description": "130候选层：处罚事实到本次000资产记录的待验证映射"},
     {"id": "east_observable_fact_package", "producer": "130", "consumers": ["140", "150", "170", "180"], "description": "EAST可观察事实包"},
-    {"id": "query_specification_package", "producer": "140", "consumers": ["150", "170", "180", "220", "260"], "description": "查询规格包：140消费120和130产出，供150/170/180/220/260消费", "payload_schema": "query-specification-v1", "package_schema": "contracts/packages/query-specification-package.schema.json"},
+    {"id": "query_specification_package", "producer": "140", "consumers": ["150", "170", "180", "210"], "description": "查询规格包：140消费120和130产出，供150/170/180及210投影消费", "payload_schema": "query-specification-v1", "package_schema": "contracts/packages/query-specification-package.schema.json"},
     {"id": "deepseek_review_result", "producer": "170", "consumers": ["110", "130", "140", "150"], "description": "170审核结果包"},
     {"id": "glm_review_result", "producer": "180", "consumers": ["110", "130", "140", "150"], "description": "180审核结果包"},
     {"id": "question_sql_pending_precheck", "producer": "150", "consumers": ["160"], "description": "待预检候选SQL包：150消费140产出，供160预检消费", "payload_schema": "question-sql-pending-precheck-v1", "package_schema": "contracts/packages/question-sql-pending-precheck-package.schema.json"},
