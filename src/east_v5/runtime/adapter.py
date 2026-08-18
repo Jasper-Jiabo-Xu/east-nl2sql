@@ -15,8 +15,9 @@ from typing import Any
 
 from east_v5.artifacts import ArtifactRegistry, artifact_ref, content_hash, validate_envelope
 from east_v5.governance import ContractError, canonical_bytes
+from east_v5.runtime.bootstrap import BootstrapEvidence, validate_bootstrap_declaration
 
-_INPUT_KEYS = {"schema_version", "adapter_version", "issue_id", "run_id", "trace_id", "qa_id", "attempt", "target_agent_id", "target_agent_uuid", "root_binding_id", "input_ref", "expected_output"}
+_INPUT_KEYS = {"schema_version", "adapter_version", "issue_id", "run_id", "trace_id", "qa_id", "attempt", "target_agent_id", "target_agent_uuid", "root_binding_id", "input_ref", "expected_output", "execution_bootstrap"}
 _REF_KEYS = {"artifact_id", "version", "content_hash"}
 
 
@@ -52,8 +53,9 @@ def task_execution_receipt(*, task_id: str, issue_id: str, agent_id: str, runtim
 class RuntimeAdapter:
     """Adapter-owned edge gate: register -> read back -> receipt -> dispatch intent."""
 
-    def __init__(self, repo_root: Path, roots: dict[str, Any], envelope: dict[str, Any]):
-        if not isinstance(envelope, dict) or set(envelope) != _INPUT_KEYS:
+    def __init__(self, repo_root: Path, roots: dict[str, Any], envelope: dict[str, Any], *, preflight: BootstrapEvidence | None = None):
+        required_without_bootstrap = _INPUT_KEYS - {"execution_bootstrap"}
+        if not isinstance(envelope, dict) or not required_without_bootstrap.issubset(envelope) or not set(envelope).issubset(_INPUT_KEYS):
             _fail("RUNTIME_TASK_INPUT_UNKNOWN_FIELD")
         if envelope["schema_version"] != "task_input_envelope/v1" or envelope["adapter_version"] != "east-v5-runtime-adapter/v1":
             _fail("RUNTIME_TASK_INPUT_VERSION_INVALID")
@@ -61,6 +63,14 @@ class RuntimeAdapter:
             _fail("RUNTIME_TASK_INPUT_ATTEMPT_INVALID")
         if not all(isinstance(envelope[key], str) and envelope[key] for key in ("issue_id", "run_id", "trace_id", "qa_id", "target_agent_id", "target_agent_uuid", "root_binding_id")):
             _fail("RUNTIME_TASK_INPUT_VALUE_INVALID")
+        try:
+            declaration = validate_bootstrap_declaration(envelope)
+        except ContractError as exc:
+            raise RuntimeAdapterError(str(exc)) from exc
+        if preflight is None:
+            _fail("RUNTIME_BOOTSTRAP_UNVERIFIED")
+        if (preflight.candidate_head_sha, preflight.adapter_sha256, preflight.bootstrap_sha256, preflight.runner_sha256, preflight.root_binding_id, preflight.runner_entrypoint) != (declaration["candidate_head_sha"], declaration["adapter_sha256"], declaration["bootstrap_sha256"], declaration["runner_sha256"], envelope["root_binding_id"], "scripts/runtime_bootstrap.py"):
+            _fail("RUNTIME_BOOTSTRAP_EVIDENCE_DRIFT")
         expected = envelope["expected_output"]
         if not isinstance(expected, dict) or set(expected) != {"artifact_type", "producer_id", "route_target"} or not all(isinstance(expected[key], str) and expected[key] for key in expected):
             _fail("RUNTIME_EXPECTED_OUTPUT_INVALID")
