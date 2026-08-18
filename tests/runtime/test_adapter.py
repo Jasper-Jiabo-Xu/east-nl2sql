@@ -24,7 +24,7 @@ FormalReleaseCommitter = importlib.import_module("east_v5.agents.010.committer")
 
 def _bootstrap() -> dict[str, object]:
     context = {"resolver_version": "daemon_local_platform_data_resolver_v1", "workspace_id": "workspace", "project_id": "project", "daemon_id": "daemon"}
-    return {"bootstrap_version": "east-v5-runtime-bootstrap/v1", "candidate_base_sha": "a" * 40, "candidate_head_sha": "b" * 40, "adapter_sha256": "c" * 64, "bootstrap_sha256": "d" * 64, "runner_sha256": "e" * 64, "runtime_context": context}
+    return {"bootstrap_version": "east-v5-runtime-bootstrap/v1", "candidate_base_sha": "a" * 40, "candidate_head_sha": "b" * 40, "adapter_sha256": "c" * 64, "bootstrap_sha256": "d" * 64, "runner_sha256": "e" * 64, "runtime_context": context, "skill_bundle": {"skill_name": "east-v5-runtime-bootstrap-v1", "skill_version": "v1", "skill_manifest_sha256": "f" * 64}}
 
 
 def _envelope(package: dict[str, object] | None = None) -> dict[str, object]:
@@ -80,6 +80,15 @@ class RuntimeAdapterTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeAdapterError, "RUNTIME_BOOTSTRAP_MISSING"):
                 RuntimeAdapter(ROOT, roots, envelope)
             self.assertFalse((Path(tmp) / "runtime" / "vnext" / "03_构建过程层" / "issues" / "EAS-70" / "probe-run" / "2" / "artifact-registry.json").exists())
+
+    def test_missing_skill_bundle_rejects_before_registry_creation(self) -> None:
+        envelope = _envelope()
+        del envelope["execution_bootstrap"]["skill_bundle"]
+        with tempfile.TemporaryDirectory() as tmp:
+            roots = {"repo_root": str(Path(tmp) / "repo"), "runtime_root": str(Path(tmp) / "runtime"), "reference_root": str(Path(tmp) / "reference"), "reference_read_only": True}
+            with self.assertRaisesRegex(RuntimeAdapterError, "RUNTIME_SKILL_BUNDLE_MISSING"):
+                RuntimeAdapter(ROOT, roots, envelope)
+            self.assertFalse((Path(tmp) / "runtime").exists())
 
     def test_bootstrap_verifies_checkout_hashes_and_root_binding_before_entrypoint(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
