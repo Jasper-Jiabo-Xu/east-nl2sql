@@ -96,11 +96,15 @@ class FullRuntimeGraphV11Tests(unittest.TestCase):
         return {"agent_uuid": graph["real_agents"][target]["uuid"], "runtime_id": graph["real_agents"][target]["runtime_id"], "instructions_sha256": manifest["instruction_hashes"][target], "enabled_skill_ids": [SKILL_ID]}
 
     def run_task(self, installed: Path, directory: Path, root: Path, envelope: dict[str, object], task_id: str) -> dict[str, object]:
-        envelope_file, claim_file = directory / f"{task_id}.envelope.json", directory / f"{task_id}.claim.json"
-        write(envelope_file, envelope); write(claim_file, self.claim(installed, envelope["target_agent_id"]))
-        result = self.call(installed, directory, root, "run-task", "--envelope-file", str(envelope_file), "--claim-file", str(claim_file), "--task-id", task_id)
+        result = self.run_raw(installed, directory, root, envelope, task_id)
         self.assertEqual(result.returncode, 0, f"{envelope['target_agent_id']}: {result.stderr}")
         return json.loads(result.stdout)
+
+    def run_raw(self, installed: Path, directory: Path, root: Path, envelope: dict[str, object], task_id: str, claim: dict[str, object] | None = None) -> subprocess.CompletedProcess[str]:
+        envelope_file, claim_file = directory / f"{task_id}.envelope.json", directory / f"{task_id}.claim.json"
+        write(envelope_file, envelope)
+        write(claim_file, self.claim(installed, envelope["target_agent_id"]) if claim is None else claim)
+        return self.call(installed, directory, root, "run-task", "--envelope-file", str(envelope_file), "--claim-file", str(claim_file), "--task-id", task_id)
 
     def test_preflight_is_17_of_17_and_zero_task_fail_closed(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -158,6 +162,47 @@ class FullRuntimeGraphV11Tests(unittest.TestCase):
             self.assertEqual(recovered["affected_restart"], "120")
             self.assertEqual(recovered["next_tasks"][0]["target_agent_id"], "120")
             self.assertEqual(recovered["next_tasks"][0]["attempt"], 2)
+
+    def test_duplicate_input_receipt_is_rejected_without_business_progress(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp); _receipt, installed = self.archive(directory); root, binding = self.runtime(directory, installed); claims, component = self.claims(installed, binding); token = self.preflight(installed, directory, root, claims, component)
+            r010 = self.run_task(installed, directory, root, self.envelope(installed, binding, token, "duplicate-input", "010"), "duplicate-010")
+            source = r010["receipt"]["content_hash"]
+            duplicate = self.envelope(installed, binding, token, "duplicate-input", "110", [source, source])
+            rejected = self.run_raw(installed, directory, root, duplicate, "duplicate-110")
+            self.assertEqual(rejected.returncode, 2); self.assertIn("RUNTIME_ENVELOPE_INVALID", rejected.stderr)
+            inspected = json.loads(self.call(installed, directory, root, "inspect-run", "--run-id", "duplicate-input").stdout)
+            self.assertEqual(inspected, {"run_id": "duplicate-input", "completed_agents": ["010"], "task_count": 1})
+
+    def test_task_and_claim_or_preflight_drift_are_rejected_without_progress(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp); _receipt, installed = self.archive(directory); root, binding = self.runtime(directory, installed); claims, component = self.claims(installed, binding); token = self.preflight(installed, directory, root, claims, component)
+            initial = self.envelope(installed, binding, token, "drift", "010")
+            committed = self.run_task(installed, directory, root, initial, "drift-010")
+            before = json.loads(self.call(installed, directory, root, "inspect-run", "--run-id", "drift").stdout)
+            envelope_drift = dict(initial); envelope_drift["outcome"] = "failure"
+            duplicate = self.run_raw(installed, directory, root, envelope_drift, "drift-010")
+            self.assertEqual(duplicate.returncode, 2); self.assertIn("RUNTIME_DUPLICATE_TASK_DRIFT", duplicate.stderr)
+            successor = committed["next_tasks"][0]
+            instruction_drift = self.claim(installed, "110"); instruction_drift["instructions_sha256"] = "0" * 64
+            bad_claim = self.run_raw(installed, directory, root, successor, "drift-110-claim", instruction_drift)
+            self.assertEqual(bad_claim.returncode, 2); self.assertIn("RUNTIME_TASK_CLAIM_DRIFT", bad_claim.stderr)
+            preflight_drift = dict(successor); preflight_drift["preflight_token"] = "0" * 64
+            bad_token = self.run_raw(installed, directory, root, preflight_drift, "drift-110-token")
+            self.assertEqual(bad_token.returncode, 2); self.assertIn("RUNTIME_PREFLIGHT_REQUIRED", bad_token.stderr)
+            after = json.loads(self.call(installed, directory, root, "inspect-run", "--run-id", "drift").stdout)
+            self.assertEqual(after, before)
+
+    def test_third_failure_is_terminal_and_emits_no_successor(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp); _receipt, installed = self.archive(directory); root, binding = self.runtime(directory, installed); claims, component = self.claims(installed, binding); token = self.preflight(installed, directory, root, claims, component)
+            r010 = self.run_task(installed, directory, root, self.envelope(installed, binding, token, "third-failure", "010"), "third-010")
+            r110 = self.run_task(installed, directory, root, r010["next_tasks"][0], "third-110")
+            terminal = self.envelope(installed, binding, token, "third-failure", "120", [r110["receipt"]["content_hash"]], attempt=3, outcome="failure")
+            result = self.run_task(installed, directory, root, terminal, "third-120")
+            self.assertEqual(result, {"stage": "terminal_blocked", "next_tasks": [], "affected_restart": "120"})
+            inspected = json.loads(self.call(installed, directory, root, "inspect-run", "--run-id", "third-failure").stdout)
+            self.assertEqual(inspected, {"run_id": "third-failure", "completed_agents": ["010", "110"], "task_count": 3})
 
     def test_foundation_is_an_independent_chain_and_forbids_orm_nodes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
