@@ -66,7 +66,7 @@ def build(repo_root: Path, head: str, output: Path) -> dict[str, Any]:
     skill_prefix = "skills/east-v5-runtime-bootstrap-v12/"
     names = _git(repo_root, "ls-tree", "-r", "--name-only", head, "--", skill_prefix).splitlines()
     relative = sorted(name[len(skill_prefix):] for name in names if name.startswith(skill_prefix) and name[len(skill_prefix):] != "manifest.template.json")
-    required = {"SKILL.md", "scripts/controller.py", "scripts/pack_skill.py", "east_v5/governance.py", "east_v5/runtime/graph_controller.py", "config/full-runtime-graph.json", "config/authority-matrix-v2.json"}
+    required = {"SKILL.md", "scripts/controller.py", "scripts/pack_skill.py", "east_v5/governance.py", "east_v5/runtime/graph_controller.py", "config/full-runtime-graph.json", "config/authority-matrix-v2.json", "config/skill-identity-resolver-v1.json"}
     if not required.issubset(relative):
         raise ValueError("RUNTIME_SKILL_PACK_CLOSURE_MISSING")
     template = json.loads(_bytes(repo_root, head, skill_prefix + "manifest.template.json").decode("utf-8"))
