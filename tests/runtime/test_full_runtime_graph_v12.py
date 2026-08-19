@@ -17,7 +17,8 @@ SOURCE = ROOT / "skills/east-v5-runtime-bootstrap-v12"
 PACKAGER = SOURCE / "scripts/pack_skill.py"
 AUTHORITY = ROOT / "config/authority-matrix-v2.json"
 AGENTS = ("010", "110", "120", "130", "140", "150", "160", "170", "180", "210", "220", "230", "241", "242", "251", "252", "260")
-SKILL_ID = "v12-test-skill"
+SKILL_ID = "f42ba062-5a2d-430f-812e-c147322cc79e"
+TDD_ID = "e4b03e06-c351-449c-9211-e48dae737874"
 
 
 def sha(path: Path) -> str:
@@ -71,7 +72,9 @@ class FullRuntimeGraphV12Tests(unittest.TestCase):
         manifest = json.loads((installed / "manifest.json").read_text())
         graph = json.loads((installed / "config/full-runtime-graph.json").read_text())
         authority = json.loads((installed / "config/authority-matrix-v2.json").read_text())
-        approved_skills = {row["agent_id"]: row["approved_skill_bindings"] for row in authority["rows"]}
+        resolver = json.loads((installed / "config/skill-identity-resolver-v1.json").read_text())
+        workspace_ids = resolver["workspace_skill_ids"]
+        approved_skills = {row["agent_id"]: [workspace_ids[name] for name in row["approved_skill_bindings"]] for row in authority["rows"]}
         claims = {"schema_version": "east-v5-full-claims/v12", "skill_id": SKILL_ID, "skill_manifest_sha256": sha(installed / "manifest.json"), "config_sha256": sha(installed / "config/full-runtime-graph.json"), "agents": {}}
         for agent in AGENTS:
             claims["agents"][agent] = {"agent_uuid": graph["real_agents"][agent]["uuid"], "runtime_id": graph["real_agents"][agent]["runtime_id"], "instructions_sha256": manifest["instruction_hashes"][agent], "enabled_skill_ids": sorted([*approved_skills[agent], SKILL_ID])}
@@ -97,7 +100,9 @@ class FullRuntimeGraphV12Tests(unittest.TestCase):
         manifest = json.loads((installed / "manifest.json").read_text())
         graph = json.loads((installed / "config/full-runtime-graph.json").read_text())
         authority = json.loads((installed / "config/authority-matrix-v2.json").read_text())
-        approved = next(row["approved_skill_bindings"] for row in authority["rows"] if row["agent_id"] == target)
+        resolver = json.loads((installed / "config/skill-identity-resolver-v1.json").read_text())
+        approved_names = next(row["approved_skill_bindings"] for row in authority["rows"] if row["agent_id"] == target)
+        approved = [resolver["workspace_skill_ids"][name] for name in approved_names]
         return {"agent_uuid": graph["real_agents"][target]["uuid"], "runtime_id": graph["real_agents"][target]["runtime_id"], "instructions_sha256": manifest["instruction_hashes"][target], "enabled_skill_ids": sorted([*approved, SKILL_ID])}
 
     def run_task(self, installed: Path, directory: Path, root: Path, envelope: dict[str, object], task_id: str) -> dict[str, object]:
@@ -143,7 +148,7 @@ class FullRuntimeGraphV12Tests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             directory = Path(tmp); _receipt, installed = self.archive(directory); root, binding = self.runtime(directory, installed); claims, component = self.claims(installed, binding)
             self.assertEqual(claims["agents"]["010"]["enabled_skill_ids"], [SKILL_ID])
-            self.assertEqual(claims["agents"]["130"]["enabled_skill_ids"], ["east-v5-test-driven-development", SKILL_ID])
+            self.assertEqual(claims["agents"]["130"]["enabled_skill_ids"], [TDD_ID, SKILL_ID])
             # Order is normalized by the controller, not imposed on platform inventory producers.
             claims["agents"]["130"]["enabled_skill_ids"].reverse()
             token = self.preflight(installed, directory, root, claims, component)
@@ -156,9 +161,11 @@ class FullRuntimeGraphV12Tests(unittest.TestCase):
     def test_preflight_rejects_missing_unapproved_and_legacy_skill_inventory_without_state(self) -> None:
         cases = (
             ("130", [SKILL_ID], "missing-approved-tdd"),
-            ("010", ["east-v5-test-driven-development", SKILL_ID], "unexpected-tdd"),
+            ("010", [TDD_ID, SKILL_ID], "unexpected-tdd"),
+            ("010", ["east-v5-test-driven-development", SKILL_ID], "display-name-is-not-platform-id"),
             ("010", ["east-v5-runtime-bootstrap-v11", SKILL_ID], "legacy-v11"),
             ("010", ["other-skill", SKILL_ID], "other-extra"),
+            ("010", [SKILL_ID, SKILL_ID], "duplicate-id"),
         )
         for agent, inventory, label in cases:
             with self.subTest(label=label), tempfile.TemporaryDirectory() as tmp:
@@ -172,9 +179,11 @@ class FullRuntimeGraphV12Tests(unittest.TestCase):
     def test_task_claim_repeats_complete_skill_inventory_validation_without_run_persistence(self) -> None:
         cases = (
             ("130", [SKILL_ID], "missing-approved-tdd"),
-            ("010", ["east-v5-test-driven-development", SKILL_ID], "unexpected-tdd"),
+            ("010", [TDD_ID, SKILL_ID], "unexpected-tdd"),
+            ("130", ["east-v5-test-driven-development", SKILL_ID], "display-name-is-not-platform-id"),
             ("010", ["east-v5-runtime-bootstrap-v11", SKILL_ID], "legacy-v11"),
             ("010", ["other-skill", SKILL_ID], "other-extra"),
+            ("010", [SKILL_ID, SKILL_ID], "duplicate-id"),
         )
         with tempfile.TemporaryDirectory() as tmp:
             directory = Path(tmp); _receipt, installed = self.archive(directory); root, binding = self.runtime(directory, installed); claims, component = self.claims(installed, binding); token = self.preflight(installed, directory, root, claims, component)
@@ -185,6 +194,61 @@ class FullRuntimeGraphV12Tests(unittest.TestCase):
                     self.assertEqual(rejected.returncode, 2); self.assertIn("RUNTIME_TASK_CLAIM_DRIFT", rejected.stderr)
                     inspected = self.call(installed, directory, root, "inspect-run", "--run-id", f"task-{label}")
                     self.assertEqual(inspected.returncode, 2); self.assertIn("RUNTIME_RUN_UNKNOWN", inspected.stderr)
+
+    def refresh_manifest_file_hash(self, installed: Path, relative: str) -> None:
+        manifest_path = installed / "manifest.json"
+        manifest = json.loads(manifest_path.read_text())
+        manifest["files"][relative] = sha(installed / relative)
+        write(manifest_path, manifest)
+
+    def test_resolver_and_claim_identity_fail_closed_before_state(self) -> None:
+        resolver_path = "config/skill-identity-resolver-v1.json"
+        cases = (
+            ("resolver-missing", "RUNTIME_SKILL_IDENTITY_RESOLVER_DRIFT", lambda installed: (installed / resolver_path).unlink()),
+            ("resolver-hash-drift", "RUNTIME_SKILL_IDENTITY_RESOLVER_DRIFT", lambda installed: write(installed / resolver_path, {"schema_version": "tampered"})),
+            ("resolver-non-uuid", "RUNTIME_SKILL_IDENTITY_RESOLVER_INVALID", lambda installed: self._tamper_resolver(installed, "uuid")),
+            ("resolver-name", "RUNTIME_SKILL_IDENTITY_RESOLVER_INVALID", lambda installed: self._tamper_resolver(installed, "name")),
+        )
+        for label, code, mutate in cases:
+            with self.subTest(label=label), tempfile.TemporaryDirectory() as tmp:
+                directory = Path(tmp); _receipt, installed = self.archive(directory); root, binding = self.runtime(directory, installed); claims, component = self.claims(installed, binding)
+                mutate(installed)
+                claims_file, component_file = directory / "claims.json", directory / "component.json"; write(claims_file, claims); write(component_file, component)
+                rejected = self.call(installed, directory, root, "full-preflight", "--claims-file", str(claims_file), "--component-receipt-file", str(component_file))
+                self.assertEqual(rejected.returncode, 2); self.assertIn(code, rejected.stderr)
+                self.assertFalse((root / "east-v5-full-runtime-v12-state.json").exists())
+        for invalid_skill_id in ("east-v5-runtime-bootstrap-v12", TDD_ID):
+            with self.subTest(invalid_skill_id=invalid_skill_id), tempfile.TemporaryDirectory() as tmp:
+                directory = Path(tmp); _receipt, installed = self.archive(directory); root, binding = self.runtime(directory, installed); claims, component = self.claims(installed, binding)
+                claims["skill_id"] = invalid_skill_id
+                claims_file, component_file = directory / "claims.json", directory / "component.json"; write(claims_file, claims); write(component_file, component)
+                rejected = self.call(installed, directory, root, "full-preflight", "--claims-file", str(claims_file), "--component-receipt-file", str(component_file))
+                self.assertEqual(rejected.returncode, 2); self.assertIn("RUNTIME_PREFLIGHT_CLAIMS_INVALID", rejected.stderr)
+                self.assertFalse((root / "east-v5-full-runtime-v12-state.json").exists())
+
+    def _tamper_resolver(self, installed: Path, kind: str) -> None:
+        relative = "config/skill-identity-resolver-v1.json"
+        resolver = json.loads((installed / relative).read_text())
+        if kind == "uuid":
+            resolver["workspace_skill_ids"]["east-v5-test-driven-development"] = "not-a-uuid"
+        elif kind == "name":
+            resolver["workspace_skill_ids"] = {"unexpected-logical-name": TDD_ID}
+        else:
+            raise AssertionError(kind)
+        write(installed / relative, resolver)
+        self.refresh_manifest_file_hash(installed, relative)
+
+    def test_unmapped_authority_name_is_rejected_before_preflight_state(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp); _receipt, installed = self.archive(directory); root, binding = self.runtime(directory, installed); claims, component = self.claims(installed, binding)
+            authority_path = installed / "config/authority-matrix-v2.json"
+            authority = json.loads(authority_path.read_text())
+            next(row for row in authority["rows"] if row["agent_id"] == "130")["approved_skill_bindings"] = ["unmapped-logical-skill"]
+            write(authority_path, authority)
+            claims_file, component_file = directory / "claims.json", directory / "component.json"; write(claims_file, claims); write(component_file, component)
+            rejected = self.call(installed, directory, root, "full-preflight", "--claims-file", str(claims_file), "--component-receipt-file", str(component_file))
+            self.assertEqual(rejected.returncode, 2); self.assertIn("RUNTIME_SKILL_IDENTITY_UNMAPPED", rejected.stderr)
+            self.assertFalse((root / "east-v5-full-runtime-v12-state.json").exists())
 
     def test_real_full_event_graph_barriers_replay_and_recovery(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

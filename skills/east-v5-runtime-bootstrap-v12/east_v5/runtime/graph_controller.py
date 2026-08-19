@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 import stat
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +20,15 @@ def _canon(value: Any) -> bytes:
 
 def _hash(value: Any) -> str:
     return hashlib.sha256(_canon(value)).hexdigest()
+
+
+def _is_uuid(value: Any) -> bool:
+    if not isinstance(value, str):
+        return False
+    try:
+        return str(uuid.UUID(value)) == value
+    except ValueError:
+        return False
 
 
 def _load(path: Path, code: str) -> dict[str, Any]:
@@ -41,12 +51,40 @@ class GraphController:
         self.authority = _load(self.skill_root / "config" / "authority-matrix-v2.json", "RUNTIME_AUTHORITY_MATRIX_UNREADABLE")
         self.manifest = _load(self.skill_root / "manifest.json", "RUNTIME_SKILL_MANIFEST_UNREADABLE")
         self.manifest_hash = hashlib.sha256((self.skill_root / "manifest.json").read_bytes()).hexdigest()
+        self.skill_identity_resolver = self._load_skill_identity_resolver()
         if self.graph.get("schema_version") != "east-v5-full-runtime-graph/v12" or self.manifest.get("skill_name") != "east-v5-runtime-bootstrap-v12":
             raise GraphError("RUNTIME_GRAPH_MANIFEST_DRIFT")
         self.agents = self.graph.get("real_agents")
         if not isinstance(self.agents, dict) or set(self.agents) != {"010", "110", "120", "130", "140", "150", "160", "170", "180", "210", "220", "230", "241", "242", "251", "252", "260"}:
             raise GraphError("RUNTIME_GRAPH_AGENT_SET_INVALID")
         self._validate_authority_matrix()
+
+    def _load_skill_identity_resolver(self) -> dict[str, str]:
+        relative = "config/skill-identity-resolver-v1.json"
+        path = self.skill_root / relative
+        try:
+            raw = path.read_bytes()
+        except OSError as exc:
+            raise GraphError("RUNTIME_SKILL_IDENTITY_RESOLVER_DRIFT") from exc
+        files = self.manifest.get("files")
+        if not isinstance(files, dict) or files.get(relative) != hashlib.sha256(raw).hexdigest():
+            raise GraphError("RUNTIME_SKILL_IDENTITY_RESOLVER_DRIFT")
+        try:
+            value = json.loads(raw.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise GraphError("RUNTIME_SKILL_IDENTITY_RESOLVER_INVALID") from exc
+        source = {
+            "authority_matrix_version": "authority-matrix-v2",
+            "authority_matrix_sha256": "67708a34b7abda114e93e1eb5a82d451b2d233f9dfbbd04583b586ead47351ef",
+            "decision": "EAS-101: Sol Git-only identity resolver contract",
+        }
+        if not isinstance(value, dict) or set(value) != {"schema_version", "source", "workspace_skill_ids"} or value.get("schema_version") != "east-v5-skill-identity-resolver/v1" or value.get("source") != source or not isinstance(value.get("workspace_skill_ids"), dict) or set(value["workspace_skill_ids"]) != {"east-v5-test-driven-development"}:
+            raise GraphError("RUNTIME_SKILL_IDENTITY_RESOLVER_INVALID")
+        mappings = value["workspace_skill_ids"]
+        ids = list(mappings.values())
+        if not all(_is_uuid(item) for item in ids) or len(ids) != len(set(ids)):
+            raise GraphError("RUNTIME_SKILL_IDENTITY_RESOLVER_INVALID")
+        return mappings
 
     def _validate_authority_matrix(self) -> None:
         """Bind every v12 runtime assertion to the frozen, approved matrix."""
@@ -67,9 +105,17 @@ class GraphController:
         for agent_id, configured in self.agents.items():
             row = by_agent[agent_id]
             expected_skills = ["east-v5-test-driven-development"] if agent_id in approved_tdd else []
-            if row.get("uuid") != configured["uuid"] or row.get("approved_runtime_id") != configured["runtime_id"] or row.get("approved_instruction_sha256") != hashes[agent_id] or row.get("approved_skill_bindings") != expected_skills or not isinstance(row.get("source_issue"), str) or not row["source_issue"] or not isinstance(row.get("sources"), list) or not {"Jiabo-A", "Sol-v12-A", "EAS-70"}.issubset(set(row["sources"])):
+            declared_skills = row.get("approved_skill_bindings")
+            if not isinstance(declared_skills, list) or not all(isinstance(name, str) for name in declared_skills):
                 raise GraphError("RUNTIME_AUTHORITY_MATRIX_INVALID")
-            self.approved_skill_bindings[agent_id] = tuple(expected_skills)
+            if any(name not in self.skill_identity_resolver for name in declared_skills):
+                raise GraphError("RUNTIME_SKILL_IDENTITY_UNMAPPED")
+            if row.get("uuid") != configured["uuid"] or row.get("approved_runtime_id") != configured["runtime_id"] or row.get("approved_instruction_sha256") != hashes[agent_id] or declared_skills != expected_skills or not isinstance(row.get("source_issue"), str) or not row["source_issue"] or not isinstance(row.get("sources"), list) or not {"Jiabo-A", "Sol-v12-A", "EAS-70"}.issubset(set(row["sources"])):
+                raise GraphError("RUNTIME_AUTHORITY_MATRIX_INVALID")
+            try:
+                self.approved_skill_bindings[agent_id] = tuple(self.skill_identity_resolver[name] for name in declared_skills)
+            except KeyError as exc:
+                raise GraphError("RUNTIME_SKILL_IDENTITY_UNMAPPED") from exc
 
     def _normalized_skill_inventory(self, value: Any, code: str) -> tuple[str, ...]:
         if not isinstance(value, list) or not all(isinstance(item, str) and item for item in value) or len(value) != len(set(value)):
@@ -77,7 +123,7 @@ class GraphController:
         return tuple(sorted(value))
 
     def _expected_skill_inventory(self, agent_id: str, v12_skill_id: str) -> tuple[str, ...]:
-        if not isinstance(v12_skill_id, str) or not v12_skill_id:
+        if not _is_uuid(v12_skill_id) or v12_skill_id in self.skill_identity_resolver.values():
             raise GraphError("RUNTIME_PREFLIGHT_CLAIMS_INVALID")
         return tuple(sorted((*self.approved_skill_bindings[agent_id], v12_skill_id)))
 

@@ -1,0 +1,11 @@
+{
+  "schema_version": "east-v5-skill-identity-resolver/v1",
+  "source": {
+    "authority_matrix_version": "authority-matrix-v2",
+    "authority_matrix_sha256": "67708a34b7abda114e93e1eb5a82d451b2d233f9dfbbd04583b586ead47351ef",
+    "decision": "EAS-101: Sol Git-only identity resolver contract"
+  },
+  "workspace_skill_ids": {
+    "east-v5-test-driven-development": "e4b03e06-c351-449c-9211-e48dae737874"
+  }
+}
