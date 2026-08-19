@@ -70,9 +70,11 @@ class FullRuntimeGraphV12Tests(unittest.TestCase):
     def claims(self, installed: Path, binding: str) -> tuple[dict[str, object], dict[str, object]]:
         manifest = json.loads((installed / "manifest.json").read_text())
         graph = json.loads((installed / "config/full-runtime-graph.json").read_text())
+        authority = json.loads((installed / "config/authority-matrix-v2.json").read_text())
+        approved_skills = {row["agent_id"]: row["approved_skill_bindings"] for row in authority["rows"]}
         claims = {"schema_version": "east-v5-full-claims/v12", "skill_id": SKILL_ID, "skill_manifest_sha256": sha(installed / "manifest.json"), "config_sha256": sha(installed / "config/full-runtime-graph.json"), "agents": {}}
         for agent in AGENTS:
-            claims["agents"][agent] = {"agent_uuid": graph["real_agents"][agent]["uuid"], "runtime_id": graph["real_agents"][agent]["runtime_id"], "instructions_sha256": manifest["instruction_hashes"][agent], "enabled_skill_ids": [SKILL_ID]}
+            claims["agents"][agent] = {"agent_uuid": graph["real_agents"][agent]["uuid"], "runtime_id": graph["real_agents"][agent]["runtime_id"], "instructions_sha256": manifest["instruction_hashes"][agent], "enabled_skill_ids": sorted([*approved_skills[agent], SKILL_ID])}
         component = {"schema_version": "east-v5-fixed-component-receipt/v1", "component_id": "000", "root_binding_id": binding, "config_sha256": claims["config_sha256"]}
         component["receipt_sha256"] = hashlib.sha256(json.dumps(component, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
         return claims, component
@@ -94,7 +96,9 @@ class FullRuntimeGraphV12Tests(unittest.TestCase):
     def claim(self, installed: Path, target: str) -> dict[str, object]:
         manifest = json.loads((installed / "manifest.json").read_text())
         graph = json.loads((installed / "config/full-runtime-graph.json").read_text())
-        return {"agent_uuid": graph["real_agents"][target]["uuid"], "runtime_id": graph["real_agents"][target]["runtime_id"], "instructions_sha256": manifest["instruction_hashes"][target], "enabled_skill_ids": [SKILL_ID]}
+        authority = json.loads((installed / "config/authority-matrix-v2.json").read_text())
+        approved = next(row["approved_skill_bindings"] for row in authority["rows"] if row["agent_id"] == target)
+        return {"agent_uuid": graph["real_agents"][target]["uuid"], "runtime_id": graph["real_agents"][target]["runtime_id"], "instructions_sha256": manifest["instruction_hashes"][target], "enabled_skill_ids": sorted([*approved, SKILL_ID])}
 
     def run_task(self, installed: Path, directory: Path, root: Path, envelope: dict[str, object], task_id: str) -> dict[str, object]:
         result = self.run_raw(installed, directory, root, envelope, task_id)
@@ -134,6 +138,53 @@ class FullRuntimeGraphV12Tests(unittest.TestCase):
             rejected = self.call(installed, directory, root, "full-preflight", "--claims-file", str(claims_file), "--component-receipt-file", str(component_file))
             self.assertEqual(rejected.returncode, 2); self.assertIn("RUNTIME_AUTHORITY_MATRIX_INVALID", rejected.stderr)
             self.assertFalse((root / "east-v5-full-runtime-v12-state.json").exists())
+
+    def test_full_skill_inventory_accepts_approved_tdd_plus_v12_at_preflight_and_task_time(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp); _receipt, installed = self.archive(directory); root, binding = self.runtime(directory, installed); claims, component = self.claims(installed, binding)
+            self.assertEqual(claims["agents"]["010"]["enabled_skill_ids"], [SKILL_ID])
+            self.assertEqual(claims["agents"]["130"]["enabled_skill_ids"], ["east-v5-test-driven-development", SKILL_ID])
+            # Order is normalized by the controller, not imposed on platform inventory producers.
+            claims["agents"]["130"]["enabled_skill_ids"].reverse()
+            token = self.preflight(installed, directory, root, claims, component)
+            r010 = self.run_task(installed, directory, root, self.envelope(installed, binding, token, "approved-tdd", "010"), "approved-010")
+            r110 = self.run_task(installed, directory, root, r010["next_tasks"][0], "approved-110")
+            r120 = self.run_task(installed, directory, root, r110["next_tasks"][0], "approved-120")
+            r130 = self.run_task(installed, directory, root, r120["next_tasks"][0], "approved-130")
+            self.assertEqual(r130["receipt"]["agent_id"], "130")
+
+    def test_preflight_rejects_missing_unapproved_and_legacy_skill_inventory_without_state(self) -> None:
+        cases = (
+            ("130", [SKILL_ID], "missing-approved-tdd"),
+            ("010", ["east-v5-test-driven-development", SKILL_ID], "unexpected-tdd"),
+            ("010", ["east-v5-runtime-bootstrap-v11", SKILL_ID], "legacy-v11"),
+            ("010", ["other-skill", SKILL_ID], "other-extra"),
+        )
+        for agent, inventory, label in cases:
+            with self.subTest(label=label), tempfile.TemporaryDirectory() as tmp:
+                directory = Path(tmp); _receipt, installed = self.archive(directory); root, binding = self.runtime(directory, installed); claims, component = self.claims(installed, binding)
+                claims["agents"][agent]["enabled_skill_ids"] = inventory
+                claims_file, component_file = directory / "claims.json", directory / "component.json"; write(claims_file, claims); write(component_file, component)
+                rejected = self.call(installed, directory, root, "full-preflight", "--claims-file", str(claims_file), "--component-receipt-file", str(component_file))
+                self.assertEqual(rejected.returncode, 2); self.assertIn("RUNTIME_PREFLIGHT_AGENT_DRIFT", rejected.stderr)
+                self.assertFalse((root / "east-v5-full-runtime-v12-state.json").exists())
+
+    def test_task_claim_repeats_complete_skill_inventory_validation_without_run_persistence(self) -> None:
+        cases = (
+            ("130", [SKILL_ID], "missing-approved-tdd"),
+            ("010", ["east-v5-test-driven-development", SKILL_ID], "unexpected-tdd"),
+            ("010", ["east-v5-runtime-bootstrap-v11", SKILL_ID], "legacy-v11"),
+            ("010", ["other-skill", SKILL_ID], "other-extra"),
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp); _receipt, installed = self.archive(directory); root, binding = self.runtime(directory, installed); claims, component = self.claims(installed, binding); token = self.preflight(installed, directory, root, claims, component)
+            for target, inventory, label in cases:
+                with self.subTest(label=label):
+                    claim = self.claim(installed, target); claim["enabled_skill_ids"] = inventory
+                    rejected = self.run_raw(installed, directory, root, self.envelope(installed, binding, token, f"task-{label}", target), f"task-{label}", claim)
+                    self.assertEqual(rejected.returncode, 2); self.assertIn("RUNTIME_TASK_CLAIM_DRIFT", rejected.stderr)
+                    inspected = self.call(installed, directory, root, "inspect-run", "--run-id", f"task-{label}")
+                    self.assertEqual(inspected.returncode, 2); self.assertIn("RUNTIME_RUN_UNKNOWN", inspected.stderr)
 
     def test_real_full_event_graph_barriers_replay_and_recovery(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

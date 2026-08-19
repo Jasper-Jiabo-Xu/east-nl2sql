@@ -17,7 +17,7 @@
 - 身份/runtime 基线：EAS-70 `42f91f92-9453-4e7a-a38e-30d629ae07d6`。
 - 140 仅有的 v1 记录更正：`7314bbf8…` 被替换为批准值 `1fddd3bcd5380b4b7779ae634a51bf7de99c9d50dd12d5581cbffcba720b8172`；证据为 EAS-45 附件、执行回执和 Sol 验收，见 v2 的 `matrix_correction`。
 
-v12 controller 在首次 preflight 前同时验证 embedded matrix、graph 和 manifest 的 17 个 UUID/runtime/instruction hash，并验证每行批准 Skill 组。任一矩阵、指令、runtime、claim 或 Skill 漂移均拒绝且不持久化 task。
+v12 controller 在首次 preflight 前同时验证 embedded matrix、graph 和 manifest 的 17 个 UUID/runtime/instruction hash，并验证每行完整 enabled-Skill inventory。其期望集合严格为该行 `approved_skill_bindings` 加新 v12 identity；顺序会规范化，但缺失批准 TDD、非 TDD 行出现 TDD、legacy bootstrap/v11、重复或任何额外 Skill 均拒绝。task-time claim 重复同一验证；任一矩阵、指令、runtime、claim 或 Skill 漂移均拒绝且不持久化 task。
 
 ## Supersession
 

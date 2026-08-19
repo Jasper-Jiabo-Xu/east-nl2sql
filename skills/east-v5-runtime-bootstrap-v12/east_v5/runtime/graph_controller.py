@@ -63,11 +63,23 @@ class GraphController:
         hashes = self.manifest.get("instruction_hashes")
         if set(by_agent) != set(self.agents) or not isinstance(hashes, dict) or set(hashes) != set(self.agents):
             raise GraphError("RUNTIME_AUTHORITY_MATRIX_INVALID")
+        self.approved_skill_bindings: dict[str, tuple[str, ...]] = {}
         for agent_id, configured in self.agents.items():
             row = by_agent[agent_id]
             expected_skills = ["east-v5-test-driven-development"] if agent_id in approved_tdd else []
             if row.get("uuid") != configured["uuid"] or row.get("approved_runtime_id") != configured["runtime_id"] or row.get("approved_instruction_sha256") != hashes[agent_id] or row.get("approved_skill_bindings") != expected_skills or not isinstance(row.get("source_issue"), str) or not row["source_issue"] or not isinstance(row.get("sources"), list) or not {"Jiabo-A", "Sol-v12-A", "EAS-70"}.issubset(set(row["sources"])):
                 raise GraphError("RUNTIME_AUTHORITY_MATRIX_INVALID")
+            self.approved_skill_bindings[agent_id] = tuple(expected_skills)
+
+    def _normalized_skill_inventory(self, value: Any, code: str) -> tuple[str, ...]:
+        if not isinstance(value, list) or not all(isinstance(item, str) and item for item in value) or len(value) != len(set(value)):
+            raise GraphError(code)
+        return tuple(sorted(value))
+
+    def _expected_skill_inventory(self, agent_id: str, v12_skill_id: str) -> tuple[str, ...]:
+        if not isinstance(v12_skill_id, str) or not v12_skill_id:
+            raise GraphError("RUNTIME_PREFLIGHT_CLAIMS_INVALID")
+        return tuple(sorted((*self.approved_skill_bindings[agent_id], v12_skill_id)))
 
     @property
     def _state_path(self) -> Path:
@@ -123,8 +135,9 @@ class GraphController:
             raise GraphError("RUNTIME_MANIFEST_INSTRUCTION_SET_INVALID")
         for agent_id, configured in self.agents.items():
             claim = claims["agents"][agent_id]
-            if not isinstance(claim, dict) or set(claim) != {"agent_uuid", "runtime_id", "instructions_sha256", "enabled_skill_ids"} or claim.get("agent_uuid") != configured["uuid"] or claim.get("runtime_id") != configured["runtime_id"] or claim.get("instructions_sha256") != hashes[agent_id] or claim.get("enabled_skill_ids") != [claims["skill_id"]]:
+            if not isinstance(claim, dict) or set(claim) != {"agent_uuid", "runtime_id", "instructions_sha256", "enabled_skill_ids"} or claim.get("agent_uuid") != configured["uuid"] or claim.get("runtime_id") != configured["runtime_id"] or claim.get("instructions_sha256") != hashes[agent_id] or self._normalized_skill_inventory(claim.get("enabled_skill_ids"), "RUNTIME_PREFLIGHT_AGENT_DRIFT") != self._expected_skill_inventory(agent_id, claims["skill_id"]):
                 raise GraphError("RUNTIME_PREFLIGHT_AGENT_DRIFT")
+            claim["enabled_skill_ids"] = list(self._normalized_skill_inventory(claim["enabled_skill_ids"], "RUNTIME_PREFLIGHT_AGENT_DRIFT"))
         token = _hash({"claims": claims, "component_receipt": component_receipt, "manifest_sha256": self.manifest_hash})
         state = self._state()
         state["preflights"][token] = {"root_binding_id": binding, "claims_sha256": _hash(claims), "component_receipt_sha256": component_receipt["receipt_sha256"], "manifest_sha256": self.manifest_hash, "skill_id": claims["skill_id"]}
@@ -142,7 +155,7 @@ class GraphController:
         preflight = state["preflights"].get(envelope["preflight_token"])
         if not isinstance(preflight, dict) or preflight.get("root_binding_id") != envelope["root_binding_id"] or preflight.get("manifest_sha256") != self.manifest_hash:
             raise GraphError("RUNTIME_PREFLIGHT_REQUIRED")
-        if set(claim) != {"agent_uuid", "runtime_id", "instructions_sha256", "enabled_skill_ids"} or claim.get("agent_uuid") != self.agents[target]["uuid"] or claim.get("runtime_id") != self.agents[target]["runtime_id"] or claim.get("instructions_sha256") != self.manifest["instruction_hashes"][target] or claim.get("enabled_skill_ids") != [self._preflight_skill_id(envelope["preflight_token"], state)]:
+        if set(claim) != {"agent_uuid", "runtime_id", "instructions_sha256", "enabled_skill_ids"} or claim.get("agent_uuid") != self.agents[target]["uuid"] or claim.get("runtime_id") != self.agents[target]["runtime_id"] or claim.get("instructions_sha256") != self.manifest["instruction_hashes"][target] or self._normalized_skill_inventory(claim.get("enabled_skill_ids"), "RUNTIME_TASK_CLAIM_DRIFT") != self._expected_skill_inventory(target, self._preflight_skill_id(envelope["preflight_token"], state)):
             raise GraphError("RUNTIME_TASK_CLAIM_DRIFT")
         if envelope["mode"] == "foundation" and target in {"230", "251", "252"}:
             raise GraphError("RUNTIME_FOUNDATION_FORBIDDEN_NODE")
