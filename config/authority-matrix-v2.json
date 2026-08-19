@@ -1,0 +1,43 @@
+{
+  "matrix_version": "authority-matrix-v2",
+  "issue": "EAS-101",
+  "scope": "17 业务 Agent 的 v12-A 批准 identity/runtime/instructions/Skill 审计基线；只读、fail-closed、零敏感数据",
+  "row_count": 17,
+  "zero_sensitive_data": true,
+  "authority_sources": {
+    "jiabo_a_human_decision": "issue-comment:29bd102b-ba2e-4afb-bea5-cb87bcd6862b",
+    "sol_v12_a_freeze": "issue-comment:37252aa2-1490-4b8d-9db5-a89ac9faaede",
+    "identity_runtime_freeze": "EAS-70:42f91f92-9453-4e7a-a38e-30d629ae07d6",
+    "v1_audit_artifact_sha256": "3448bbd828d8bef764d1aa252645128edf3e5a8861d2ebd36fe7265842c982d5"
+  },
+  "matrix_correction": {
+    "agent_id": "140",
+    "authority": "Jiabo A（批准当时 live instructions）+ EAS-45 固定附件/执行回执/Sol 验收",
+    "correction_disposition": "issue-comment:ea1c7de6-a400-4a93-9ac8-e6df070302c2",
+    "eas45_attachment": "01a0091c-352a-79f8-bb44-3c67d291b667",
+    "eas45_execution_receipt": "096a38ca-6a87-462e-b1ce-1af73d7825e7",
+    "eas45_sol_acceptance": "67522254-ead5-474b-bab8-248578514a7c",
+    "superseded_v1_sha256": "7314bbf8a60b99c75cf1c9151811a905c647e5da6367f39a08af29df73d53877",
+    "approved_instruction_sha256": "1fddd3bcd5380b4b7779ae634a51bf7de99c9d50dd12d5581cbffcba720b8172"
+  },
+  "verdict_summary": {"approved_exact": 17, "drift": 0, "unresolved": 0},
+  "rows": [
+    {"agent_id":"010","uuid":"1d9153fc-4386-42e9-b2e5-56eb38f671af","approved_runtime_id":"6095ccd3-adc0-48a2-9a9e-140b16a3c2e1","approved_instruction_sha256":"f17b9decf11208195ef7a940a8c2824f8d1c80e8adb0d1d0a959c0502a88bac1","approved_skill_bindings":[],"source_issue":"EAS-37","source_comment_or_merge":"sol 9405f645-b3b0-472e-9809-dcd72d186b3e","sources":["Jiabo-A","Sol-v12-A","v1:3448bbd8","EAS-70"]},
+    {"agent_id":"110","uuid":"67f9cf29-cd45-4ef3-8c87-963fd3ff5898","approved_runtime_id":"6095ccd3-adc0-48a2-9a9e-140b16a3c2e1","approved_instruction_sha256":"c730fc882466ff4062569045ec487fa6253c540efbe9ff331ab6bd11bcda18c5","approved_skill_bindings":[],"source_issue":"EAS-28","source_comment_or_merge":"sol 20dec078-0ca3-427c-8f15-42af65da6e7c","sources":["Jiabo-A","Sol-v12-A","v1:3448bbd8","EAS-70"]},
+    {"agent_id":"120","uuid":"22533152-db59-4a1b-8d01-5f251c618e6b","approved_runtime_id":"0e5e9dd9-5135-4937-bb03-92b77adb8395","approved_instruction_sha256":"ac8788d125d23c8132ce02ad23f71b392a346d5ecda4a5454dd80cd94e1de834","approved_skill_bindings":[],"source_issue":"EAS-21","source_comment_or_merge":"head 08a87a70c8da2f2e624e20ea10c4b45f137e042c","sources":["Jiabo-A","Sol-v12-A","v1:3448bbd8","EAS-70"]},
+    {"agent_id":"130","uuid":"32074806-be1d-45e0-becb-a03bb3737750","approved_runtime_id":"6095ccd3-adc0-48a2-9a9e-140b16a3c2e1","approved_instruction_sha256":"9bf8cd4e773cd1cd0ae9fbe7dcc7a901a797d66b9cdc0ab16c9821b16d08c6bd","approved_skill_bindings":["east-v5-test-driven-development"],"source_issue":"EAS-22","source_comment_or_merge":"sol 829a5a52-4a0c-4ea0-8473-3f8e54d8e5c3","sources":["Jiabo-A","Sol-v12-A","v1:3448bbd8","EAS-70","EAS-22"]},
+    {"agent_id":"140","uuid":"b90b55df-8d99-470e-b179-2028a3db58cc","approved_runtime_id":"6095ccd3-adc0-48a2-9a9e-140b16a3c2e1","approved_instruction_sha256":"1fddd3bcd5380b4b7779ae634a51bf7de99c9d50dd12d5581cbffcba720b8172","approved_skill_bindings":["east-v5-test-driven-development"],"source_issue":"EAS-23","source_comment_or_merge":"sol ca1275fd-becd-484b-9a03-d5b6a793a082","sources":["Jiabo-A","Sol-v12-A","v1:3448bbd8","EAS-70","EAS-23","Sol-140-correction"]},
+    {"agent_id":"150","uuid":"42e84d5d-140d-43e1-bc57-71e0a55c9ba6","approved_runtime_id":"6095ccd3-adc0-48a2-9a9e-140b16a3c2e1","approved_instruction_sha256":"23e369fcb2d339d52fef4d96eeba9ecae4a954752d2c0e5aeb1314bf1c6d2e3f","approved_skill_bindings":[],"source_issue":"EAS-24","source_comment_or_merge":"sol 7e5ed3ce-1aac-492c-9297-1db4d3e4f074","sources":["Jiabo-A","Sol-v12-A","v1:3448bbd8","EAS-70"]},
+    {"agent_id":"160","uuid":"65ccd12e-3c3a-4574-a779-2f65c91cc2f6","approved_runtime_id":"0e5e9dd9-5135-4937-bb03-92b77adb8395","approved_instruction_sha256":"54c61c9b3eac828ecb09a49897b55a9e6ba032092be56a8bf99cbb16c4159760","approved_skill_bindings":["east-v5-test-driven-development"],"source_issue":"EAS-25","source_comment_or_merge":"sol 60d2c29b-e929-4448-bcfa-76503d351cb2 / merge 4ef4d2d9268bee4a4e2ac348ef847282769e22f4","sources":["Jiabo-A","Sol-v12-A","v1:3448bbd8","EAS-70","EAS-25"]},
+    {"agent_id":"170","uuid":"2335a247-2257-4a50-9085-5e75dba034ad","approved_runtime_id":"0e5e9dd9-5135-4937-bb03-92b77adb8395","approved_instruction_sha256":"67b6da2326f29516aa1edc4acd89db9894337e3eec2c84110aa5f81cfdcfdcc9","approved_skill_bindings":[],"source_issue":"EAS-26","source_comment_or_merge":"sol e7bf330b-fee2-4ff2-b376-dcc1141bf4de","sources":["Jiabo-A","Sol-v12-A","v1:3448bbd8","EAS-70"]},
+    {"agent_id":"180","uuid":"9639f8aa-44fa-46ac-9373-ff4085d609fc","approved_runtime_id":"1736816d-96e2-4baf-8792-ee883ecaffed","approved_instruction_sha256":"d556be07dba470243739f9bd3328aa627779a09875c1d1ac859fba605419ec23","approved_skill_bindings":[],"source_issue":"EAS-27","source_comment_or_merge":"sol 6fba16d3-047c-4628-9117-d68ff5df4371","sources":["Jiabo-A","Sol-v12-A","v1:3448bbd8","EAS-70"]},
+    {"agent_id":"210","uuid":"9b8b6b0f-f4be-41d4-9aa7-9647542ddc78","approved_runtime_id":"6095ccd3-adc0-48a2-9a9e-140b16a3c2e1","approved_instruction_sha256":"8edb2195462c52b46412f04825f638c785462139c1d5e2b3ecbd5727dad0e046","approved_skill_bindings":[],"source_issue":"EAS-36","source_comment_or_merge":"sol e7503185-f9e4-4191-a77a-c4d9339616bd","sources":["Jiabo-A","Sol-v12-A","v1:3448bbd8","EAS-70"]},
+    {"agent_id":"220","uuid":"94511939-5004-4f86-9f03-016d2484ff88","approved_runtime_id":"6095ccd3-adc0-48a2-9a9e-140b16a3c2e1","approved_instruction_sha256":"4eba5a853e21606d88d17d77018fdf073f1deb7bc55d0e213ccb252d1dac475a","approved_skill_bindings":[],"source_issue":"EAS-29","source_comment_or_merge":"sol 23c150d8-a8ce-41cb-9a63-21035929f740","sources":["Jiabo-A","Sol-v12-A","v1:3448bbd8","EAS-70"]},
+    {"agent_id":"230","uuid":"3b4fa96c-3a53-491a-af3e-f4de09d951c8","approved_runtime_id":"0e5e9dd9-5135-4937-bb03-92b77adb8395","approved_instruction_sha256":"1059b05e99769235c7d9911b8cf078a572642f437e8db765dd021fafe8bbec9e","approved_skill_bindings":[],"source_issue":"EAS-30","source_comment_or_merge":"sol da67658d-b8bd-4014-a81c-db939340383a","sources":["Jiabo-A","Sol-v12-A","v1:3448bbd8","EAS-70"]},
+    {"agent_id":"241","uuid":"7df640f9-973f-4c46-8302-df1256f60146","approved_runtime_id":"0e5e9dd9-5135-4937-bb03-92b77adb8395","approved_instruction_sha256":"e54cdd6853ce2a104dc1d1e58f937af9e89e6e87ec93e88ca01396083771af81","approved_skill_bindings":[],"source_issue":"EAS-31","source_comment_or_merge":"sol 70b76adb-82db-4f8a-b50a-14d73af5f9ec","sources":["Jiabo-A","Sol-v12-A","v1:3448bbd8","EAS-70"]},
+    {"agent_id":"242","uuid":"4e801c18-7048-4227-a5c7-515f51a5e5ba","approved_runtime_id":"0e5e9dd9-5135-4937-bb03-92b77adb8395","approved_instruction_sha256":"7f74df5e6d60bccf62b067f171c5cf47b9a6b7946584406530c9c919b7be66cb","approved_skill_bindings":[],"source_issue":"EAS-32","source_comment_or_merge":"sol 1e552ecd-a735-4143-b975-4b972a4f8a72","sources":["Jiabo-A","Sol-v12-A","v1:3448bbd8","EAS-70"]},
+    {"agent_id":"251","uuid":"3e98bc93-c70d-4b7a-aab4-9779832cacd1","approved_runtime_id":"0e5e9dd9-5135-4937-bb03-92b77adb8395","approved_instruction_sha256":"60ba593bc21e031dc4329b82f79469f7f8e83a85d32aa7baa98fb7bc3b48a385","approved_skill_bindings":[],"source_issue":"EAS-33","source_comment_or_merge":"sol cc003510-1a4a-4aca-a6f1-b370b281dfad","sources":["Jiabo-A","Sol-v12-A","v1:3448bbd8","EAS-70"]},
+    {"agent_id":"252","uuid":"7f739d09-b4be-4da9-a503-1f29de905013","approved_runtime_id":"0e5e9dd9-5135-4937-bb03-92b77adb8395","approved_instruction_sha256":"af0ec34cff9d9755608c5689609663c48238b45dfdffe41e8f471213540490c1","approved_skill_bindings":["east-v5-test-driven-development"],"source_issue":"EAS-34","source_comment_or_merge":"sol 4913e967-ba21-4136-afbf-eca9dcc262cf","sources":["Jiabo-A","Sol-v12-A","v1:3448bbd8","EAS-70","EAS-34"]},
+    {"agent_id":"260","uuid":"f89e7039-e213-4e1e-9204-64f7ce69ac1c","approved_runtime_id":"0e5e9dd9-5135-4937-bb03-92b77adb8395","approved_instruction_sha256":"061bb936dd479155994a003abac6a47d34837945394de8095337756e95fc7dac","approved_skill_bindings":["east-v5-test-driven-development"],"source_issue":"EAS-35","source_comment_or_merge":"sol 0496ab90-8970-4a75-a755-4ce24144aeca","sources":["Jiabo-A","Sol-v12-A","v1:3448bbd8","EAS-70","EAS-35"]}
+  ]
+}
