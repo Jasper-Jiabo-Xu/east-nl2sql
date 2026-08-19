@@ -1,0 +1,4 @@
+interface:
+  display_name: "EAST V5 Runtime Controller V10"
+  short_description: "Metadata-bound controller for 010/110/120."
+  default_prompt: "Run the EAST V5 v10 controller after exact Skill record metadata normalization. Accepted preflight is a gate only: task_input_envelope/v10 must execute run-task in the same claimed task and return its committed result."
