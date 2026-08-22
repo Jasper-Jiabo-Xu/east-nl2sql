@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "V5.1 Question Input Package",
+  "description": "Input package for the V5.1 pipeline: an already-existing question (with optional manual corrections) that enters at Agent 110.",
+  "type": "object",
+  "required": ["question_id", "question_text", "dataset_source"],
+  "properties": {
+    "question_id": {
+      "type": "string",
+      "description": "Unique identifier from the 800-question QA JSONL source."
+    },
+    "question_text": {
+      "type": "string",
+      "description": "The question text, after manual corrections from issue_registry have been applied."
+    },
+    "dataset_source": {
+      "type": "string",
+      "enum": ["east_model", "penalty_case"],
+      "description": "Source dataset of the question."
+    },
+    "answer_contract": {
+      "type": "object",
+      "description": "Optional answer contract from the QA source, used for validation.",
+      "properties": {
+        "expected_tables": {
+          "type": "array",
+          "items": {"type": "string"}
+        },
+        "expected_fields": {
+          "type": "array",
+          "items": {"type": "string"}
+        }
+      }
+    },
+    "manual_corrections": {
+      "type": "array",
+      "description": "List of applied corrections from issue_registry.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "issue_id": {"type": "string"},
+          "correction_type": {"type": "string"},
+          "description": {"type": "string"}
+        }
+      }
+    }
+  },
+  "additionalProperties": false
+}
