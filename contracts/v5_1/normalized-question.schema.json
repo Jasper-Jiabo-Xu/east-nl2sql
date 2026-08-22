@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "V5.1 Normalized Question Package",
+  "description": "Output package of V5.1 Agent 110 (upgraded): normalized question with parsed intent, detected ambiguity, and quality flags.",
+  "type": "object",
+  "required": ["question_id", "normalized_question", "parsed_intent", "quality_assessment"],
+  "properties": {
+    "question_id": {
+      "type": "string",
+      "description": "Inherited from the input question_id."
+    },
+    "normalized_question": {
+      "type": "string",
+      "description": "Question after normalization: standardised table/field names, clarified predicates."
+    },
+    "parsed_intent": {
+      "type": "object",
+      "description": "Structured extraction of question intent.",
+      "properties": {
+        "target_tables": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "Table names referenced in the question."
+        },
+        "target_fields": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "Requested return fields."
+        },
+        "predicate_conditions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "field": {"type": "string"},
+              "operator": {"type": "string"},
+              "value": {}
+            }
+          },
+          "description": "WHERE-clause conditions extracted from the question."
+        },
+        "customer_type": {
+          "type": "string",
+          "enum": ["corporate", "personal", "unspecified"],
+          "description": "Detected customer type. 'unspecified' triggers ambiguity flag."
+        }
+      }
+    },
+    "quality_assessment": {
+      "type": "object",
+      "description": "Quality issues detected during normalization.",
+      "properties": {
+        "has_ambiguity": {
+          "type": "boolean",
+          "description": "True if ambiguity was detected requiring human correction."
+        },
+        "ambiguity_types": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["customer_type_unclear", "account_detail_unclear", "return_field_incomplete", "predicate_ambiguous"]
+          },
+          "description": "Types of ambiguity detected."
+        },
+        "requires_human_correction": {
+          "type": "boolean",
+          "description": "True if the question must be sent back for human correction before proceeding."
+        }
+      }
+    }
+  },
+  "additionalProperties": false
+}
