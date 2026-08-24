@@ -3,7 +3,7 @@
   "title": "V5.1 Question Input Package",
   "description": "Input package for the V5.1 pipeline: an already-existing question (with optional manual corrections) that enters at Agent 110.",
   "type": "object",
-  "required": ["question_id", "question_text", "dataset_source"],
+  "required": ["question_id", "question_text", "dataset_source", "answer_contract", "parsed_intent", "quality_assessment"],
   "properties": {
     "question_id": {
       "type": "string",
@@ -20,17 +20,38 @@
     },
     "answer_contract": {
       "type": "object",
-      "description": "Optional answer contract from the QA source, used for validation.",
+      "description": "Approved answer contract from the QA source; 140 never infers a missing table or field.",
+      "additionalProperties": false,
+      "required": ["expected_tables", "expected_fields"],
       "properties": {
         "expected_tables": {
           "type": "array",
-          "items": {"type": "string"}
+          "minItems": 1,
+          "items": {"type": "string", "minLength": 1}
         },
         "expected_fields": {
           "type": "array",
-          "items": {"type": "string"}
+          "minItems": 1,
+          "items": {"type": "string", "minLength": 1}
         }
       }
+    },
+    "parsed_intent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["predicate_conditions"],
+      "properties": {
+        "predicate_conditions": {
+          "type": "array",
+          "items": {"type": "object", "additionalProperties": false, "required": ["field", "operator", "value"], "properties": {"field": {"type": "string", "minLength": 1}, "operator": {"type": "string", "minLength": 1}, "value": {}}}
+        }
+      }
+    },
+    "quality_assessment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["has_ambiguity", "requires_human_correction"],
+      "properties": {"has_ambiguity": {"type": "boolean"}, "requires_human_correction": {"type": "boolean"}}
     },
     "manual_corrections": {
       "type": "array",

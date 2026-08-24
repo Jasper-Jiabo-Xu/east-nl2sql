@@ -1,0 +1,20 @@
+{
+  "$id": "https://east.example/contracts/v5_1/query-spec-from-question/v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "V5.1 question-to-query-spec compatibility contract",
+  "description": "Records the only permitted mapping from V5.1 inputs to the two historical canonical query-spec reference slots. The canonical payload itself remains query-specification-package/v1.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["question_input_ref", "constraint_asset_package_ref", "canonical_payload", "compatibility_ref_mapping"],
+  "properties": {
+    "question_input_ref": {"$ref": "#/$defs/artifact_ref"},
+    "constraint_asset_package_ref": {"$ref": "#/$defs/artifact_ref"},
+    "canonical_payload": {"type": "object"},
+    "compatibility_ref_mapping": {
+      "type": "object", "additionalProperties": false,
+      "required": ["penalty_fact_package_ref", "observable_fact_package_ref"],
+      "properties": {"penalty_fact_package_ref": {"$ref": "#/$defs/artifact_ref"}, "observable_fact_package_ref": {"$ref": "#/$defs/artifact_ref"}}
+    }
+  },
+  "$defs": {"artifact_ref": {"type": "object", "additionalProperties": false, "required": ["artifact_id", "version", "content_hash"], "properties": {"artifact_id": {"type": "string", "minLength": 1}, "version": {"type": "integer", "minimum": 1}, "content_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}}}
+}

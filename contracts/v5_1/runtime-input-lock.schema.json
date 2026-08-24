@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://east.example/contracts/v5_1/runtime-input-lock/v1",
+  "type": "object", "additionalProperties": false,
+  "required": ["schema_version", "drift_error", "inputs"],
+  "properties": {
+    "schema_version": {"const": "v5_1.runtime-input-lock/v1"},
+    "drift_error": {"const": "V51_RUNTIME_INPUT_DRIFT"},
+    "inputs": {"type": "array", "minItems": 5, "items": {"type": "object", "additionalProperties": false, "required": ["id", "role", "locator", "sha256"], "properties": {"id": {"type": "string", "minLength": 1}, "role": {"enum": ["qa", "issue_registry", "ca_v030_sqlite", "code_table", "formal_db"]}, "locator": {"type": "string", "minLength": 1}, "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}}}
+  }
+}

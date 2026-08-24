@@ -6,7 +6,7 @@
 
 - `question-input.schema.json` — V5.1 已有 question 输入包 schema
 - `normalized-question.schema.json` — Agent 110 归一化输出包 schema
-- `query-spec-adapted.schema.json` — Agent 140 适配输入源后的查询规格 schema
+- `query-spec-from-question.schema.json` — Agent 140 的 question/000 到 canonical query-spec 兼容映射合同
 
 ## V5.1 管道合同链
 
