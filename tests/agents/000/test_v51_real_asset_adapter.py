@@ -46,4 +46,3 @@ class V51RealAssetAdapterTests(unittest.TestCase):
         self.setUp()
         with self.assertRaisesRegex(ContractError, "V51_FIELD_MAPPING_NOT_UNIQUE"):
             self.adapter.build_constraint_asset_package(lock_path=self.lock, table_code="T1", field_refs=["T1.F9"], run_id="run-v51", qa_id="opaque-1", trace_id="trace-v51", created_at=TIME)
-
