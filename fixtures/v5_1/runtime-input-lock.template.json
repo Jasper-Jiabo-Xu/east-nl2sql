@@ -1,0 +1,11 @@
+{
+  "schema_version": "v5_1.runtime-input-lock/v1",
+  "drift_error": "V51_RUNTIME_INPUT_DRIFT",
+  "inputs": [
+    {"id": "qa-20260708-density-fix-final", "role": "qa", "locator": "RUNTIME_ABSOLUTE_PATH_REQUIRED", "sha256": "REPLACE_WITH_SHA256"},
+    {"id": "issue-registry", "role": "issue_registry", "locator": "RUNTIME_ABSOLUTE_PATH_REQUIRED", "sha256": "REPLACE_WITH_SHA256"},
+    {"id": "ca-v030", "role": "ca_v030_sqlite", "locator": "RUNTIME_ABSOLUTE_PATH_REQUIRED", "sha256": "REPLACE_WITH_SHA256"},
+    {"id": "code-table", "role": "code_table", "locator": "RUNTIME_ABSOLUTE_PATH_REQUIRED", "sha256": "REPLACE_WITH_SHA256"},
+    {"id": "formal-db-copy-source", "role": "formal_db", "locator": "RUNTIME_ABSOLUTE_PATH_REQUIRED", "sha256": "REPLACE_WITH_SHA256"}
+  ]
+}
