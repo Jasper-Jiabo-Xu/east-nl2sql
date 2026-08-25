@@ -9,16 +9,50 @@ from __future__ import annotations
 
 import argparse
 import copy
+import hmac
 import json
+import os
 from pathlib import Path
 from typing import Any
 
 from east_v5.artifacts import artifact_ref, content_hash
 from east_v5.governance import ContractError, sha256
+from east_v5.agents.foundation_contract import APPROVED_241_AGENT_UUID, APPROVED_241_RUNTIME_ID
 
 from .generator import BoundDataGenerator
 
 FIXED_TIME = "2026-08-16T00:00:00+00:00"
+
+
+class SanitizedProbeInvocationRuntime:
+    """Ephemeral local stand-in for a controlled runtime attestation service."""
+
+    def __init__(self) -> None:
+        self._key = os.urandom(32)
+
+    @staticmethod
+    def _body(receipt: dict[str, Any]) -> dict[str, Any]:
+        return {key: value for key, value in receipt.items() if key != "runtime_attestation"}
+
+    def issue(self, task: dict[str, Any], context: dict[str, Any], groups: list[dict[str, Any]], traces: list[dict[str, Any]], *, attempt_no: int = 1) -> dict[str, Any]:
+        envelope = task["envelope"]
+        receipt = {
+            "schema_version": "v5.foundation-241-invocation-receipt/v1", "agent_uuid": APPROVED_241_AGENT_UUID,
+            "runtime_id": APPROVED_241_RUNTIME_ID, "invocation_id": f"sanitized-241:{envelope['run_id']}:{attempt_no}",
+            "task_ref": artifact_ref(envelope), "run_id": envelope["run_id"], "qa_id": envelope["qa_id"],
+            "trace_id": envelope["trace_id"], "attempt_no": attempt_no,
+            "input_context_ref": artifact_ref(context["envelope"]),
+            "output_hash": sha256({"data_groups": groups, "selection_traces": traces}),
+        }
+        receipt["runtime_attestation"] = hmac.new(self._key, sha256(self._body(receipt)).encode("ascii"), "sha256").hexdigest()
+        return receipt
+
+    def verify(self, receipt: dict[str, Any], expected: dict[str, Any]) -> None:
+        if any(receipt.get(key) != value for key, value in expected.items()):
+            raise ContractError("FOUNDATION_241_INVOCATION_RECEIPT_UNTRUSTED")
+        expected_attestation = hmac.new(self._key, sha256(self._body(receipt)).encode("ascii"), "sha256").hexdigest()
+        if not hmac.compare_digest(receipt.get("runtime_attestation", ""), expected_attestation):
+            raise ContractError("FOUNDATION_241_INVOCATION_RECEIPT_UNTRUSTED")
 
 
 def _wrap(artifact_type: str, artifact_id: str, payload: dict[str, Any], *, producer: str, mode: str, qa_id: str | None, parents: list[dict[str, Any]] | None = None) -> dict[str, Any]:
@@ -106,14 +140,14 @@ def _fixed_groups(package: dict[str, Any]) -> list[dict[str, Any]]:
     return groups
 
 
-def _eas114_foundation_generation_inputs(task: dict[str, Any], closure: dict[str, Any], snapshot: dict[str, Any]) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
+def _eas114_foundation_generation_inputs(task: dict[str, Any], closure: dict[str, Any], snapshot: dict[str, Any], runtime: SanitizedProbeInvocationRuntime) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
     """Sanitized, metadata-only stand-in for the runtime EAS-19 context."""
     payload = {"schema_version": "v5.foundation-generation-context/v1", "context_id": "eas114-probe-context", "foundation_task_ref": artifact_ref(task["envelope"]), "structure_closure_ref": artifact_ref(closure["envelope"]), "resolver_universe_ref": {"artifact_id": "eas114-probe-universe", "version": 1, "content_hash": "d" * 64}, "database_snapshot_ref": artifact_ref(snapshot["envelope"]), "snapshot_hash": snapshot["payload"]["snapshot_hash"], "hierarchy_refs": task["payload"]["hierarchy_asset_refs"], "catalog_refs": [{"artifact_id": "eas114-probe-catalog", "version": 1, "content_hash": "c" * 64}], "base_date": "2026-08-25", "seed": "eas114-probe-seed", "parent_record_refs": [], "deterministic_rules": []}
     context = _wrap("foundation_generation_context", "eas114-probe-context", payload, producer="EAS-19", mode="foundation", qa_id=None, parents=[artifact_ref(task["envelope"]), artifact_ref(closure["envelope"]), artifact_ref(snapshot["envelope"])])
     record = {"record_id": "agent-customer", "record_type": "foundation_object", "table_id": "FIXTURE_CUSTOMER", "field_values": [{"field_id": "C001", "value": "EAS114-CUST-001", "standard_type": "STRING", "is_null": False}, {"field_id": "C002", "value": "EAS114-CUSTOMER", "standard_type": "STRING", "is_null": False}], "existing_record_refs": [], "temporary_record_refs": [], "value_provenance": [{"source_type": "foundation_task_package", "source_ref": "EAS114-probe"}], "case_role": "foundation", "target_condition_refs": [], "constraint_refs": []}
     groups = [{"data_group_id": "eas114-probe-group", "records": [record], "record_links": [], "group_summary": BoundDataGenerator._summarize([record])}]
     traces = [{"record_id": "agent-customer", "field_id": f"FIXTURE_CUSTOMER.{item['field_id']}", "feasible_values": [item["value"]], "deterministic_rule_id": None, "chosen_value": item["value"], "business_reason": "满足冻结约束并保持基础对象语义一致", "constraint_refs": ["EAS114-probe-constraint"], "source_refs": ["EAS114-probe-catalog"], "tie_break_seed": None, "batch_distribution_before": {}, "batch_distribution_after": {}} for item in record["field_values"]]
-    receipt = {"agent_id": "241-初始数据生成与修改agent", "generation_kind": "business_agent", "input_context_ref": artifact_ref(context["envelope"]), "output_hash": sha256({"data_groups": groups, "selection_traces": traces})}
+    receipt = runtime.issue(task, context, groups, traces)
     return context, groups, traces, receipt
 
 
@@ -160,7 +194,8 @@ def _consume_242_stub(package: dict[str, Any], builder: BoundDataGenerator) -> s
 
 
 def run_sanitized_probe(repo_root: Path) -> dict[str, Any]:
-    builder = BoundDataGenerator(repo_root)
+    invocation_runtime = SanitizedProbeInvocationRuntime()
+    builder = BoundDataGenerator(repo_root, foundation_invocation_verifier=invocation_runtime)
     event_closure = _event_structure_closure()
     operation = _operation_closure()
     event_snapshot = _snapshot("event_data")
@@ -171,7 +206,7 @@ def run_sanitized_probe(repo_root: Path) -> dict[str, Any]:
     foundation_closure = _foundation_structure_closure(task)
     profile = _foundation_profile(task)
     foundation_snapshot = _snapshot("foundation")
-    context, foundation_groups, traces, receipt = _eas114_foundation_generation_inputs(task, foundation_closure, foundation_snapshot)
+    context, foundation_groups, traces, receipt = _eas114_foundation_generation_inputs(task, foundation_closure, foundation_snapshot, invocation_runtime)
     foundation = builder.build_bound_data(foundation_closure, foundation_task_package=task, foundation_profile=profile, snapshot=foundation_snapshot, foundation_generation_context=context, proposed_data_groups=foundation_groups, selection_traces=traces, generation_receipt=receipt, created_at=FIXED_TIME)
     builder.validate_bound_data(foundation)
 

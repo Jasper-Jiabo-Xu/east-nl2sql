@@ -29,7 +29,11 @@ from referencing import Registry, Resource
 
 from east_v5.artifacts import artifact_ref, content_hash, validate_envelope
 from east_v5.governance import ContractError, load_json, sha256
-from east_v5.agents.foundation_contract import validate_context as validate_foundation_context, validate_traces as validate_foundation_traces
+from east_v5.agents.foundation_contract import (
+    FoundationInvocationVerifier,
+    validate_context as validate_foundation_context,
+    validate_traces as validate_foundation_traces,
+)
 from east_v5.validators import (
     REGISTRY_SCHEMA_VERSION,
     Snapshot,
@@ -93,8 +97,9 @@ class RuleResolver(Protocol):
 class DataValidator:
     """Read-only 241 -> 242 validation and data-hash freezing."""
 
-    def __init__(self, repo_root: Path):
+    def __init__(self, repo_root: Path, *, foundation_invocation_verifier: FoundationInvocationVerifier | None = None):
         self.repo_root = repo_root.resolve()
+        self.foundation_invocation_verifier = foundation_invocation_verifier
 
     # ------------------------------------------------------------------ schema
 
@@ -168,7 +173,11 @@ class DataValidator:
             validate_foundation_context(foundation_generation_context, foundation_task_package, structure_closure, database_snapshot)
             if payload["foundation_generation_context_ref"] != artifact_ref(foundation_generation_context["envelope"]):
                 _fail("FOUNDATION_CONTEXT_REFERENCE_MISMATCH")
-            validate_foundation_traces(payload["data_groups"], payload["selection_traces"], foundation_generation_context, payload["generation_receipt"])
+            validate_foundation_traces(
+                payload["data_groups"], payload["selection_traces"], foundation_generation_context, payload["generation_receipt"],
+                task=foundation_task_package, run_id=envelope["run_id"], qa_id=envelope["qa_id"], trace_id=envelope["trace_id"],
+                attempt_no=envelope["attempt_no"], invocation_verifier=self.foundation_invocation_verifier,
+            )
         elif payload.get("foundation_task_ref") is not None:
             _fail("FOUNDATION_TASK_REF_FORBIDDEN")
         if envelope["mode"] == "event_data" and payload["operation_closure_ref"] is None:

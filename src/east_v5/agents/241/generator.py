@@ -27,7 +27,11 @@ from referencing import Registry, Resource
 
 from east_v5.artifacts import artifact_ref, content_hash, validate_envelope
 from east_v5.governance import ContractError, load_json
-from east_v5.agents.foundation_contract import validate_context as validate_foundation_context, validate_traces as validate_foundation_traces
+from east_v5.agents.foundation_contract import (
+    FoundationInvocationVerifier,
+    validate_context as validate_foundation_context,
+    validate_traces as validate_foundation_traces,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 _closure_contract = importlib.import_module("east_v5.agents.220.closure")
@@ -79,8 +83,9 @@ def _registry() -> Registry:
 class BoundDataGenerator:
     """Implements the three Excel tasks for Agent 241 without inventing data."""
 
-    def __init__(self, repo_root: Path):
+    def __init__(self, repo_root: Path, *, foundation_invocation_verifier: FoundationInvocationVerifier | None = None):
         self.repo_root = repo_root.resolve()
+        self.foundation_invocation_verifier = foundation_invocation_verifier
 
     # ------------------------------------------------------------------ schema
 
@@ -475,7 +480,11 @@ class BoundDataGenerator:
         self._validate_data_groups(data_groups, closure, snapshot, mode)
         if mode == "foundation":
             validate_foundation_context(foundation_generation_context, foundation_task_package, structure_closure, snapshot)
-            validate_foundation_traces(data_groups, selection_traces, foundation_generation_context, generation_receipt)
+            validate_foundation_traces(
+                data_groups, selection_traces, foundation_generation_context, generation_receipt,
+                task=foundation_task_package, run_id=run_id, qa_id=qa_id, trace_id=trace_id,
+                attempt_no=attempt_no, invocation_verifier=self.foundation_invocation_verifier,
+            )
 
         parents = [artifact_ref(source)]
         if mode == "event_data":
@@ -524,7 +533,11 @@ class BoundDataGenerator:
 
     def _remap(
         self, previous: dict[str, Any], structure_closure: dict[str, Any], snapshot: dict[str, Any] | None,
-        proposed_data_groups: list[dict[str, Any]], next_attempt: int, status: str, created_at: str | None,
+        proposed_data_groups: list[dict[str, Any]], next_attempt: int, status: str, created_at: str | None, *,
+        foundation_task_package: dict[str, Any] | None = None,
+        foundation_generation_context: dict[str, Any] | None = None,
+        selection_traces: list[dict[str, Any]] | None = None,
+        generation_receipt: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         previous_envelope = previous["envelope"]
         self.validate_structure_closure(structure_closure)
@@ -535,7 +548,30 @@ class BoundDataGenerator:
             self.validate_snapshot(snapshot)
         self._validate_data_groups(proposed_data_groups, closure, snapshot, previous_envelope["mode"])
         payload = copy.deepcopy(previous["payload"])
+        if previous_envelope["mode"] == "foundation":
+            if foundation_task_package is None or foundation_generation_context is None or selection_traces is None or generation_receipt is None:
+                _fail("FOUNDATION_RETRY_EVIDENCE_REQUIRED")
+            self.validate_foundation_task_package(foundation_task_package)
+            self.validate_foundation_generation_context(foundation_generation_context)
+            if payload["foundation_task_ref"] != artifact_ref(foundation_task_package["envelope"]):
+                _fail("FOUNDATION_RETRY_TASK_REF_DRIFT")
+            if payload["foundation_generation_context_ref"] != artifact_ref(foundation_generation_context["envelope"]):
+                _fail("FOUNDATION_RETRY_CONTEXT_REF_DRIFT")
+            if snapshot is None:
+                _fail("FOUNDATION_SNAPSHOT_REQUIRED")
+            if payload["database_snapshot_ref"] != artifact_ref(snapshot["envelope"]):
+                _fail("FOUNDATION_RETRY_SNAPSHOT_REF_DRIFT")
+            validate_foundation_context(foundation_generation_context, foundation_task_package, structure_closure, snapshot)
+            validate_foundation_traces(
+                proposed_data_groups, selection_traces, foundation_generation_context, generation_receipt,
+                task=foundation_task_package, run_id=previous_envelope["run_id"], qa_id=previous_envelope["qa_id"],
+                trace_id=previous_envelope["trace_id"], attempt_no=next_attempt,
+                invocation_verifier=self.foundation_invocation_verifier,
+            )
         payload["data_groups"] = copy.deepcopy(proposed_data_groups)
+        if previous_envelope["mode"] == "foundation":
+            payload["selection_traces"] = copy.deepcopy(selection_traces)
+            payload["generation_receipt"] = copy.deepcopy(generation_receipt)
         if snapshot is not None:
             payload["database_snapshot_ref"] = artifact_ref(snapshot["envelope"])
         return self._wrap(
@@ -549,6 +585,8 @@ class BoundDataGenerator:
     def apply_validation_feedback(
         self, previous: dict[str, Any], feedback: dict[str, Any], structure_closure: dict[str, Any], *,
         snapshot: dict[str, Any] | None = None, proposed_data_groups: list[dict[str, Any]] | None = None,
+        foundation_task_package: dict[str, Any] | None = None, foundation_generation_context: dict[str, Any] | None = None,
+        selection_traces: list[dict[str, Any]] | None = None, generation_receipt: dict[str, Any] | None = None,
         attempt_no: int | None = None, created_at: str | None = None,
     ) -> dict[str, Any]:
         """Task 2: consume 242 validation failure, fix the data, mint a new version."""
@@ -560,11 +598,17 @@ class BoundDataGenerator:
         next_attempt, status = self._feedback_lineage(previous, feedback, attempt_no, "FEEDBACK_LINEAGE_MISMATCH")
         if proposed_data_groups is None:
             _fail("PROPOSED_DATA_GROUPS_REQUIRED")
-        return self._remap(previous, structure_closure, snapshot, proposed_data_groups, next_attempt, status, created_at)
+        return self._remap(
+            previous, structure_closure, snapshot, proposed_data_groups, next_attempt, status, created_at,
+            foundation_task_package=foundation_task_package, foundation_generation_context=foundation_generation_context,
+            selection_traces=selection_traces, generation_receipt=generation_receipt,
+        )
 
     def apply_regression_feedback(
         self, previous: dict[str, Any], feedback: dict[str, Any], structure_closure: dict[str, Any], *,
         snapshot: dict[str, Any] | None = None, proposed_data_groups: list[dict[str, Any]] | None = None,
+        foundation_task_package: dict[str, Any] | None = None, foundation_generation_context: dict[str, Any] | None = None,
+        selection_traces: list[dict[str, Any]] | None = None, generation_receipt: dict[str, Any] | None = None,
         attempt_no: int | None = None, created_at: str | None = None,
     ) -> dict[str, Any]:
         """Task 3: consume 260 regression failure routed back to 241, fix, re-mint."""
@@ -583,7 +627,11 @@ class BoundDataGenerator:
         next_attempt, status = self._feedback_lineage(previous, feedback, attempt_no, "REGRESSION_LINEAGE_MISMATCH")
         if proposed_data_groups is None:
             _fail("PROPOSED_DATA_GROUPS_REQUIRED")
-        return self._remap(previous, structure_closure, snapshot, proposed_data_groups, next_attempt, status, created_at)
+        return self._remap(
+            previous, structure_closure, snapshot, proposed_data_groups, next_attempt, status, created_at,
+            foundation_task_package=foundation_task_package, foundation_generation_context=foundation_generation_context,
+            selection_traces=selection_traces, generation_receipt=generation_receipt,
+        )
 
     # -------------------------------------------------------------- manifest
 

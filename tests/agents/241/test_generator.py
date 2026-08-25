@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import importlib
 import json
+import sqlite3
 import sys
 import unittest
 from pathlib import Path
@@ -17,9 +18,9 @@ closure_mod = importlib.import_module("east_v5.agents.220.closure")
 from east_v5.artifacts import artifact_ref, content_hash
 from east_v5.governance import ContractError, sha256
 try:
-    from tests.agents.foundation_eas114_helpers import context as foundation_context, groups_and_traces, receipt as foundation_receipt
+    from tests.agents.foundation_eas114_helpers import SANITIZED_241_RUNTIME, context as foundation_context, groups_and_traces, receipt as foundation_receipt
 except ModuleNotFoundError:
-    from agents.foundation_eas114_helpers import context as foundation_context, groups_and_traces, receipt as foundation_receipt
+    from agents.foundation_eas114_helpers import SANITIZED_241_RUNTIME, context as foundation_context, groups_and_traces, receipt as foundation_receipt
 
 FIXED_TIME = "2026-08-16T00:00:00+00:00"
 
@@ -78,6 +79,23 @@ def regression_feedback(previous: dict, *, route: str = "241", retry: int = 2) -
     return wrap_feedback("sql_regression_failed_feedback", "eas31-rfeedback", payload, producer="260", mode="event_data", qa_id="QA-EAS31", parent=previous["envelope"])
 
 
+def foundation_validation_feedback(previous: dict) -> dict:
+    feedback = validation_feedback(previous)
+    feedback["envelope"]["mode"] = "foundation"
+    feedback["envelope"]["qa_id"] = previous["envelope"]["qa_id"]
+    rehash(feedback)
+    return feedback
+
+
+def foundation_regression_feedback(previous: dict) -> dict:
+    feedback = regression_feedback(previous)
+    feedback["envelope"]["mode"] = "foundation"
+    feedback["envelope"]["qa_id"] = previous["envelope"]["qa_id"]
+    feedback["payload"]["mode"] = "foundation"
+    rehash(feedback)
+    return feedback
+
+
 def fixed_groups(package: dict) -> list:
     groups = copy.deepcopy(package["payload"]["data_groups"])
     groups[0]["records"][0]["field_values"][0]["value"] = "脱敏值-F001-修订"
@@ -87,7 +105,7 @@ def fixed_groups(package: dict) -> list:
 
 class GeneratorTests(unittest.TestCase):
     def setUp(self):
-        self.builder = BoundDataGenerator(ROOT)
+        self.builder = BoundDataGenerator(ROOT, foundation_invocation_verifier=SANITIZED_241_RUNTIME)
         self.event_closure = fixture("structure-closure-event.json")
         self.operation = fixture("operation-closure.json")
         self.profile = fixture("foundation-profile.json")
@@ -95,6 +113,10 @@ class GeneratorTests(unittest.TestCase):
         # Exercise the production 210→220 edge; do not hide missing task fields
         # in a hand-authored structure-closure fixture.
         self.foundation_closure = closure_mod.build_closure(self.task, [])
+        self.foundation_closure["payload"]["references"] = [
+            {"type": "hierarchy_asset", "artifact_ref": self.task["payload"]["hierarchy_asset_refs"][0]},
+        ]
+        rehash(self.foundation_closure)
         self.snapshot = fixture("database-read-snapshot.json")
         self.foundation_snapshot = copy.deepcopy(self.snapshot)
         self.foundation_snapshot["envelope"]["mode"] = "foundation"
@@ -108,7 +130,8 @@ class GeneratorTests(unittest.TestCase):
         context = foundation_context(self.task, self.foundation_closure, self.foundation_snapshot, created_at=FIXED_TIME)
         groups, traces = groups_and_traces(self.foundation_closure)
         groups = kwargs.pop("proposed_data_groups", groups)
-        return self.builder.build_bound_data(self.foundation_closure, foundation_task_package=self.task, foundation_profile=self.profile, snapshot=self.foundation_snapshot, foundation_generation_context=context, proposed_data_groups=groups, selection_traces=kwargs.pop("selection_traces", traces), generation_receipt=kwargs.pop("generation_receipt", foundation_receipt(context, groups, traces)), created_at=FIXED_TIME, **kwargs)
+        chosen_traces = kwargs.pop("selection_traces", traces)
+        return self.builder.build_bound_data(self.foundation_closure, foundation_task_package=self.task, foundation_profile=self.profile, snapshot=self.foundation_snapshot, foundation_generation_context=context, proposed_data_groups=groups, selection_traces=chosen_traces, generation_receipt=kwargs.pop("generation_receipt", foundation_receipt(self.task, context, groups, chosen_traces)), created_at=FIXED_TIME, **kwargs)
 
     # ------------------------------------------------------------ success path
     def test_event_build_valid(self):
@@ -176,7 +199,7 @@ class GeneratorTests(unittest.TestCase):
             self.builder.build_bound_data(
                 self.foundation_closure, foundation_task_package=self.task, foundation_profile=self.profile,
                 snapshot=self.foundation_snapshot, foundation_generation_context=context, proposed_data_groups=groups,
-                selection_traces=traces[:-1], generation_receipt=foundation_receipt(context, groups, traces[:-1]), created_at=FIXED_TIME,
+                selection_traces=traces[:-1], generation_receipt=foundation_receipt(self.task, context, groups, traces[:-1]), created_at=FIXED_TIME,
             )
         infeasible = copy.deepcopy(traces)
         infeasible[0]["feasible_values"] = ["EAS114-not-chosen"]
@@ -184,8 +207,17 @@ class GeneratorTests(unittest.TestCase):
             self.builder.build_bound_data(
                 self.foundation_closure, foundation_task_package=self.task, foundation_profile=self.profile,
                 snapshot=self.foundation_snapshot, foundation_generation_context=context, proposed_data_groups=groups,
-                selection_traces=infeasible, generation_receipt=foundation_receipt(context, groups, infeasible), created_at=FIXED_TIME,
+                selection_traces=infeasible, generation_receipt=foundation_receipt(self.task, context, groups, infeasible), created_at=FIXED_TIME,
             )
+
+    def test_foundation_rejects_forged_display_name_receipt_and_missing_verifier(self):
+        context = foundation_context(self.task, self.foundation_closure, self.foundation_snapshot, created_at=FIXED_TIME)
+        groups, traces = groups_and_traces(self.foundation_closure)
+        forged = {"agent_id": "241-初始数据生成与修改agent", "generation_kind": "business_agent", "input_context_ref": artifact_ref(context["envelope"]), "output_hash": sha256({"data_groups": groups, "selection_traces": traces})}
+        with self.assertRaisesRegex(ContractError, "FOUNDATION_241_INVOCATION_RECEIPT_UNTRUSTED"):
+            self.builder.build_bound_data(self.foundation_closure, foundation_task_package=self.task, foundation_profile=self.profile, snapshot=self.foundation_snapshot, foundation_generation_context=context, proposed_data_groups=groups, selection_traces=traces, generation_receipt=forged, created_at=FIXED_TIME)
+        with self.assertRaisesRegex(ContractError, "FOUNDATION_INVOCATION_VERIFIER_REQUIRED"):
+            BoundDataGenerator(ROOT).build_bound_data(self.foundation_closure, foundation_task_package=self.task, foundation_profile=self.profile, snapshot=self.foundation_snapshot, foundation_generation_context=context, proposed_data_groups=groups, selection_traces=traces, generation_receipt=foundation_receipt(self.task, context, groups, traces), created_at=FIXED_TIME)
 
     # ------------------------------------------------------------- mode gates
     def test_foundation_rejects_operation(self):
@@ -293,6 +325,49 @@ class GeneratorTests(unittest.TestCase):
         self.assertEqual(remapped["envelope"]["attempt_no"], 2)
         self.assertEqual(remapped["envelope"]["supersedes_ref"], artifact_ref(event["envelope"]))
         self.assertEqual(remapped["envelope"]["status"], "candidate")
+
+    def test_foundation_validation_retry_rebinds_trace_and_receipt_for_242(self):
+        initial = self._foundation()
+        context = foundation_context(self.task, self.foundation_closure, self.foundation_snapshot, created_at=FIXED_TIME)
+        groups, traces = groups_and_traces(self.foundation_closure, values={"FIXTURE_CUSTOMER.C001": "EAS114-CHANGED"})
+        receipt = foundation_receipt(self.task, context, groups, traces, attempt_no=2)
+        remapped = self.builder.apply_validation_feedback(
+            initial, foundation_validation_feedback(initial), self.foundation_closure, snapshot=self.foundation_snapshot,
+            proposed_data_groups=groups, foundation_task_package=self.task, foundation_generation_context=context,
+            selection_traces=traces, generation_receipt=receipt, created_at=FIXED_TIME,
+        )
+        self.assertEqual(remapped["envelope"]["attempt_no"], 2)
+        self.assertEqual(remapped["payload"]["selection_traces"], traces)
+        self.assertEqual(remapped["payload"]["generation_receipt"], receipt)
+        runtime = importlib.import_module("east_v5.agents.242.sanitized_fixture").SanitizedRuntime()
+        try:
+            validator = importlib.import_module("east_v5.agents.242.validator").DataValidator(ROOT, foundation_invocation_verifier=SANITIZED_241_RUNTIME)
+            frozen = validator.freeze_bound_data(remapped, self.foundation_closure, runtime.resolver(), foundation_task_package=self.task, database_snapshot=self.foundation_snapshot, foundation_generation_context=context)
+            self.assertEqual(frozen["payload"]["source_data_package_ref"], artifact_ref(remapped["envelope"]))
+        finally:
+            runtime.close()
+
+    def test_foundation_regression_retry_rejects_stale_evidence_and_accepts_new_evidence(self):
+        initial = self._foundation()
+        context = foundation_context(self.task, self.foundation_closure, self.foundation_snapshot, created_at=FIXED_TIME)
+        groups, traces = groups_and_traces(self.foundation_closure, values={"FIXTURE_CUSTOMER.C002": "EAS114-CHANGED-260"})
+        with self.assertRaisesRegex(ContractError, "FOUNDATION_SELECTION_TRACE_CHOSEN_VALUE_DRIFT"):
+            self.builder.apply_regression_feedback(initial, foundation_regression_feedback(initial), self.foundation_closure, snapshot=self.foundation_snapshot, proposed_data_groups=groups, foundation_task_package=self.task, foundation_generation_context=context, selection_traces=initial["payload"]["selection_traces"], generation_receipt=initial["payload"]["generation_receipt"], created_at=FIXED_TIME)
+        receipt = foundation_receipt(self.task, context, groups, traces, attempt_no=2)
+        remapped = self.builder.apply_regression_feedback(initial, foundation_regression_feedback(initial), self.foundation_closure, snapshot=self.foundation_snapshot, proposed_data_groups=groups, foundation_task_package=self.task, foundation_generation_context=context, selection_traces=traces, generation_receipt=receipt, created_at=FIXED_TIME)
+        self.assertEqual(remapped["payload"]["generation_receipt"], receipt)
+        runtime = importlib.import_module("east_v5.agents.242.sanitized_fixture").SanitizedRuntime()
+        copy_db, formal_db = sqlite3.connect(":memory:"), sqlite3.connect(":memory:")
+        try:
+            validator = importlib.import_module("east_v5.agents.242.validator").DataValidator(ROOT, foundation_invocation_verifier=SANITIZED_241_RUNTIME)
+            frozen = validator.freeze_bound_data(remapped, self.foundation_closure, runtime.resolver(), foundation_task_package=self.task, database_snapshot=self.foundation_snapshot, foundation_generation_context=context)
+            for connection in (copy_db, formal_db):
+                connection.execute("CREATE TABLE FIXTURE_CUSTOMER (C001 TEXT PRIMARY KEY, C002 TEXT)")
+            report = importlib.import_module("east_v5.agents.260.regression").run_foundation_regression(ROOT, self.task, self.foundation_closure, frozen, self.foundation_snapshot, copy_db, formal_db, set(), attempt_no=2)
+            self.assertEqual(report["envelope"]["artifact_type"], "database_copy_regression", report["payload"])
+            self.assertEqual(report["payload"]["regression_status"], "passed")
+        finally:
+            copy_db.close(); formal_db.close(); runtime.close()
 
     def test_regression_attempt3_blocked(self):
         event = self._event()

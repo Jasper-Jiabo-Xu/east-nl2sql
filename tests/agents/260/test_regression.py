@@ -14,9 +14,9 @@ sys.path.insert(0, str(ROOT / "src"))
 from east_v5.artifacts import artifact_ref, content_hash
 from east_v5.governance import ContractError, canonical_bytes, sha256
 try:
-    from tests.agents.foundation_eas114_helpers import context as foundation_context, groups_and_traces, receipt as foundation_receipt
+    from tests.agents.foundation_eas114_helpers import SANITIZED_241_RUNTIME, context as foundation_context, groups_and_traces, receipt as foundation_receipt
 except ModuleNotFoundError:
-    from agents.foundation_eas114_helpers import context as foundation_context, groups_and_traces, receipt as foundation_receipt
+    from agents.foundation_eas114_helpers import SANITIZED_241_RUNTIME, context as foundation_context, groups_and_traces, receipt as foundation_receipt
 
 producer = importlib.import_module("east_v5.agents.210.foundation")
 closure_mod = importlib.import_module("east_v5.agents.220.closure")
@@ -37,10 +37,10 @@ CA_REF = {"artifact_id": "CA-V0.3.0", "version": 1, "content_hash": "a" * 64}
 def build_foundation_bound(task, closure, profile, snapshot):
     context = foundation_context(task, closure, snapshot, created_at=TIME)
     groups, traces = groups_and_traces(closure)
-    return generator_mod.BoundDataGenerator(ROOT).build_bound_data(
+    return generator_mod.BoundDataGenerator(ROOT, foundation_invocation_verifier=SANITIZED_241_RUNTIME).build_bound_data(
         closure, foundation_task_package=task, foundation_profile=profile, snapshot=snapshot,
         foundation_generation_context=context, proposed_data_groups=groups, selection_traces=traces,
-        generation_receipt=foundation_receipt(context, groups, traces), created_at=TIME,
+        generation_receipt=foundation_receipt(task, context, groups, traces), created_at=TIME,
     )
 
 
@@ -65,7 +65,7 @@ class FoundationRegressionTests(unittest.TestCase):
         snapshot_payload["snapshot_hash"] = sha256({key: value for key, value in snapshot_payload.items() if key != "snapshot_hash"})
         self.snapshot = wrap("database_read_snapshot", "eas60-snapshot", snapshot_payload, "EAS-19", "foundation")
         self.bound = build_foundation_bound(self.task, self.closure, self.profile, self.snapshot)
-        self.verified = validator_mod.DataValidator(ROOT).freeze_bound_data(self.bound, self.closure, self.resolver, foundation_task_package=self.task, database_snapshot=self.snapshot, foundation_generation_context=foundation_context(self.task, self.closure, self.snapshot, created_at=TIME))
+        self.verified = validator_mod.DataValidator(ROOT, foundation_invocation_verifier=SANITIZED_241_RUNTIME).freeze_bound_data(self.bound, self.closure, self.resolver, foundation_task_package=self.task, database_snapshot=self.snapshot, foundation_generation_context=foundation_context(self.task, self.closure, self.snapshot, created_at=TIME))
 
     def tearDown(self):
         self.runtime.close()
@@ -208,7 +208,7 @@ class FoundationRegressionTests(unittest.TestCase):
         closure["payload"].update({"fields": ["FIXTURE_CUSTOMER.C001", "FIXTURE_CUSTOMER.C002"], "references": [{"type": "hierarchy_asset", "artifact_ref": HIERARCHY_REF}]})
         closure["envelope"]["content_hash"] = content_hash(closure["envelope"], closure["payload"])
         bound = build_foundation_bound(task, closure, profile, self.snapshot)
-        verified = validator_mod.DataValidator(ROOT).freeze_bound_data(bound, closure, self.resolver, foundation_task_package=task, database_snapshot=self.snapshot, foundation_generation_context=foundation_context(task, closure, self.snapshot, created_at=TIME))
+        verified = validator_mod.DataValidator(ROOT, foundation_invocation_verifier=SANITIZED_241_RUNTIME).freeze_bound_data(bound, closure, self.resolver, foundation_task_package=task, database_snapshot=self.snapshot, foundation_generation_context=foundation_context(task, closure, self.snapshot, created_at=TIME))
         self.assertEqual(regression.validate_foundation_regression_inputs(ROOT, task, closure, verified, self.snapshot)["record_counts"], {"FIXTURE_CUSTOMER": 1})
 
     def test_authenticated_nonempty_expansion_reaches_target_and_210(self):
@@ -224,7 +224,7 @@ class FoundationRegressionTests(unittest.TestCase):
         snapshot["envelope"]["content_hash"] = content_hash(snapshot["envelope"], snapshot["payload"])
         profile = producer.build_foundation_profile(task)
         bound = build_foundation_bound(task, closure, profile, snapshot)
-        verified = validator_mod.DataValidator(ROOT).freeze_bound_data(bound, closure, self.resolver, foundation_task_package=task, database_snapshot=snapshot, foundation_generation_context=foundation_context(task, closure, snapshot, created_at=TIME))
+        verified = validator_mod.DataValidator(ROOT, foundation_invocation_verifier=SANITIZED_241_RUNTIME).freeze_bound_data(bound, closure, self.resolver, foundation_task_package=task, database_snapshot=snapshot, foundation_generation_context=foundation_context(task, closure, snapshot, created_at=TIME))
         plan = regression.validate_foundation_regression_inputs(ROOT, task, closure, verified, snapshot)
         self.assertEqual(plan["baseline_counts"], {"FIXTURE_CUSTOMER": 1})
         self.assertEqual(plan["record_counts"], {"FIXTURE_CUSTOMER": 1})

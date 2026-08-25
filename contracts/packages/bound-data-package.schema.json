@@ -155,8 +155,22 @@
       "properties": {"record_id": {"type": "string", "minLength": 1}, "field_id": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*\\.[A-Za-z_][A-Za-z0-9_]*$"}, "feasible_values": {"type": "array"}, "deterministic_rule_id": {"type": ["string", "null"]}, "chosen_value": {}, "business_reason": {"type": "string", "minLength": 1}, "constraint_refs": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}, "source_refs": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}, "tie_break_seed": {"type": ["string", "null"]}, "batch_distribution_before": {"type": "object"}, "batch_distribution_after": {"type": "object"}}
     },
     "generation_receipt": {
-      "type": "object", "additionalProperties": false, "required": ["agent_id", "generation_kind", "input_context_ref", "output_hash"],
-      "properties": {"agent_id": {"const": "241-初始数据生成与修改agent"}, "generation_kind": {"const": "business_agent"}, "input_context_ref": {"$ref": "#/$defs/artifact_ref"}, "output_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}
+      "type": "object", "additionalProperties": false,
+      "required": ["schema_version", "agent_uuid", "runtime_id", "invocation_id", "task_ref", "run_id", "qa_id", "trace_id", "attempt_no", "input_context_ref", "output_hash", "runtime_attestation"],
+      "properties": {
+        "schema_version": {"const": "v5.foundation-241-invocation-receipt/v1"},
+        "agent_uuid": {"const": "7df640f9-973f-4c46-8302-df1256f60146"},
+        "runtime_id": {"const": "0e5e9dd9-5135-4937-bb03-92b77adb8395"},
+        "invocation_id": {"type": "string", "minLength": 1},
+        "task_ref": {"$ref": "#/$defs/artifact_ref"},
+        "run_id": {"type": "string", "minLength": 1},
+        "qa_id": {"type": ["string", "null"]},
+        "trace_id": {"type": "string", "minLength": 1},
+        "attempt_no": {"type": "integer", "minimum": 1, "maximum": 3},
+        "input_context_ref": {"$ref": "#/$defs/artifact_ref"},
+        "output_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "runtime_attestation": {"type": "string", "minLength": 1}
+      }
     }
   },
   "allOf": [

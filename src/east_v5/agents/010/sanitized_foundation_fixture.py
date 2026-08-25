@@ -44,10 +44,12 @@ def build_sanitized_foundation_260_material(repo_root: Path) -> SanitizedFoundat
     producer = importlib.import_module("east_v5.agents.210.foundation")
     closure_mod = importlib.import_module("east_v5.agents.220.closure")
     generator_mod = importlib.import_module("east_v5.agents.241.generator")
+    probe_241_mod = importlib.import_module("east_v5.agents.241.probe")
     validator_mod = importlib.import_module("east_v5.agents.242.validator")
     runtime_mod = importlib.import_module("east_v5.agents.242.sanitized_fixture")
     regression_mod = importlib.import_module("east_v5.agents.260.regression")
     runtime = runtime_mod.SanitizedRuntime()
+    invocation_runtime = probe_241_mod.SanitizedProbeInvocationRuntime()
     copy_db = sqlite3.connect(":memory:")
     formal_db = sqlite3.connect(":memory:")
     try:
@@ -67,9 +69,9 @@ def build_sanitized_foundation_260_material(repo_root: Path) -> SanitizedFoundat
         record = {"record_id": "eas37-customer", "record_type": "foundation_object", "table_id": "FIXTURE_CUSTOMER", "field_values": [{"field_id": "C001", "value": "EAS37-CUST-001", "standard_type": "STRING", "is_null": False}, {"field_id": "C002", "value": "EAS37-CUSTOMER", "standard_type": "STRING", "is_null": False}], "existing_record_refs": [], "temporary_record_refs": [], "value_provenance": [{"source_type": "foundation_task_package", "source_ref": "EAS37-sanitized"}], "case_role": "foundation", "target_condition_refs": [], "constraint_refs": []}
         groups = [{"data_group_id": "eas37-sanitized-group", "records": [record], "record_links": [], "group_summary": generator_mod.BoundDataGenerator._summarize([record])}]
         traces = [{"record_id": record["record_id"], "field_id": f"FIXTURE_CUSTOMER.{item['field_id']}", "feasible_values": [item["value"]], "deterministic_rule_id": None, "chosen_value": item["value"], "business_reason": "满足冻结约束并保持基础对象语义一致", "constraint_refs": ["EAS37-sanitized-constraint"], "source_refs": ["EAS37-sanitized-catalog"], "tie_break_seed": None, "batch_distribution_before": {}, "batch_distribution_after": {}} for item in record["field_values"]]
-        receipt = {"agent_id": "241-初始数据生成与修改agent", "generation_kind": "business_agent", "input_context_ref": artifact_ref(context_envelope), "output_hash": sha256({"data_groups": groups, "selection_traces": traces})}
-        bound = generator_mod.BoundDataGenerator(root).build_bound_data(closure, foundation_task_package=task, foundation_profile=profile, snapshot=snapshot, foundation_generation_context=context, proposed_data_groups=groups, selection_traces=traces, generation_receipt=receipt, created_at=TIME)
-        verified = validator_mod.DataValidator(root).freeze_bound_data(bound, closure, runtime.resolver(), foundation_task_package=task, database_snapshot=snapshot, foundation_generation_context=context)
+        receipt = invocation_runtime.issue(task, context, groups, traces)
+        bound = generator_mod.BoundDataGenerator(root, foundation_invocation_verifier=invocation_runtime).build_bound_data(closure, foundation_task_package=task, foundation_profile=profile, snapshot=snapshot, foundation_generation_context=context, proposed_data_groups=groups, selection_traces=traces, generation_receipt=receipt, created_at=TIME)
+        verified = validator_mod.DataValidator(root, foundation_invocation_verifier=invocation_runtime).freeze_bound_data(bound, closure, runtime.resolver(), foundation_task_package=task, database_snapshot=snapshot, foundation_generation_context=context)
         for database in (copy_db, formal_db):
             database.execute("CREATE TABLE FIXTURE_CUSTOMER (C001 TEXT PRIMARY KEY, C002 TEXT)")
         report = regression_mod.run_foundation_regression(root, task, closure, verified, snapshot, copy_db, formal_db, set())

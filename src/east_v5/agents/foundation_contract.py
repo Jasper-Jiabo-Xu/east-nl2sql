@@ -8,13 +8,27 @@ frozen context and that 242 can consume the same proof without mutation.
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Any, Protocol
 
 from east_v5.artifacts import artifact_ref
 from east_v5.governance import ContractError, sha256
 
 
 PLACEHOLDER_MARKERS = ("示例值", "DEFAULT-", "脱敏值-")
+APPROVED_241_AGENT_UUID = "7df640f9-973f-4c46-8302-df1256f60146"
+APPROVED_241_RUNTIME_ID = "0e5e9dd9-5135-4937-bb03-92b77adb8395"
+
+
+class FoundationInvocationVerifier(Protocol):
+    """Trust boundary supplied by the controlled 241 runtime.
+
+    Generation code deliberately has no signing key and cannot mint an
+    invocation receipt.  The runtime must inject an implementation that checks
+    its authenticated attestation; absent one, Foundation consumption fails
+    closed.  Event-data never enters this boundary.
+    """
+
+    def verify(self, receipt: dict[str, Any], expected: dict[str, Any]) -> None: ...
 
 
 def _fail(code: str) -> None:
@@ -64,17 +78,17 @@ def validate_context(
 
 
 def validate_traces(
-    data_groups: list[dict[str, Any]], traces: Any, context: dict[str, Any], generation_receipt: Any,
+    data_groups: list[dict[str, Any]], traces: Any, context: dict[str, Any], generation_receipt: Any, *,
+    task: dict[str, Any], run_id: str, qa_id: str | None, trace_id: str, attempt_no: int,
+    invocation_verifier: FoundationInvocationVerifier | None,
 ) -> None:
     if not isinstance(traces, list):
         _fail("FOUNDATION_SELECTION_TRACES_REQUIRED")
     if not isinstance(generation_receipt, dict):
         _fail("FOUNDATION_GENERATION_RECEIPT_REQUIRED")
+    if invocation_verifier is None:
+        _fail("FOUNDATION_INVOCATION_VERIFIER_REQUIRED")
     context_ref = artifact_ref(context["envelope"])
-    if generation_receipt.get("agent_id") != "241-初始数据生成与修改agent" or generation_receipt.get("generation_kind") != "business_agent":
-        _fail("FOUNDATION_241_REAL_AGENT_REQUIRED")
-    if generation_receipt.get("input_context_ref") != context_ref:
-        _fail("FOUNDATION_GENERATION_RECEIPT_CONTEXT_DRIFT")
     fields: dict[tuple[str, str], Any] = {}
     record_tables: dict[str, str] = {}
     for group in data_groups:
@@ -121,5 +135,24 @@ def validate_traces(
     if seen != expected:
         _fail("FOUNDATION_SELECTION_TRACE_COVERAGE_MISMATCH")
     canonical_output = {"data_groups": data_groups, "selection_traces": traces}
-    if generation_receipt.get("output_hash") != sha256(canonical_output):
+    output_hash = sha256(canonical_output)
+    if generation_receipt.get("output_hash") != output_hash:
         _fail("FOUNDATION_241_GENERATION_RECEIPT_HASH_DRIFT")
+    expected = {
+        "schema_version": "v5.foundation-241-invocation-receipt/v1",
+        "agent_uuid": APPROVED_241_AGENT_UUID,
+        "runtime_id": APPROVED_241_RUNTIME_ID,
+        "task_ref": artifact_ref(task["envelope"]),
+        "run_id": run_id,
+        "qa_id": qa_id,
+        "trace_id": trace_id,
+        "attempt_no": attempt_no,
+        "input_context_ref": context_ref,
+        "output_hash": output_hash,
+    }
+    try:
+        invocation_verifier.verify(generation_receipt, expected)
+    except ContractError:
+        raise
+    except Exception as exc:
+        raise ContractError("FOUNDATION_241_INVOCATION_RECEIPT_UNTRUSTED") from exc

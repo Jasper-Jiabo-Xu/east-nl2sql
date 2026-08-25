@@ -1,10 +1,54 @@
 """Sanitized EAS-114 Foundation-agent contract fixtures for integration tests."""
 from __future__ import annotations
 
+import hmac
+import os
 from typing import Any
 
 from east_v5.artifacts import artifact_ref, content_hash
-from east_v5.governance import sha256
+from east_v5.governance import ContractError, sha256
+from east_v5.agents.foundation_contract import APPROVED_241_AGENT_UUID, APPROVED_241_RUNTIME_ID
+
+
+class SanitizedTrusted241Runtime:
+    """Test double for the controlled runtime attestation boundary.
+
+    Its per-process random key is intentionally held outside production code:
+    a generator caller can prepare a receipt-shaped dictionary but cannot make
+    it consumable without a runtime-issued attestation.
+    """
+
+    def __init__(self) -> None:
+        self._key = os.urandom(32)
+
+    @staticmethod
+    def _body(receipt: dict[str, Any]) -> dict[str, Any]:
+        return {key: value for key, value in receipt.items() if key != "runtime_attestation"}
+
+    def issue(self, expected: dict[str, Any]) -> dict[str, Any]:
+        receipt = {
+            **expected,
+            "invocation_id": "sanitized-241:" + expected["run_id"] + ":" + str(expected["attempt_no"]),
+        }
+        receipt["runtime_attestation"] = hmac.new(
+            self._key, sha256(self._body(receipt)).encode("ascii"), "sha256",
+        ).hexdigest()
+        return receipt
+
+    def verify(self, receipt: dict[str, Any], expected: dict[str, Any]) -> None:
+        if not isinstance(receipt, dict) or any(receipt.get(key) != value for key, value in expected.items()):
+            raise ContractError("FOUNDATION_241_INVOCATION_RECEIPT_UNTRUSTED")
+        attestation = receipt.get("runtime_attestation")
+        if not isinstance(attestation, str):
+            raise ContractError("FOUNDATION_241_INVOCATION_RECEIPT_UNTRUSTED")
+        expected_attestation = hmac.new(
+            self._key, sha256(self._body(receipt)).encode("ascii"), "sha256",
+        ).hexdigest()
+        if not hmac.compare_digest(attestation, expected_attestation):
+            raise ContractError("FOUNDATION_241_INVOCATION_RECEIPT_UNTRUSTED")
+
+
+SANITIZED_241_RUNTIME = SanitizedTrusted241Runtime()
 
 
 def context(task: dict[str, Any], closure: dict[str, Any], snapshot: dict[str, Any], *, created_at: str) -> dict[str, Any]:
@@ -43,5 +87,20 @@ def groups_and_traces(closure: dict[str, Any], *, values: dict[str, Any] | None 
     return [{"data_group_id": "eas114-sanitized-group", "records": records, "record_links": [], "group_summary": summary}], traces
 
 
-def receipt(context_package: dict[str, Any], groups: list[dict[str, Any]], traces: list[dict[str, Any]]) -> dict[str, Any]:
-    return {"agent_id": "241-初始数据生成与修改agent", "generation_kind": "business_agent", "input_context_ref": artifact_ref(context_package["envelope"]), "output_hash": sha256({"data_groups": groups, "selection_traces": traces})}
+def receipt(
+    task: dict[str, Any], context_package: dict[str, Any], groups: list[dict[str, Any]], traces: list[dict[str, Any]], *,
+    attempt_no: int = 1,
+) -> dict[str, Any]:
+    expected = {
+        "schema_version": "v5.foundation-241-invocation-receipt/v1",
+        "agent_uuid": APPROVED_241_AGENT_UUID,
+        "runtime_id": APPROVED_241_RUNTIME_ID,
+        "task_ref": artifact_ref(task["envelope"]),
+        "run_id": task["envelope"]["run_id"],
+        "qa_id": task["envelope"]["qa_id"],
+        "trace_id": task["envelope"]["trace_id"],
+        "attempt_no": attempt_no,
+        "input_context_ref": artifact_ref(context_package["envelope"]),
+        "output_hash": sha256({"data_groups": groups, "selection_traces": traces}),
+    }
+    return SANITIZED_241_RUNTIME.issue(expected)
