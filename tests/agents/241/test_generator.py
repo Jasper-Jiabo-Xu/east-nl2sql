@@ -3,8 +3,10 @@ from __future__ import annotations
 import copy
 import importlib
 import json
+import os
 import sqlite3
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -218,6 +220,27 @@ class GeneratorTests(unittest.TestCase):
             self.builder.build_bound_data(self.foundation_closure, foundation_task_package=self.task, foundation_profile=self.profile, snapshot=self.foundation_snapshot, foundation_generation_context=context, proposed_data_groups=groups, selection_traces=traces, generation_receipt=forged, created_at=FIXED_TIME)
         with self.assertRaisesRegex(ContractError, "FOUNDATION_INVOCATION_VERIFIER_REQUIRED"):
             BoundDataGenerator(ROOT).build_bound_data(self.foundation_closure, foundation_task_package=self.task, foundation_profile=self.profile, snapshot=self.foundation_snapshot, foundation_generation_context=context, proposed_data_groups=groups, selection_traces=traces, generation_receipt=foundation_receipt(self.task, context, groups, traces), created_at=FIXED_TIME)
+
+    def test_production_runtime_attestation_assembly_mints_241_and_verifies_at_242(self):
+        from east_v5.runtime.foundation_assembly import FoundationRuntimeAssembly
+        from east_v5.runtime.foundation_attestation import FoundationRuntimeAttestationService
+        with tempfile.TemporaryDirectory() as raw_root:
+            runtime_root = Path(raw_root); os.chmod(runtime_root, 0o700)
+            issuer = FoundationRuntimeAttestationService(runtime_root, task_id="runtime-task-241", issue_id="EAS-114", target_agent_id="241", target_agent_uuid="7df640f9-973f-4c46-8302-df1256f60146", runtime_id="0e5e9dd9-5135-4937-bb03-92b77adb8395", run_id=self.task["envelope"]["run_id"], qa_id=self.task["envelope"]["qa_id"], trace_id=self.task["envelope"]["trace_id"], attempt_no=1, mode="foundation")
+            context = foundation_context(self.task, self.foundation_closure, self.foundation_snapshot, created_at=FIXED_TIME)
+            groups, traces = groups_and_traces(self.foundation_closure)
+            receipt = issuer.mint_241_receipt(self.task, context, groups, traces)
+            bound = FoundationRuntimeAssembly(issuer).generator(ROOT).build_bound_data(self.foundation_closure, foundation_task_package=self.task, foundation_profile=self.profile, snapshot=self.foundation_snapshot, foundation_generation_context=context, proposed_data_groups=groups, selection_traces=traces, generation_receipt=receipt, created_at=FIXED_TIME)
+            verifier = FoundationRuntimeAttestationService(runtime_root, task_id="runtime-task-242", issue_id="EAS-114", target_agent_id="242", target_agent_uuid="4e801c18-7048-4227-a5c7-515f51a5e5ba", runtime_id="0e5e9dd9-5135-4937-bb03-92b77adb8395", run_id=self.task["envelope"]["run_id"], qa_id=self.task["envelope"]["qa_id"], trace_id=self.task["envelope"]["trace_id"], attempt_no=1, mode="foundation")
+            runtime = importlib.import_module("east_v5.agents.242.sanitized_fixture").SanitizedRuntime()
+            try:
+                frozen = FoundationRuntimeAssembly(verifier).validator(ROOT).freeze_bound_data(bound, self.foundation_closure, runtime.resolver(), foundation_task_package=self.task, database_snapshot=self.foundation_snapshot, foundation_generation_context=context)
+                self.assertEqual(frozen["payload"]["source_data_package_ref"], artifact_ref(bound["envelope"]))
+            finally:
+                runtime.close()
+            forged = copy.deepcopy(receipt); forged["output_hash"] = "0" * 64
+            with self.assertRaisesRegex(ContractError, "FOUNDATION_241_INVOCATION_RECEIPT_UNTRUSTED"):
+                verifier.verify(forged, {key: receipt[key] for key in receipt if key not in {"invocation_id", "runtime_attestation"}})
 
     # ------------------------------------------------------------- mode gates
     def test_foundation_rejects_operation(self):

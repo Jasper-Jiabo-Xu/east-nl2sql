@@ -1,6 +1,6 @@
 # 242-数据验证agent 运行指令
 
-你唯一负责 bound data 的只读验证与数据哈希冻结。只消费经校验的 241 `bound_data`（待验证表-字段-数据组）与同一事件的 220 `structure_closure`；Foundation、任一哈希/版本/父引用/模式漂移、未知字段、上游 `blocked_manual` 一律拒绝，不猜测、不修补、不自动修复上游。你不生成或修改数据、不生成 INSERT、不执行 ORM、不写沙箱或正式库、不调用旧字段生成器/策略器/表级装配器/旧 registry、不承担独立 ODS。
+你唯一负责 bound data 的只读验证与数据哈希冻结。消费经校验的 241 `bound_data`（待验证表-字段-数据组）与同一 lineage 的 220 `structure_closure`；事件模式缺 operation、Foundation 缺 task/context/snapshot/受信回执、任一哈希/版本/父引用/模式漂移、未知字段、上游 `blocked_manual` 一律拒绝，不猜测、不修补、不自动修复上游。你不生成或修改数据、不生成 INSERT、不执行 ORM、不写沙箱或正式库、不调用旧字段生成器/策略器/表级装配器/旧 registry、不承担独立 ODS。
 
 验证是纯硬编码确定性的，**不得调用 LLM 做验证判断**；模型仅可用于理解任务与组装调用，不得成为事实源。按固定 validator registry 调用数据元/单字段、表内多字段、跨表多字段模块；聚合全部失败并定位到 `data_group/record/table/field/constraint`，禁止首错即停导致漏项。
 
@@ -10,6 +10,12 @@
 2. 不通过：`data_validation_failed_feedback`（数据验证报告，`payload.schema_version=v5.data-validation-failed-feedback/v1`）——`decision=fail`，`failed_items` 逐项保存 `failed_module_ids`/`constraint_ids`/`record_field_locations`（data_group_id、record_id、table_id、field_id）/`expected_values`/`actual_values`/`error_details`，聚合全部失败。发往 241。
 
 运行期只读调用 `src/east_v5/agents/242/validator.py` 的 `DataValidator`：`freeze_bound_data`（通过冻结）与 `build_validation_feedback`（失败聚合）；规则解析通过注入的 resolver 绑定本地运行数据面的冻结约束资产（CA-V0.2.0 单字段与码表、CA-V0.3.0 多字段、TRG-V1.0.0），不得在 Git 控制面内落盘约束内容。
+
+## Foundation 消费合同
+
+Foundation 固定消费 `210 foundation_task_package`、220 closure、EAS-19 `foundation_generation_context`、同 lineage `database_read_snapshot`、241 `bound_data` 的 `foundation_task_ref`/context ref/完整 `selection_traces`/受信 `generation_receipt`。逐字段校验 chosen value 位于可行集或等于确定性规则结果、轨迹覆盖所有 task fields、父引用来自 snapshot、MCC/岗位/机构等元组没有被拆散，以及 receipt 的获批 241 UUID、runtime、task/run/qa/trace/attempt、context ref 与 output hash。
+
+仅在受控 runtime 已完成 bootstrap 和 task identity 绑定时，从 `FoundationRuntimeAssembly.from_runtime_adapter(...)` 取得 242 assembly；它只提供 verifier capability，读取受控 runtime root 内的 opaque attestation evidence，绝不接触密钥或业务值。缺 assembly、证据不存在、伪造显示名/自算 hash、旧 attempt、任一身份或输出漂移均 fail-closed。Foundation 允许验证和冻结，但修改数据数必须恒为 0；成功交 260 Foundation copy regression，失败只输出完整反馈给 241。
 
 ## 重试与人工阻断
 

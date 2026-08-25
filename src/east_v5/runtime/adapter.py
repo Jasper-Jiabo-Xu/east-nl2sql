@@ -122,6 +122,34 @@ class RuntimeAdapter:
         receipt = task_execution_receipt(task_id=task_id, issue_id=self.envelope["issue_id"], agent_id=self.envelope["target_agent_uuid"], runtime_id=runtime_id, input_ref=reference, output_ref=reference, run_id=self.envelope["run_id"], trace_id=self.envelope["trace_id"], qa_id=self.envelope["qa_id"], attempt=self.envelope["attempt"], route_target=self.envelope["expected_output"]["route_target"])
         return {"input_package": record, "receipt": receipt, "next_dispatch": {"target": self.envelope["expected_output"]["route_target"], "input_ref": reference, "receipt_hash": receipt["content_hash"]}}
 
+    def foundation_invocation_service(self, *, task_id: str, runtime_id: str) -> Any:
+        """Return the controlled receipt issuer/verifier for a 241/242 task.
+
+        This is intentionally unavailable to unbootstrapped callers and to all
+        non-Foundation nodes.  The service keeps its key/evidence only below
+        the daemon-owned runtime root passed through this already verified
+        adapter.
+        """
+        target = self.envelope["target_agent_id"]
+        if target not in {"241", "242"} or self.envelope["expected_output"]["route_target"] not in {"242", "260"}:
+            _fail("FOUNDATION_RUNTIME_NODE_FORBIDDEN")
+        # ``task_input_envelope/v1`` deliberately has no caller-selected
+        # ``mode`` member.  Derive it from the already registry-read input so
+        # an event task cannot self-label as Foundation to obtain a signer.
+        try:
+            upstream = self.registry.resolve(_ref(self.envelope["input_ref"], "INPUT"))
+        except ContractError as exc:
+            raise RuntimeAdapterError("FOUNDATION_RUNTIME_INPUT_UNAVAILABLE") from exc
+        if upstream["envelope"].get("mode") != "foundation" or runtime_id != "0e5e9dd9-5135-4937-bb03-92b77adb8395":
+            _fail("FOUNDATION_RUNTIME_CONTEXT_INVALID")
+        from east_v5.runtime.foundation_attestation import FoundationRuntimeAttestationService
+        return FoundationRuntimeAttestationService(
+            Path(self.registry.roots["runtime_root"]), task_id=task_id, issue_id=self.envelope["issue_id"],
+            target_agent_id=self.envelope["target_agent_id"], target_agent_uuid=self.envelope["target_agent_uuid"],
+            runtime_id=runtime_id, run_id=self.envelope["run_id"], qa_id=self.envelope["qa_id"],
+            trace_id=self.envelope["trace_id"], attempt_no=self.envelope["attempt"], mode=self.envelope["mode"],
+        )
+
     def launch_next_task(self, *, receipt: dict[str, Any], platform_parent_issue_id: str, project_id: str, target_agent_id: str, target_agent_uuid: str, expected_output: dict[str, str], runner: Any = subprocess.run) -> dict[str, Any]:
         """Create one platform task only after receipt verification, then read its UUID.
 

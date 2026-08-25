@@ -17,6 +17,7 @@ from east_v5.governance import ContractError, sha256
 PLACEHOLDER_MARKERS = ("示例值", "DEFAULT-", "脱敏值-")
 APPROVED_241_AGENT_UUID = "7df640f9-973f-4c46-8302-df1256f60146"
 APPROVED_241_RUNTIME_ID = "0e5e9dd9-5135-4937-bb03-92b77adb8395"
+APPROVED_242_AGENT_UUID = "4e801c18-7048-4227-a5c7-515f51a5e5ba"
 
 
 class FoundationInvocationVerifier(Protocol):
