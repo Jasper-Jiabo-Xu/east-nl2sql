@@ -10,16 +10,20 @@ control-plane-bound enumeration and deterministic identity.
 """
 from __future__ import annotations
 
+import importlib
 import json
 from pathlib import Path
 from typing import Any
 
 from east_v5.artifacts import artifact_ref, content_hash
-from east_v5.governance import ContractError
+from east_v5.governance import ContractError, sha256
 
 from .resolver import AssetBoundResolver
 from .sanitized_fixture import SanitizedRuntime
 from .validator import DataValidator
+
+_agent_241_probe = importlib.import_module("east_v5.agents.241.probe")
+BoundDataGenerator = importlib.import_module("east_v5.agents.241.generator").BoundDataGenerator
 
 ROOT = Path(__file__).resolve().parents[4]
 FIXED_TIME = "2026-08-16T00:00:00+00:00"
@@ -137,22 +141,39 @@ def _valid_foundation_records() -> list[dict[str, Any]]:
     ]
 
 
+def _eas114_foundation_inputs(runtime: Any) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any], list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
+    """A sanitized stand-in for the runtime-only EAS-19 context, never DB data."""
+    task = _agent_241_probe._foundation_task()
+    closure = _agent_241_probe._foundation_structure_closure(task)
+    profile = _agent_241_probe._foundation_profile(task)
+    snapshot = _agent_241_probe._snapshot("foundation")
+    payload = {"schema_version": "v5.foundation-generation-context/v1", "context_id": "eas114-probe-context", "foundation_task_ref": artifact_ref(task["envelope"]), "structure_closure_ref": artifact_ref(closure["envelope"]), "resolver_universe_ref": {"artifact_id": "eas114-probe-universe", "version": 1, "content_hash": "d" * 64}, "database_snapshot_ref": artifact_ref(snapshot["envelope"]), "snapshot_hash": snapshot["payload"]["snapshot_hash"], "hierarchy_refs": task["payload"]["hierarchy_asset_refs"], "catalog_refs": [{"artifact_id": "eas114-probe-catalog", "version": 1, "content_hash": "c" * 64}], "base_date": "2026-08-25", "seed": "eas114-probe-seed", "parent_record_refs": [], "deterministic_rules": []}
+    context = _wrap("foundation_generation_context", "eas114-probe-context", payload, producer="EAS-19", mode="foundation", qa_id=None, parents=[artifact_ref(task["envelope"]), artifact_ref(closure["envelope"]), artifact_ref(snapshot["envelope"])])
+    records = _valid_foundation_records()
+    groups = [{"data_group_id": "eas114-probe-group", "records": records, "record_links": [], "group_summary": _summarize(records)}]
+    traces = [{"record_id": "rec-c1", "field_id": f"FIXTURE_CUSTOMER.{item['field_id']}", "feasible_values": [item["value"]], "deterministic_rule_id": None, "chosen_value": item["value"], "business_reason": "满足冻结约束并保持基础对象语义一致", "constraint_refs": ["EAS114-probe-constraint"], "source_refs": ["EAS114-probe-catalog"], "tie_break_seed": None, "batch_distribution_before": {}, "batch_distribution_after": {}} for item in records[0]["field_values"]]
+    receipt = runtime.issue(task, context, groups, traces)
+    return task, closure, profile, snapshot, groups, traces, context | {"receipt": receipt}
+
+
 def run_sanitized_probe(repo_root: Path) -> dict[str, Any]:
     runtime = SanitizedRuntime()
     try:
         resolver: AssetBoundResolver = runtime.resolver()
-        validator = DataValidator(repo_root)
+        invocation_runtime = _agent_241_probe.SanitizedProbeInvocationRuntime()
+        validator = DataValidator(repo_root, foundation_invocation_verifier=invocation_runtime)
         structure = _structure()
         operation = _operation()
-        foundation_structure = _foundation_structure()
 
         event = _bound_data(structure, operation=operation, records=_valid_event_records())
         frozen = validator.freeze_bound_data(event, structure, resolver)
         repeated = validator.freeze_bound_data(event, structure, resolver)
         input_immutable = (frozen == repeated)
 
-        foundation = _bound_data(foundation_structure, records=_valid_foundation_records())
-        foundation_frozen = validator.freeze_bound_data(foundation, foundation_structure, resolver)
+        task, foundation_structure, profile, foundation_snapshot, foundation_groups, foundation_traces, context_data = _eas114_foundation_inputs(invocation_runtime)
+        context, receipt = {key: value for key, value in context_data.items() if key != "receipt"}, context_data["receipt"]
+        foundation = BoundDataGenerator(repo_root, foundation_invocation_verifier=invocation_runtime).build_bound_data(foundation_structure, foundation_task_package=task, foundation_profile=profile, snapshot=foundation_snapshot, foundation_generation_context=context, proposed_data_groups=foundation_groups, selection_traces=foundation_traces, generation_receipt=receipt, created_at=FIXED_TIME)
+        foundation_frozen = validator.freeze_bound_data(foundation, foundation_structure, resolver, foundation_task_package=task, database_snapshot=foundation_snapshot, foundation_generation_context=context)
 
         defective = _bound_data(structure, operation=operation, records=[
             _record("FIXTURE_T001", "rec-t1", [_field_value("F001", "A"), _field_value("F002", None, is_null=True)]),

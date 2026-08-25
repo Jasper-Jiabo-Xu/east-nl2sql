@@ -20,6 +20,11 @@ def _bytes(root: Path, head: str, path: str) -> bytes:
     return subprocess.check_output(["git", "-C", str(root), "show", f"{head}:{path}"], stderr=subprocess.DEVNULL)
 
 
+def _live_instruction_hash(value: bytes) -> str:
+    """Match the platform's text normalization for EAS-114 live updates."""
+    return hashlib.sha256(value.rstrip(b"\n")).hexdigest()
+
+
 def _canon(value: Any) -> bytes:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
 
@@ -79,6 +84,11 @@ def build(repo_root: Path, head: str, output: Path) -> dict[str, Any]:
     payloads = {name: _bytes(repo_root, head, skill_prefix + name) for name in relative}
     instruction_paths = {target: f"agents/{target}/prompt.md" for target in ("010", "110", "120", "130", "140", "150", "160", "170", "180", "210", "220", "230", "241", "242", "251", "252", "260")}
     instruction_hashes = {target: hashlib.sha256(_bytes(repo_root, head, path)).hexdigest() for target, path in instruction_paths.items()}
+    # 241/242 were updated through the platform text API in EAS-114.  That
+    # API removes one terminal LF; bind precisely the stored live text while
+    # preserving the historical byte contract of every unaffected agent.
+    for target in ("241", "242"):
+        instruction_hashes[target] = _live_instruction_hash(_bytes(repo_root, head, instruction_paths[target]))
     skill_metadata = _skill_metadata(payloads["SKILL.md"])
     source_hash = hashlib.sha256(payloads["SKILL.md"]).hexdigest()
     runtime_hash = hashlib.sha256(materialize_skill(payloads["SKILL.md"])).hexdigest()

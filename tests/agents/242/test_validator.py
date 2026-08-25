@@ -128,10 +128,10 @@ class DataValidatorTests(unittest.TestCase):
         second = self.validator.freeze_bound_data(event, self.structure, self.resolver)
         self.assertEqual(first, second)
 
-    def test_foundation_freeze_valid_nonzero_checks(self) -> None:
+    def test_foundation_without_eas114_context_is_rejected(self) -> None:
         foundation = self._foundation()
-        frozen = self.validator.freeze_bound_data(foundation, _foundation_structure(), self.resolver)
-        self.assertEqual(frozen["payload"]["data_validation_report"]["total_checks"], 1)
+        with self.assertRaisesRegex(ContractError, "FOUNDATION_SELECTION_CONTRACT_REQUIRED"):
+            self.validator.freeze_bound_data(foundation, _foundation_structure(), self.resolver)
 
     def test_input_immutability(self) -> None:
         event = self._event()

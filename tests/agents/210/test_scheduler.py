@@ -367,12 +367,9 @@ class DataStageCoordinatorTests(unittest.TestCase):
             self.assertEqual(data_dispatch["target"], "241")
             self.assertEqual(data_dispatch["structure_closure_ref"], artifact_ref(case.closure["envelope"]))
             self.assertEqual(foundation_tests.closure_mod.consume_downstream_stub("241", case.closure)["consumer"], "241")
-            bound = foundation_tests.generator_mod.BoundDataGenerator(ROOT).build_bound_data(
-                case.closure, foundation_task_package=case.task, foundation_profile=case.profile,
-                snapshot=case.snapshot, created_at=TIME,
-            )
+            bound = foundation_tests.build_foundation_bound(case.task, case.closure, case.profile, case.snapshot)
             self.assertEqual(bound["payload"]["structure_closure_ref"], data_dispatch["structure_closure_ref"])
-            verified = foundation_tests.validator_mod.DataValidator(ROOT).freeze_bound_data(bound, case.closure, case.resolver)
+            verified = foundation_tests.validator_mod.DataValidator(ROOT, foundation_invocation_verifier=foundation_tests.SANITIZED_241_RUNTIME).freeze_bound_data(bound, case.closure, case.resolver, foundation_task_package=case.task, database_snapshot=case.snapshot, foundation_generation_context=foundation_tests.foundation_context(case.task, case.closure, case.snapshot, created_at=foundation_tests.TIME))
             self.assertEqual(verified["payload"]["source_data_package_ref"], artifact_ref(bound["envelope"]))
             regression_dispatch = self.coordinator.dispatch_foundation_regression(case.task, case.closure, verified)
             self.assertEqual(regression_dispatch["target"], "260")
@@ -412,10 +409,8 @@ class DataStageCoordinatorTests(unittest.TestCase):
                 "references": [{"type": "hierarchy_asset", "artifact_ref": foundation_tests.HIERARCHY_REF}],
             })
             closure["envelope"]["content_hash"] = content_hash(closure["envelope"], closure["payload"])
-            bound = foundation_tests.generator_mod.BoundDataGenerator(ROOT).build_bound_data(
-                closure, foundation_task_package=task, foundation_profile=profile, snapshot=case.snapshot, created_at=TIME,
-            )
-            verified = foundation_tests.validator_mod.DataValidator(ROOT).freeze_bound_data(bound, closure, case.resolver)
+            bound = foundation_tests.build_foundation_bound(task, closure, profile, case.snapshot)
+            verified = foundation_tests.validator_mod.DataValidator(ROOT, foundation_invocation_verifier=foundation_tests.SANITIZED_241_RUNTIME).freeze_bound_data(bound, closure, case.resolver, foundation_task_package=task, database_snapshot=case.snapshot, foundation_generation_context=foundation_tests.foundation_context(task, closure, case.snapshot, created_at=foundation_tests.TIME))
             import sqlite3
             copy_db, formal_db = sqlite3.connect(":memory:"), sqlite3.connect(":memory:")
             for connection in (copy_db, formal_db):

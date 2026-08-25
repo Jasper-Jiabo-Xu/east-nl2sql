@@ -56,6 +56,9 @@
         "operation_closure_ref": {"anyOf": [{"$ref": "#/$defs/artifact_ref"}, {"type": "null"}]},
         "database_snapshot_ref": {"anyOf": [{"$ref": "#/$defs/artifact_ref"}, {"type": "null"}]},
         "foundation_task_ref": {"anyOf": [{"$ref": "#/$defs/artifact_ref"}, {"type": "null"}]},
+        "foundation_generation_context_ref": {"anyOf": [{"$ref": "#/$defs/artifact_ref"}, {"type": "null"}]},
+        "selection_traces": {"type": "array", "items": {"$ref": "https://east.example/contracts/packages/bound-data-package/v1#/$defs/selection_trace"}},
+        "generation_receipt": {"anyOf": [{"$ref": "https://east.example/contracts/packages/bound-data-package/v1#/$defs/generation_receipt"}, {"type": "null"}]},
         "data_groups": {"type": "array", "minItems": 1, "items": {"$ref": "https://east.example/contracts/packages/bound-data-package/v1#/$defs/data_group"}}
       }
     },
@@ -152,7 +155,7 @@
     }
   },
   "allOf": [
-    {"if": {"properties": {"envelope": {"properties": {"mode": {"const": "foundation"}}}}}, "then": {"properties": {"payload": {"properties": {"validated_data_package": {"required": ["foundation_task_ref"], "properties": {"foundation_task_ref": {"type": "object"}}}}}}}},
+    {"if": {"properties": {"envelope": {"properties": {"mode": {"const": "foundation"}}}}}, "then": {"properties": {"payload": {"properties": {"validated_data_package": {"required": ["foundation_task_ref", "foundation_generation_context_ref", "selection_traces", "generation_receipt"], "properties": {"foundation_task_ref": {"type": "object"}, "foundation_generation_context_ref": {"type": "object"}, "selection_traces": {"minItems": 1}, "generation_receipt": {"type": "object"}}}}}}}},
     {"if": {"properties": {"envelope": {"properties": {"mode": {"const": "event_data"}}}}}, "then": {"properties": {"payload": {"properties": {"validated_data_package": {"required": ["foundation_task_ref"], "properties": {"foundation_task_ref": {"const": null}}}}}}}}
   ]
 }

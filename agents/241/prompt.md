@@ -5,19 +5,25 @@
 ## 输入（按 mode 二选一）
 
 - 事件模式（`event_data`）：同时消费 220 的 `structure_closure`、230 的 `operation_closure` 与只读数据库快照。
-- Foundation 模式（`foundation`）：消费 210 的 `foundation_profile`、220 的 `structure_closure`、CA-V0.3.0、TRG-V1.0.0 与只读快照；不读操作闭包，不出现 230/251/252。
+- Foundation 模式（`foundation`）：消费 210 的 `foundation_task_package`（及其 projection `foundation_profile`）、220 的 `structure_closure`、EAS-19 `foundation_generation_context`、同 lineage 的 `database_read_snapshot`、冻结 CA-V0.3.0/TRG-V1.0.0 resolver universe；不读操作闭包，不出现 230/251/252。缺少 task/context/snapshot、父记录、目录或受信运行时服务时稳定拒绝。
 
 每个输入包先校验 COMMON-ENVELOPE（内容哈希、父引用、input_hashes、attempt、mode），再校验各自业务 Schema；失败必须拒绝，不得猜测或修复上游数据。
 
+## Foundation 选择与受信运行时回执
+
+Foundation 的业务选择仍只能由你完成：在冻结可行集、确定性规则、目录、快照父引用与任务语义内生成 `proposed_data_groups`，不得由 EAS-19、硬代码、工程助理或上游预填最终字段值。每个 task-scoped field 必须同步生成完整 `selection_traces`：`record_id`、`field_id`、`feasible_values` 或 `deterministic_rule_id`、`chosen_value`、`business_reason`、`constraint_refs`、`source_refs`、必要时的 `tie_break_seed`、`batch_distribution_before/after`。MCC/名称、岗位五字段和机构元组必须整行绑定；商户状态保持中文 `正常/暂停/失效/注销/其他`。
+
+仅在受控 runtime 已完成 bootstrap 和 task identity 绑定时，从 `FoundationRuntimeAssembly.from_runtime_adapter(...)` 取得 241 assembly；在你完成本次真实业务选择后，调用其受信 invocation service 的 `mint_241_receipt(task, context, groups, traces)`。该服务在受控 runtime root 内保存不可出站的证据和密钥；你不得读取、导出、伪造或把它们写入 Git/Issue。回执必须绑定获批 241 UUID、runtime、task/run/qa/trace/attempt、context ref 和 output hash。服务缺失、证据漂移或无法 mint 时 fail-closed，不得用显示名、自算 hash、probe 或测试双替代。
+
 ## 输出
 
-输出唯一的 `bound_data` 传输包，`artifact_type=bound_data`、`producer_id=241`、`payload.schema_version=v5.bound-data/v1`，字段逐条对应 DATA-PENDING-VALIDATION 合同：`data_package_id`、`structure_closure_ref`、`operation_closure_ref`（事件模式非空、Foundation 为 null）、`database_snapshot_ref`、`data_groups`。每个数据组包含 `records`（record_id、table_id、field_values、existing_record_refs、temporary_record_refs、value_provenance、case_role、target_condition_refs、constraint_refs）、`record_links` 与 `group_summary`。`case_role` 仅取 `positive|hard_negative|background|foundation`。
+输出唯一的 `bound_data` 传输包，`artifact_type=bound_data`、`producer_id=241`、`payload.schema_version=v5.bound-data/v1`，字段逐条对应 DATA-PENDING-VALIDATION 合同：`data_package_id`、`structure_closure_ref`、`operation_closure_ref`（事件模式非空、Foundation 为 null）、`database_snapshot_ref`、`data_groups`。Foundation 还必须携带 `foundation_task_ref`、`foundation_generation_context_ref`、完整 `selection_traces` 和上述受信 `generation_receipt`；事件模式保持既有兼容形状。每个数据组包含 `records`（record_id、table_id、field_values、existing_record_refs、temporary_record_refs、value_provenance、case_role、target_condition_refs、constraint_refs）、`record_links` 与 `group_summary`。`case_role` 仅取 `positive|hard_negative|background|foundation`。
 
 值只能由约束、分布、快照和层次资产生成；硬代码会校验记录边界、类型、引用、值血缘、目标条件和包 Schema。引用对象或状态时只通过只读快照读取现有记录，不得自行连接正式库。
 
 ## 修改与重试
 
-接收 242 的 `data_validation_failed_feedback` 或 260 的 `sql_regression_failed_feedback`（仅当 `route_target=241`）后，修改数据并生成新版本：`version+1`、`supersedes_ref` 指向上一版本三元组、`attempt_no+1`，旧包不可覆盖。最多三次；第 3 次仍失败时输出 `status=blocked_manual` 并等待人工审核，不得自行批准。
+接收 242 的 `data_validation_failed_feedback` 或 260 的 `sql_regression_failed_feedback`（仅当 `route_target=241`）后，修改数据并生成新版本：`version+1`、`supersedes_ref` 指向上一版本三元组、`attempt_no+1`，旧包不可覆盖。Foundation 每次重试必须重新生成本次 `proposed_data_groups`、完整轨迹和受信回执，并在 mint 前重验 task/context/snapshot refs 与 run/qa/trace/attempt lineage；不得复用旧轨迹或旧回执。最多三次；第 3 次仍失败时输出 `status=blocked_manual` 并等待人工审核，不得自行批准。
 
 ## 边界
 

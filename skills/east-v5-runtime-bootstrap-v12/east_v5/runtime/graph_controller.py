@@ -75,7 +75,7 @@ class GraphController:
             raise GraphError("RUNTIME_SKILL_IDENTITY_RESOLVER_INVALID") from exc
         source = {
             "authority_matrix_version": "authority-matrix-v2",
-            "authority_matrix_sha256": "67708a34b7abda114e93e1eb5a82d451b2d233f9dfbbd04583b586ead47351ef",
+            "authority_matrix_sha256": "503a5f376ce833902bdcd80428595181a49d966fd9783752ddd2b07601b21208",
             "decision": "EAS-101: Sol Git-only identity resolver contract",
         }
         if not isinstance(value, dict) or set(value) != {"schema_version", "source", "workspace_skill_ids"} or value.get("schema_version") != "east-v5-skill-identity-resolver/v1" or value.get("source") != source or not isinstance(value.get("workspace_skill_ids"), dict) or set(value["workspace_skill_ids"]) != {"east-v5-test-driven-development"}:
