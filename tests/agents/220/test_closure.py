@@ -14,6 +14,7 @@ from east_v5.governance import ContractError, sha256
 
 mod = importlib.import_module("east_v5.agents.220.closure")
 coordinator_mod = importlib.import_module("east_v5.agents.210.scheduler")
+foundation_producer = importlib.import_module("east_v5.agents.210.foundation")
 try:
     helper = importlib.import_module("tests.agents.210.test_scheduler")
 except ModuleNotFoundError:
@@ -58,6 +59,27 @@ def event_results(reviewed: dict, context: dict) -> tuple[list[dict], dict, dict
     return requests, first, second
 
 
+def foundation_task(scope: dict[str, list[str]], *, object_types: list[str] | None = None) -> dict:
+    object_types = object_types or list(scope)
+    return foundation_producer.build_foundation_task_package({
+        "schema_version": "v5.foundation-task-package/v1", "foundation_task_id": "foundation-220-scope",
+        "foundation_mode": "initial_seed", "trigger_reason": "sanitized closure contract",
+        "target_database_version": "fixture-db-v1", "target_object_types": object_types,
+        "target_table_field_scope": scope,
+        "target_counts": {table: 1 for table in object_types},
+        "distribution_targets": {table: {"default": 1} for table in object_types},
+        "hierarchy_asset_refs": [{"artifact_id": "TRG-V1.0.0", "version": 1, "content_hash": "b" * 64}],
+        "prohibited_record_types": ["EVENT_OWNED"], "resume_qa_ref": None,
+        "constraint_asset_version": "CA-V0.3.0", "graph_version": "TRG-V1.0.0",
+    }, run_id="foundation-220-run", trace_id="foundation-220-trace", created_at="2026-08-18T00:00:00+00:00", parents=[])
+
+
+def foundation_assets(task: dict, records: list[dict]) -> list[dict]:
+    source = task["envelope"]
+    request = {"request_id": f"{source['run_id']}:220:foundation"}
+    return [asset(source, request, records, artifact_ref(source))]
+
+
 class ClosureTests(unittest.TestCase):
     def test_real_210_alias_projection_is_the_only_event_seed(self):
         reviewed, context, _ = event_source()
@@ -87,6 +109,17 @@ class ClosureTests(unittest.TestCase):
         with self.assertRaisesRegex(ContractError, "EVENT_CONTEXT_PARENT_LINEAGE_REJECTED"):
             mod.event_query_rounds(reviewed, tampered)
 
+    def test_event_hierarchy_reference_representation_is_unchanged(self):
+        reviewed, context, _ = event_source()
+        request = mod.event_query_rounds(reviewed, context)[0]
+        package = asset(
+            reviewed["envelope"], request,
+            [{"record_type": "hierarchy_reference", "data": {"node_id": "sanitized-node"}}],
+            mod._ref_for_request(request),
+        )
+        payload = mod._payload_from_assets({"FIXTURE_T001"}, {"FIXTURE_T001.F001"}, [package])
+        self.assertEqual(payload["references"], [{"type": "hierarchy_reference", "data": {"node_id": "sanitized-node"}}])
+
     def test_self_consistent_source_question_ref_tamper_is_rejected(self):
         reviewed, context, _ = event_source()
         tampered = copy.deepcopy(context)
@@ -97,6 +130,66 @@ class ClosureTests(unittest.TestCase):
         tampered["envelope"]["content_hash"] = content_hash(tampered["envelope"], tampered["payload"])
         with self.assertRaisesRegex(ContractError, "EVENT_CONTEXT_SOURCE_QUESTION_LINEAGE_REJECTED"):
             mod.event_query_rounds(reviewed, tampered)
+
+    def test_foundation_scope_is_a_complete_field_seed_and_assets_only_extend_it(self):
+        task = foundation_task({"T1": ["A", "B"], "T2": ["C"]})
+        assets = foundation_assets(task, [
+            {"record_type": "single_field", "data": {"table_id": "T3", "field_id": "D"}},
+            {"record_type": "cross_table", "data": {"from": "T3.D", "to": "T4.E"}},
+        ])
+        closure = mod.build_closure(task, assets)
+
+        self.assertEqual(
+            closure["payload"]["fields"],
+            ["T1.A", "T1.B", "T2.C", "T3.D", "T4.E"],
+        )
+        self.assertEqual(closure["payload"]["tables"], ["T1", "T2", "T3", "T4"])
+        self.assertEqual(closure["payload"]["foundation_task_ref"], artifact_ref(task["envelope"]))
+        self.assertEqual(closure, mod.build_closure(task, assets))
+        mod.validate_foundation_closure(task, assets, closure)
+
+    def test_foundation_scope_and_manual_closure_tampering_are_rejected(self):
+        task = foundation_task({"T1": ["A", "B"], "T2": ["C"]})
+        assets = foundation_assets(task, [])
+        closure = mod.build_closure(task, assets)
+
+        missing = copy.deepcopy(closure)
+        missing["payload"]["fields"].remove("T1.B")
+        missing["envelope"]["content_hash"] = content_hash(missing["envelope"], missing["payload"])
+        with self.assertRaisesRegex(ContractError, "FOUNDATION_TASK_FIELD_SCOPE_MISSING"):
+            mod.validate_foundation_closure_task_scope(task, missing)
+
+        extra = copy.deepcopy(closure)
+        extra["payload"]["fields"].append("T1.UNSUPPORTED")
+        extra["payload"]["fields"].sort()
+        extra["envelope"]["content_hash"] = content_hash(extra["envelope"], extra["payload"])
+        with self.assertRaisesRegex(ContractError, "FOUNDATION_CLOSURE_DETERMINISM_DRIFT"):
+            mod.validate_foundation_closure(task, assets, extra)
+
+        ref_drift = copy.deepcopy(closure)
+        ref_drift["payload"]["foundation_task_ref"] = {"artifact_id": "other", "version": 1, "content_hash": "e" * 64}
+        ref_drift["envelope"]["content_hash"] = content_hash(ref_drift["envelope"], ref_drift["payload"])
+        with self.assertRaisesRegex(ContractError, "FOUNDATION_TASK_REF_DRIFT"):
+            mod.validate_foundation_closure_task_scope(task, ref_drift)
+
+    def test_foundation_invalid_scope_and_hash_drift_are_rejected(self):
+        invalid_field = foundation_task({"T1": ["NOT VALID"]})
+        with self.assertRaisesRegex(ContractError, "FOUNDATION_TASK_FIELD_SCOPE_INVALID"):
+            mod.build_closure(invalid_field, [])
+
+        with self.assertRaisesRegex(ContractError, "FOUNDATION_TABLE_SCOPE_OBJECT_MISMATCH"):
+            foundation_task({"T2": ["A"]}, object_types=["T1"])
+
+        duplicate = foundation_task({"T1": ["A"]})
+        duplicate["payload"]["target_table_field_scope"]["T1"] = ["A", "A"]
+        duplicate["envelope"]["content_hash"] = content_hash(duplicate["envelope"], duplicate["payload"])
+        with self.assertRaisesRegex(ContractError, "FOUNDATION_TASK_PACKAGE_SCHEMA_INVALID"):
+            mod.build_closure(duplicate, [])
+
+        closure = mod.build_closure(foundation_task({"T1": ["A"]}), [])
+        closure["payload"]["fields"].append("T1.B")
+        with self.assertRaisesRegex(ContractError, "CONTENT_HASH_DRIFT"):
+            mod.validate_structure_closure_package(closure)
 
 
 if __name__ == "__main__":

@@ -20,17 +20,17 @@
     "initial_seed": {
       "foundation_task_ref": {"artifact_id": "eas40-foundation-initial", "version": 1, "content_hash": "77857982be4d3bc6b5c6da17dff637a393f318f7ac430e14fa954516754a2f6e"},
       "foundation_profile_ref": {"artifact_id": "eas40-foundation-initial:profile", "version": 1, "content_hash": "20adf9fcd098ce07dd4ca5e63a31696e066d6189b5b5b9134488d8c8fbcdc435"},
-      "structure_closure_ref": {"artifact_id": "eas40-foundation-initial:structure-closure", "version": 1, "content_hash": "9f3e4c51feeac16c8e8dd14528d6da76922780a8eb4dba796efdd94917e66c81"},
-      "bound_data_ref": {"artifact_id": "bound-data-eas40-e2e", "version": 1, "content_hash": "3d63334e5809219cd38d750ee325db4ab736a80743c0f4e695d17064827d85c8"},
-      "verified_bound_data_ref": {"artifact_id": "bound-data-eas40-e2e:verified-bound-data", "version": 1, "content_hash": "a436b48c0e0a8ae949c92d0a51210b9da1e0c2dee88386da3ea4461872cc8376"},
+      "structure_closure_ref": {"artifact_id": "eas40-foundation-initial:structure-closure", "version": 1, "content_hash": "210fd9d00abc6d3903bbfc7dc060ce44f9d96b7d67ff609f6e2129c713ced83b"},
+      "bound_data_ref": {"artifact_id": "bound-data-eas40-e2e", "version": 1, "content_hash": "28a1078a176bedcad591440f3f317e1ab2bdd4345927286b086d1963a1ab8eca"},
+      "verified_bound_data_ref": {"artifact_id": "bound-data-eas40-e2e:verified-bound-data", "version": 1, "content_hash": "0b662a9c1b572fc5378215bc6e8b6960a702aad357aac69887a541cb402d4ad6"},
       "foundation_write_batch_hash": "d0f8a4670d1cee5ba326e922445127aae4f2382cdef1dcd4a4e5a0e174fc05b0"
     },
     "expansion": {
       "foundation_task_ref": {"artifact_id": "eas40-foundation-expansion", "version": 1, "content_hash": "6728dfe87f2c8d96eea49a958e2db7a4ef2a5fb5ef41f3757b0f45ac6cea8d20"},
       "foundation_profile_ref": {"artifact_id": "eas40-foundation-expansion:profile", "version": 1, "content_hash": "1344fe9ac0bf914cafe4fcb030ceebd27da5e9ba998474ba760b630d2408ce39"},
-      "structure_closure_ref": {"artifact_id": "eas40-foundation-expansion:structure-closure", "version": 1, "content_hash": "154048d49f86eeb7b5c76e2d74d8aca516bc4d9a6f31d8da1fd4851f5f18d7f6"},
-      "bound_data_ref": {"artifact_id": "bound-data-eas40-e2e", "version": 1, "content_hash": "024638979c51e41723ebed634121940fe842cf9a288feae66cfe1c396fbdb669"},
-      "verified_bound_data_ref": {"artifact_id": "bound-data-eas40-e2e:verified-bound-data", "version": 1, "content_hash": "91959c42b725cda8583e4a50d13f3ed10b8e7d4eccd6a8830faa60d5a7b2751b"},
+      "structure_closure_ref": {"artifact_id": "eas40-foundation-expansion:structure-closure", "version": 1, "content_hash": "7588b91ac31e2f4e4a73e3a26b08e09501a5ba98769b576bf6d5bb4c996bbdda"},
+      "bound_data_ref": {"artifact_id": "bound-data-eas40-e2e", "version": 1, "content_hash": "fcbdf302d3ac073f4ae22d4a1c4887b33b6ae3f86badd5cd0bb305d7a0c5b738"},
+      "verified_bound_data_ref": {"artifact_id": "bound-data-eas40-e2e:verified-bound-data", "version": 1, "content_hash": "5485dbb1e6b99fbf0a6ac79a9b94a98272d90d96951679f2e3a6016e2bf6810a"},
       "foundation_write_batch_hash": "d0f8a4670d1cee5ba326e922445127aae4f2382cdef1dcd4a4e5a0e174fc05b0"
     }
   },

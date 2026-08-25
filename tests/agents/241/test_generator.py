@@ -13,6 +13,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 mod = importlib.import_module("east_v5.agents.241.generator")
 BoundDataGenerator = mod.BoundDataGenerator
+closure_mod = importlib.import_module("east_v5.agents.220.closure")
 from east_v5.artifacts import artifact_ref, content_hash
 from east_v5.governance import ContractError
 
@@ -84,10 +85,12 @@ class GeneratorTests(unittest.TestCase):
     def setUp(self):
         self.builder = BoundDataGenerator(ROOT)
         self.event_closure = fixture("structure-closure-event.json")
-        self.foundation_closure = fixture("structure-closure-foundation.json")
         self.operation = fixture("operation-closure.json")
         self.profile = fixture("foundation-profile.json")
         self.task = json.loads((ROOT / "fixtures" / "artifacts" / "foundation-task-package-valid.json").read_text(encoding="utf-8"))
+        # Exercise the production 210→220 edge; do not hide missing task fields
+        # in a hand-authored structure-closure fixture.
+        self.foundation_closure = closure_mod.build_closure(self.task, [])
         self.snapshot = fixture("database-read-snapshot.json")
 
     def _event(self, **kwargs):
@@ -117,6 +120,26 @@ class GeneratorTests(unittest.TestCase):
         self.assertIsNone(package["payload"]["operation_closure_ref"])
         self.assertEqual(package["envelope"]["mode"], "foundation")
         self.assertEqual(package["payload"]["data_groups"][0]["records"][0]["case_role"], "foundation")
+        self.assertEqual(self.foundation_closure["payload"]["fields"], ["FIXTURE_CUSTOMER.C001", "FIXTURE_CUSTOMER.C002"])
+
+    def test_foundation_missing_task_field_is_not_silently_repaired(self):
+        closure = copy.deepcopy(self.foundation_closure)
+        closure["payload"]["fields"] = ["FIXTURE_CUSTOMER.C001"]
+        rehash(closure)
+        with self.assertRaisesRegex(ContractError, "FOUNDATION_TASK_FIELD_SCOPE_MISSING"):
+            self.builder.build_bound_data(
+                closure, foundation_task_package=self.task, foundation_profile=self.profile,
+                created_at=FIXED_TIME,
+            )
+
+    def test_foundation_task_external_field_stays_out_of_closure(self):
+        groups = self._foundation()["payload"]["data_groups"]
+        groups[0]["records"][0]["field_values"].append(
+            {"field_id": "C999", "value": "脱敏值-C999", "standard_type": "STRING", "is_null": False}
+        )
+        groups[0]["group_summary"] = BoundDataGenerator._summarize(groups[0]["records"])
+        with self.assertRaisesRegex(ContractError, "FIELD_OUT_OF_CLOSURE"):
+            self._foundation(proposed_data_groups=groups)
 
     def test_reproducible(self):
         first = self._event()
