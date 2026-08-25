@@ -13,6 +13,10 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from east_v5.constraint_assets import ConstraintAssetService, consume_complete_table, validate_query_receipt_contract, validate_reconciliation_manifest, validate_runtime_manifest
 from east_v5.governance import ContractError
+try:
+    from constraint_assets.published_assets import PublishedTrgRuntime
+except ModuleNotFoundError:  # direct module execution from the repository root
+    from tests.constraint_assets.published_assets import PublishedTrgRuntime
 
 
 def digest(path: Path) -> str:
@@ -34,7 +38,7 @@ class ConstraintAssetServiceTests(unittest.TestCase):
         self.closures = self.runtime / "closures.jsonl"
         self._create_sqlite()
         self._create_single_field_sqlite()
-        self.edges.write_text("\n".join(json.dumps({"provider_table_code": f"PARENT_{number:03d}", "consumer_table_code": "CHILD", "edge_type": "REFERENCE", "metadata": {"ordinal": number}}) for number in range(122)) + "\n", encoding="utf-8")
+        self.edges.write_text("\n".join(json.dumps({"source_table": f"PARENT_{number:03d}", "source_field": f"PARENT_{number:03d}.ID", "target_table": "CHILD", "target_field": "CHILD.ID", "edge_type": "REFERENCE", "metadata": {"ordinal": number}}) for number in range(122)) + "\n", encoding="utf-8")
         for path in (self.nodes, self.projections, self.closures):
             path.write_text("{}\n", encoding="utf-8")
         self.control = self.base / "approved-assets.json"
@@ -116,6 +120,42 @@ class ConstraintAssetServiceTests(unittest.TestCase):
         with self.assertRaises(sqlite3.OperationalError):
             con = sqlite3.connect(f"file:{self.sqlite}?mode=ro", uri=True)
             con.execute("DELETE FROM field_master")
+
+    def test_published_trg_real_000_220_consumption_is_complete_and_deterministic(self) -> None:
+        """Exercise the production service against every frozen, real TRG edge.
+
+        The service is the fixed 000/220 query boundary.  This intentionally
+        uses a temporary runtime copy rather than a Protocol stand-in or an
+        in-repository runtime payload.
+        """
+        runtime = PublishedTrgRuntime()
+        try:
+            raw_edges = [json.loads(line) for line in runtime.paths["edges"].read_text(encoding="utf-8").splitlines() if line]
+            self.assertEqual(len(raw_edges), 537)
+            table_codes = sorted({edge["source_table"] for edge in raw_edges} | {edge["target_table"] for edge in raw_edges})
+            self.assertGreaterEqual(len(table_codes), 29)
+
+            def consume_all() -> dict[str, list[dict]]:
+                service = runtime.service()
+                return {
+                    table: consume_complete_table(service, "graph_edges_for_table", table, page_size=100)["records"]
+                    for table in table_codes
+                }
+
+            first, second = consume_all(), consume_all()
+            self.assertEqual(first, second)
+            returned = {edge["canonical_edge_hash"] for records in first.values() for edge in records}
+            self.assertEqual(len(returned), 537)
+            self.assertTrue(all("canonical_edge_hash" not in edge for edge in raw_edges))  # raw assets are not rewritten
+            self.assertTrue(all({"source_table", "source_field", "target_table", "target_field", "edge_type", "canonical_edge_hash"} <= set(edge) for records in first.values() for edge in records))
+        finally:
+            runtime.close()
+
+    def test_legacy_provider_consumer_graph_record_is_rejected(self) -> None:
+        self.edges.write_text(json.dumps({"provider_table_code": "PARENT", "consumer_table_code": "CHILD", "edge_type": "REFERENCE"}) + "\n", encoding="utf-8")
+        self._write_control_and_manifest()
+        with self.assertRaisesRegex(ContractError, "ASSET_GRAPH_RECORD_INVALID"):
+            self.service().graph_edges_for_table("CHILD")
 
     def test_hash_drift_unknown_version_and_outside_runtime_are_rejected_before_query(self) -> None:
         data = json.loads(self.manifest.read_text())
@@ -219,7 +259,7 @@ class ConstraintAssetServiceTests(unittest.TestCase):
         self.assertEqual((field_rules["asset_version"], field_rules["total"], field_rules["returned_count"]), ("CA-V0.2.0", 2, 1))
         edge_page = service.graph_edges_for_table("CHILD", limit=100)
         self.assertEqual((edge_page["total"], edge_page["returned_count"], edge_page["complete"]), (122, 100, False))
-        self.assertEqual(edge_page["records"][0]["consumer_table_code"], "CHILD")
+        self.assertEqual(edge_page["records"][0]["target_table"], "CHILD")
 
     def test_receipt_and_runtime_drift_fail_closed(self) -> None:
         service = self.service()

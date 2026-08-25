@@ -14,6 +14,10 @@ sys.path.insert(0, str(ROOT / "src"))
 from east_v5.artifacts import artifact_ref, content_hash
 from east_v5.governance import ContractError, sha256
 from east_v5.validators import REGISTRY_SCHEMA_VERSION
+try:
+    from constraint_assets.published_assets import PublishedTrgRuntime
+except ModuleNotFoundError:  # direct module execution from the repository root
+    from tests.constraint_assets.published_assets import PublishedTrgRuntime
 
 _probe = importlib.import_module("east_v5.agents.242.probe")
 _validator = importlib.import_module("east_v5.agents.242.validator")
@@ -50,6 +54,21 @@ def _big_structure() -> dict:
         "fields": ["BIG.F1", "BIG.F2"], "references": [],
     }
     return _wrap("structure_closure", "eas32-big-structure", payload, producer="220", mode="event_data", qa_id="QA-EAS32")
+
+
+def _graph_edge() -> dict:
+    edge = {
+        "source_table": "FIXTURE_T002", "source_field": "FIXTURE_T002.PK001",
+        "target_table": "FIXTURE_T001", "target_field": "FIXTURE_T001.F001",
+        "edge_type": "REFERENCE",
+        "expression": {
+            "direction": "PROVIDER_TO_CONSUMER",
+            "provider_fields": ["FIXTURE_T002.PK001"],
+            "consumer_field": "FIXTURE_T001.F001",
+        },
+    }
+    edge["canonical_edge_hash"] = sha256(edge)
+    return edge
 
 
 class _ResolveDriftResolver(AssetBoundResolver):
@@ -176,6 +195,50 @@ class DataValidatorTests(unittest.TestCase):
         self.assertEqual(methods, {"constraints_for_table", "field_rules_for_table", "graph_edges_for_table"})
         self.assertEqual(len(universe["constraints"]), 3)
         self.assertEqual(len({(c["constraint_id"], c["scope"]) for c in universe["constraints"]}), 3)
+
+    def test_published_trg_production_resolver_preflight_is_deterministic(self) -> None:
+        """242 consumes the actual frozen graph through the production service."""
+        runtime = PublishedTrgRuntime()
+        try:
+            raw_edges = [json.loads(line) for line in runtime.paths["edges"].read_text(encoding="utf-8").splitlines() if line]
+            tables = sorted({edge["source_table"] for edge in raw_edges} | {edge["target_table"] for edge in raw_edges})
+            payload = {
+                "schema_version": "v5.structure-closure/v1", "constraint_asset_version": "CA-V0.3.0",
+                "graph_version": "TRG-V1.0.0", "tables": tables, "fields": [], "references": [],
+            }
+            closure = _wrap("structure_closure", "eas112-published-trg-preflight", payload, producer="220", mode="event_data", qa_id="QA-EAS112")
+            first_resolver = AssetBoundResolver(ROOT, ConstraintAssetQueryService(runtime.service()), control_path=runtime.control)
+            second_resolver = AssetBoundResolver(ROOT, ConstraintAssetQueryService(runtime.service()), control_path=runtime.control)
+            first, second = first_resolver.enumerate(closure), second_resolver.enumerate(closure)
+            self.assertEqual(first, second)
+            with sqlite3.connect(f"file:{runtime.paths['single_field']}?mode=ro&immutable=1", uri=True) as connection:
+                self.assertEqual(connection.execute("SELECT review_status, COUNT(*) FROM single_field_constraints GROUP BY review_status ORDER BY review_status").fetchall(), [("CANDIDATE", 3508)])
+            graph_receipts = [receipt for receipt in first_resolver.receipts if receipt["query_method"] == "graph_edges_for_table"]
+            field_receipts = [receipt for receipt in first_resolver.receipts if receipt["query_method"] == "field_rules_for_table"]
+            self.assertEqual({receipt["table_code"] for receipt in graph_receipts}, set(tables))
+            self.assertEqual(sum(receipt["complete"] for receipt in graph_receipts), len(tables))
+            self.assertTrue(all(receipt["total"] == 0 for receipt in field_receipts))
+        finally:
+            runtime.close()
+
+    def test_graph_consumer_rejects_legacy_and_inconsistent_records(self) -> None:
+        valid = _graph_edge()
+        edges: set[tuple[str, str]] = set()
+        AssetBoundResolver._ingest_graph([valid], edges)
+        self.assertEqual(edges, {("FIXTURE_T002", "FIXTURE_T001")})
+
+        invalid_records = [
+            {"provider_table_code": "FIXTURE_T002", "consumer_table_code": "FIXTURE_T001", "edge_type": "REFERENCE"},
+            {key: value for key, value in valid.items() if key != "source_table"},
+            {**valid, "source_table": "OTHER"},
+            {**valid, "expression": {**valid["expression"], "direction": "CONSUMER_TO_PROVIDER"}},
+            {**valid, "expression": {**valid["expression"], "provider_fields": ["FIXTURE_T002.OTHER"]}},
+            {**valid, "canonical_edge_hash": "0" * 64},
+        ]
+        for record in invalid_records:
+            with self.subTest(record=record):
+                with self.assertRaisesRegex(ContractError, "QUERY_RECEIPT_INVALID"):
+                    AssetBoundResolver._ingest_graph([record], set())
 
     # ------------------------------------------------------------ fail closed (service)
 
