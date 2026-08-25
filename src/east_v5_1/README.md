@@ -46,3 +46,16 @@ V5.1 复用 V5 的治理层（`east_v5.governance`、`east_v5.artifacts`）和�
 - V5.1 代码放 `src/east_v5_1/`
 - V5.1 合同、schema 放 `contracts/v5_1/`
 - 提交前 `python3 scripts/v5.py check` 通过
+
+## 两阶段 Gold（EAS-105）
+
+`gold_lifecycle.py` 是 V5.1 的只读控制面：语义通过后的产物只能为
+`semantic_candidate`；同一 lineage 的真实 V5 `260 database_copy_regression`
+通过后才可为 `execution_confirmed`；同时消费真实 V5 `210 release_candidate`
+和 `010 release_receipt` 后才可为 `formal_released`。它不会执行或伪造
+260，也不会写正式库。
+
+六路 baseline 首轮候选仅以 opaque ID 和 SQL/锁定证据哈希保存，按
+`candidate_set_hash` 锁定。260 后缺陷通过稳定的 adjudication 路由回到
+150（经 110）、241、251 或 `blocked_manual`；SQL 路由要求新 attempt，并
+使先前的解释、闭包和执行证据失效。
