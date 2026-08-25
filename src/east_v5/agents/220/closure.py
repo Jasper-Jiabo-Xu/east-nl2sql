@@ -253,8 +253,26 @@ def _payload_from_assets(seed_tables: set[str], seed_fields: set[str], assets: l
                 tables.add(table)
             if table and field:
                 fields.add(f"{table}.{field}")
-            if record["record_type"] in {"cross_table", "hierarchy_reference"}:
-                references.append({"type": record["record_type"], "data": data})
+            if record["record_type"] == "hierarchy_reference":
+                if foundation_task_ref is None:
+                    # Preserve the frozen event_data representation exactly.
+                    references.append({"type": "hierarchy_reference", "data": data})
+                    continue
+                hierarchy_ref = data.get("artifact_ref")
+                if (
+                    not isinstance(hierarchy_ref, dict)
+                    or set(hierarchy_ref) != {"artifact_id", "version", "content_hash"}
+                    or not isinstance(hierarchy_ref["artifact_id"], str)
+                    or not hierarchy_ref["artifact_id"]
+                    or not isinstance(hierarchy_ref["version"], int)
+                    or hierarchy_ref["version"] < 1
+                    or not isinstance(hierarchy_ref["content_hash"], str)
+                    or not re.fullmatch(r"[0-9a-f]{64}", hierarchy_ref["content_hash"])
+                ):
+                    _fail("SCHEMA_VALIDATION_FAILED:HIERARCHY_REFERENCE")
+                references.append({"type": "hierarchy_asset", "artifact_ref": hierarchy_ref})
+            elif record["record_type"] == "cross_table":
+                references.append({"type": "cross_table", "data": data})
             if record["record_type"] == "cross_table":
                 for endpoint in (data.get("from"), data.get("to")):
                     if not isinstance(endpoint, str) or not FIELD_PATH.fullmatch(endpoint):
@@ -271,6 +289,44 @@ def _payload_from_assets(seed_tables: set[str], seed_fields: set[str], assets: l
         payload["foundation_task_ref"] = foundation_task_ref
     validate_closure(payload)
     return payload
+
+
+def _foundation_task_field_seeds(task: dict[str, Any]) -> tuple[set[str], set[str]]:
+    """Project only the frozen 210 write scope into canonical ``TABLE.FIELD`` seeds.
+
+    The package schema establishes the broad JSON shape. This gate establishes
+    the stricter 220 identifier contract before any 000 result is consumed:
+    no whitespace/case folding is performed, so every declared field has one
+    unambiguous canonical path and no DDL-wide expansion is possible.
+    """
+    target_tables = task["target_object_types"]
+    if (
+        not isinstance(target_tables, list)
+        or len(target_tables) != len(set(target_tables))
+        or any(not isinstance(table, str) or not FIELD_PATH.fullmatch(f"{table}._") for table in target_tables)
+    ):
+        _fail("FOUNDATION_TASK_INVALID")
+
+    task_scope = task["target_table_field_scope"]
+    if not isinstance(task_scope, dict):
+        _fail("FOUNDATION_TASK_FIELD_SCOPE_INVALID")
+
+    seed_fields: set[str] = set()
+    for table, field_ids in task_scope.items():
+        if table not in target_tables:
+            _fail("FOUNDATION_TABLE_SCOPE_OBJECT_MISMATCH")
+        if not isinstance(field_ids, list) or not field_ids:
+            _fail("FOUNDATION_TASK_FIELD_SCOPE_INVALID")
+        for field_id in field_ids:
+            path = f"{table}.{field_id}"
+            if not isinstance(field_id, str) or not FIELD_PATH.fullmatch(path):
+                _fail("FOUNDATION_TASK_FIELD_SCOPE_INVALID")
+            if path in seed_fields:
+                _fail("FOUNDATION_TASK_FIELD_SCOPE_DUPLICATE")
+            seed_fields.add(path)
+    if not seed_fields:
+        _fail("FOUNDATION_TASK_FIELD_SCOPE_INVALID")
+    return set(target_tables), seed_fields
 
 
 def _wrap_closure(source: dict[str, Any], parents: list[dict[str, Any]], payload: dict[str, Any]) -> dict[str, Any]:
@@ -309,12 +365,34 @@ def build_closure(profile_package: dict[str, Any], assets: list[dict[str, Any]])
     asset_refs = []
     for package in assets:
         asset_refs.append(_validate_asset_result(package, source, package["payload"].get("request_id", ""), source_ref))
-    seeds = set(task["target_object_types"])
-    if any(not isinstance(target, str) or not target for target in seeds):
-        _fail("FOUNDATION_TASK_INVALID")
-    if any(target.startswith("EVENT_OWNED:") for target in seeds):
+    seed_tables, seed_fields = _foundation_task_field_seeds(task)
+    if any(target.startswith("EVENT_OWNED:") for target in seed_tables):
         _fail("FOUNDATION_EVENT_OWNED_REJECTED")
-    return _wrap_closure(source, [source_ref, *asset_refs], _payload_from_assets(seeds, set(), assets, source_ref))
+    return _wrap_closure(
+        source, [source_ref, *asset_refs],
+        _payload_from_assets(seed_tables, seed_fields, assets, source_ref),
+    )
+
+
+def validate_foundation_closure_task_scope(task_package: dict[str, Any], closure_package: dict[str, Any]) -> None:
+    """Require every frozen 210 write field in a Foundation closure consumer path."""
+    source, task = validate_foundation_task_package(task_package)
+    validate_structure_closure_package(closure_package)
+    envelope, payload = closure_package["envelope"], closure_package["payload"]
+    if envelope["mode"] != "foundation":
+        _fail("FOUNDATION_CLOSURE_MODE_INVALID")
+    if payload["foundation_task_ref"] != artifact_ref(source):
+        _fail("FOUNDATION_TASK_REF_DRIFT")
+    _, required_fields = _foundation_task_field_seeds(task)
+    if not required_fields <= set(payload["fields"]):
+        _fail("FOUNDATION_TASK_FIELD_SCOPE_MISSING")
+
+
+def validate_foundation_closure(task_package: dict[str, Any], assets: list[dict[str, Any]], closure_package: dict[str, Any]) -> None:
+    """Recompute a 220 Foundation closure to reject manual field additions or deletions."""
+    validate_foundation_closure_task_scope(task_package, closure_package)
+    if closure_package != build_closure(task_package, assets):
+        _fail("FOUNDATION_CLOSURE_DETERMINISM_DRIFT")
 
 
 def validate_closure(value: dict[str, Any]) -> None:

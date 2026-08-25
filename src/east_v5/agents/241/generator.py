@@ -16,6 +16,7 @@ before anything is wrapped.
 from __future__ import annotations
 
 import copy
+import importlib
 import re
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
@@ -28,6 +29,7 @@ from east_v5.artifacts import artifact_ref, content_hash, validate_envelope
 from east_v5.governance import ContractError, load_json
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
+_closure_contract = importlib.import_module("east_v5.agents.220.closure")
 
 TRANSPORT_KEYS = {"envelope", "payload"}
 STRUCTURE_FIELDS = {"schema_version", "constraint_asset_version", "graph_version", "tables", "fields", "references"}
@@ -435,6 +437,9 @@ class BoundDataGenerator:
             task_ref = artifact_ref(foundation_task_package["envelope"])
             if closure["foundation_task_ref"] != task_ref:
                 _fail("FOUNDATION_TASK_REF_DRIFT")
+            # 241 consumes the closed scope but never repairs it: every frozen
+            # 210 write field must already be present in the 220 package.
+            _closure_contract.validate_foundation_closure_task_scope(foundation_task_package, structure_closure)
             if foundation_profile is not None:
                 self.validate_foundation_profile(foundation_profile)
                 expected_profile = {

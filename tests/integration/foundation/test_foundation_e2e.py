@@ -102,11 +102,24 @@ def _build_task(task_payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def _seed_closure(task: dict[str, Any]) -> dict[str, Any]:
-    """Build the minimal Foundation closure and seed the frozen field + hierarchy scope."""
-    closure = closure_mod.build_closure(task, [])
-    closure["payload"]["fields"] = ["FIXTURE_CUSTOMER.C001", "FIXTURE_CUSTOMER.C002"]
-    closure["payload"]["references"] = [{"type": "hierarchy_asset", "artifact_ref": HIERARCHY_REF}]
-    closure["envelope"]["content_hash"] = content_hash(closure["envelope"], closure["payload"])
+    """Build 220 output only from frozen 210 scope plus a sanitized 000 result."""
+    task_ref = artifact_ref(task["envelope"])
+    asset_payload = {
+        "request_id": f"{task['envelope']['run_id']}:220:foundation-hierarchy",
+        "asset_version": "TRG-V1.0.0", "executed_queries": [],
+        "matched_records": [{
+            "record_type": "hierarchy_reference", "data": {"artifact_ref": HIERARCHY_REF},
+            "source_refs": [{"source_type": "constraint_asset", "source_id": "TRG-V1.0.0"}], "hierarchy_refs": [],
+        }],
+        "constraint_summary": {"total_matched": 1, "asset_types_covered": ["hierarchy_reference"]},
+        "unmatched_items": [], "query_trace": [],
+    }
+    asset = _wrap(
+        "constraint_asset_package", f"{task['envelope']['artifact_id']}:220:hierarchy", asset_payload,
+        producer_id="000", mode="foundation", parents=[task_ref],
+    )
+    closure = closure_mod.build_closure(task, [asset])
+    closure_mod.validate_foundation_closure(task, [asset], closure)
     return closure
 
 
