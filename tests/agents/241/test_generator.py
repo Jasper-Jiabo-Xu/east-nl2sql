@@ -4,7 +4,9 @@ import copy
 import importlib
 import json
 import os
+import shutil
 import sqlite3
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -241,6 +243,84 @@ class GeneratorTests(unittest.TestCase):
             forged = copy.deepcopy(receipt); forged["output_hash"] = "0" * 64
             with self.assertRaisesRegex(ContractError, "FOUNDATION_241_INVOCATION_RECEIPT_UNTRUSTED"):
                 verifier.verify(forged, {key: receipt[key] for key in receipt if key not in {"invocation_id", "runtime_attestation"}})
+
+    def test_bootstrapped_adapter_assembly_is_the_only_foundation_attestation_path(self):
+        """Exercise real bootstrap -> registry -> adapter -> 241 -> 242 wiring."""
+        from east_v5.artifacts import ArtifactRegistry
+        from east_v5.runtime import RuntimeAdapter, RuntimeBootstrap
+        from east_v5.runtime.foundation_assembly import FoundationRuntimeAssembly
+        build_foundation_profile = importlib.import_module("east_v5.agents.210.foundation").build_foundation_profile
+
+        with tempfile.TemporaryDirectory(dir=ROOT.parent) as raw:
+            root = Path(raw).resolve(); candidate, runtime_root = root / "candidate", (root / "runtime").resolve()
+            shutil.copytree(ROOT, candidate, ignore=shutil.ignore_patterns(".git", "__pycache__", "*.pyc"))
+            subprocess.run(["git", "init", "-q", str(candidate)], check=True)
+            subprocess.run(["git", "-C", str(candidate), "add", "."], check=True)
+            subprocess.run(["git", "-C", str(candidate), "-c", "user.email=eas114@example.invalid", "-c", "user.name=EAS-114", "commit", "-qm", "runtime-candidate"], check=True)
+            head = subprocess.check_output(["git", "-C", str(candidate), "rev-parse", "HEAD"], text=True).strip()
+            roots = {"repo_root": str(candidate / "repo"), "runtime_root": str(runtime_root), "reference_root": str(root / "reference"), "reference_read_only": True}
+
+            task = copy.deepcopy(self.task)
+            task["envelope"]["parent_artifact_refs"] = []; task["envelope"]["input_hashes"] = []; rehash(task)
+            closure = closure_mod.build_closure(task, [])
+            closure["payload"]["references"] = [{"type": "hierarchy_asset", "artifact_ref": task["payload"]["hierarchy_asset_refs"][0]}]
+            rehash(closure)
+            profile = build_foundation_profile(task)
+            snapshot = copy.deepcopy(self.foundation_snapshot)
+            snapshot["envelope"].update({"run_id": task["envelope"]["run_id"], "qa_id": None, "trace_id": task["envelope"]["trace_id"], "attempt_no": 1})
+            rehash(snapshot)
+            context = foundation_context(task, closure, snapshot, created_at=FIXED_TIME)
+            registry = ArtifactRegistry(candidate, roots, "EAS-114", task["envelope"]["run_id"], 1)
+            for package in (task, closure, profile, snapshot, context):
+                registry.register(package["envelope"], package["payload"])
+
+            def envelope(target: str, agent_uuid: str, input_ref: dict, route: str) -> dict:
+                bootstrap = {"bootstrap_version": "east-v5-runtime-bootstrap/v1", "candidate_base_sha": "a" * 40, "candidate_head_sha": head, "adapter_sha256": __import__("hashlib").sha256((candidate / "src/east_v5/runtime/adapter.py").read_bytes()).hexdigest(), "bootstrap_sha256": __import__("hashlib").sha256((candidate / "src/east_v5/runtime/bootstrap.py").read_bytes()).hexdigest(), "runner_sha256": __import__("hashlib").sha256((candidate / "scripts/runtime_bootstrap.py").read_bytes()).hexdigest(), "runtime_context": {"resolver_version": "daemon_local_platform_data_resolver_v1", "workspace_id": "eas114", "project_id": "foundation", "daemon_id": "test"}, "skill_bundle": {"skill_name": "east-v5-runtime-bootstrap-v1", "skill_version": "v1", "skill_manifest_sha256": "f" * 64}}
+                from east_v5.runtime import root_binding_id
+                return {"schema_version": "task_input_envelope/v1", "adapter_version": "east-v5-runtime-adapter/v1", "issue_id": "EAS-114", "run_id": task["envelope"]["run_id"], "trace_id": task["envelope"]["trace_id"], "qa_id": None, "attempt": 1, "target_agent_id": target, "target_agent_uuid": agent_uuid, "root_binding_id": root_binding_id(bootstrap["runtime_context"]), "input_ref": input_ref, "expected_output": {"artifact_type": "bound_data" if target == "241" else "verified_bound_data", "producer_id": target, "route_target": route}, "execution_bootstrap": bootstrap}
+
+            def build_adapter(task_envelope: dict):
+                return RuntimeBootstrap(candidate, task_envelope, environ={"V5_RUNTIME_ROOT": str(runtime_root)}).build_adapter(roots)
+
+            env241 = envelope("241", "7df640f9-973f-4c46-8302-df1256f60146", artifact_ref(task["envelope"]), "242")
+            adapter241 = build_adapter(env241)
+            assembly241 = FoundationRuntimeAssembly.from_runtime_adapter(adapter241, task_id="runtime-task-241", runtime_id="0e5e9dd9-5135-4937-bb03-92b77adb8395")
+            groups, traces = groups_and_traces(closure)
+            receipt = assembly241.invocation_service.mint_241_receipt(task, context, groups, traces)
+            bound = assembly241.generator(candidate).build_bound_data(closure, foundation_task_package=task, foundation_profile=profile, snapshot=snapshot, foundation_generation_context=context, proposed_data_groups=groups, selection_traces=traces, generation_receipt=receipt, created_at=FIXED_TIME)
+            registered = adapter241.register_output(bound, task_id="runtime-task-241", runtime_id="0e5e9dd9-5135-4937-bb03-92b77adb8395")
+            self.assertIsNone(registered["receipt"]["qa_id"])
+
+            env242 = envelope("242", "4e801c18-7048-4227-a5c7-515f51a5e5ba", registered["output_ref"], "260")
+            adapter242 = build_adapter(env242)
+            assembly242 = FoundationRuntimeAssembly.from_runtime_adapter(adapter242, task_id="runtime-task-242", runtime_id="0e5e9dd9-5135-4937-bb03-92b77adb8395")
+            runtime = importlib.import_module("east_v5.agents.242.sanitized_fixture").SanitizedRuntime()
+            try:
+                frozen = assembly242.validator(candidate).freeze_bound_data(bound, closure, runtime.resolver(), foundation_task_package=task, database_snapshot=snapshot, foundation_generation_context=context)
+                self.assertEqual(frozen["payload"]["source_data_package_ref"], registered["output_ref"])
+            finally:
+                runtime.close()
+
+            with self.assertRaisesRegex(ContractError, "FOUNDATION_RUNTIME_CONTEXT_INVALID"):
+                FoundationRuntimeAssembly.from_runtime_adapter(adapter241, task_id="runtime-task-241", runtime_id="wrong-runtime")
+            wrong_uuid = envelope("241", "00000000-0000-0000-0000-000000000000", artifact_ref(task["envelope"]), "242")
+            wrong_adapter = build_adapter(wrong_uuid)
+            with self.assertRaisesRegex(ContractError, "FOUNDATION_RUNTIME_CALLER_FORBIDDEN"):
+                FoundationRuntimeAssembly.from_runtime_adapter(wrong_adapter, task_id="runtime-task-bad-uuid", runtime_id="0e5e9dd9-5135-4937-bb03-92b77adb8395")
+            wrong_route = envelope("241", "7df640f9-973f-4c46-8302-df1256f60146", artifact_ref(task["envelope"]), "260")
+            route_adapter = build_adapter(wrong_route)
+            with self.assertRaisesRegex(ContractError, "FOUNDATION_RUNTIME_NODE_FORBIDDEN"):
+                FoundationRuntimeAssembly.from_runtime_adapter(route_adapter, task_id="runtime-task-bad-route", runtime_id="0e5e9dd9-5135-4937-bb03-92b77adb8395")
+            event_input = copy.deepcopy(self.event_closure); registry.register(event_input["envelope"], event_input["payload"])
+            with self.assertRaisesRegex(ContractError, "RUNTIME_QA_ID_REQUIRED"):
+                build_adapter(envelope("241", "7df640f9-973f-4c46-8302-df1256f60146", artifact_ref(event_input["envelope"]), "242"))
+            forged = copy.deepcopy(bound); forged["payload"]["generation_receipt"]["output_hash"] = "0" * 64; rehash(forged)
+            runtime = importlib.import_module("east_v5.agents.242.sanitized_fixture").SanitizedRuntime()
+            try:
+                with self.assertRaises(ContractError):
+                    assembly242.validator(candidate).freeze_bound_data(forged, closure, runtime.resolver(), foundation_task_package=task, database_snapshot=snapshot, foundation_generation_context=context)
+            finally:
+                runtime.close()
 
     # ------------------------------------------------------------- mode gates
     def test_foundation_rejects_operation(self):
