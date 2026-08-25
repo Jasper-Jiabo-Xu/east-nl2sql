@@ -1,0 +1,35 @@
+{
+  "$id": "https://east.example/contracts/packages/foundation-generation-context-package/v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Foundation generation context (read-only, runtime-only)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["envelope", "payload"],
+  "properties": {
+    "envelope": {"allOf": [{"$ref": "https://east.example/contracts/common-envelope/v1"}, {"type": "object", "properties": {"artifact_type": {"const": "foundation_generation_context"}, "producer_id": {"const": "EAS-19"}, "mode": {"const": "foundation"}}}]},
+    "payload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema_version", "context_id", "foundation_task_ref", "structure_closure_ref", "resolver_universe_ref", "database_snapshot_ref", "snapshot_hash", "hierarchy_refs", "catalog_refs", "base_date", "seed", "parent_record_refs", "deterministic_rules"],
+      "properties": {
+        "schema_version": {"const": "v5.foundation-generation-context/v1"},
+        "context_id": {"type": "string", "minLength": 1},
+        "foundation_task_ref": {"$ref": "#/$defs/artifact_ref"},
+        "structure_closure_ref": {"$ref": "#/$defs/artifact_ref"},
+        "resolver_universe_ref": {"$ref": "#/$defs/artifact_ref"},
+        "database_snapshot_ref": {"$ref": "#/$defs/artifact_ref"},
+        "snapshot_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "hierarchy_refs": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/artifact_ref"}},
+        "catalog_refs": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/artifact_ref"}},
+        "base_date": {"type": "string", "format": "date"},
+        "seed": {"type": "string", "minLength": 1},
+        "parent_record_refs": {"type": "array", "items": {"$ref": "#/$defs/parent_record_ref"}},
+        "deterministic_rules": {"type": "array", "items": {"$ref": "#/$defs/deterministic_rule"}}
+      }
+    }
+  },
+  "$defs": {
+    "artifact_ref": {"type": "object", "additionalProperties": false, "required": ["artifact_id", "version", "content_hash"], "properties": {"artifact_id": {"type": "string", "minLength": 1}, "version": {"type": "integer", "minimum": 1}, "content_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}},
+    "parent_record_ref": {"type": "object", "additionalProperties": false, "required": ["table_id", "record_key"], "properties": {"table_id": {"type": "string", "minLength": 1}, "record_key": {"type": "string", "minLength": 1}}},
+    "deterministic_rule": {"type": "object", "additionalProperties": false, "required": ["rule_id", "result"], "properties": {"rule_id": {"type": "string", "minLength": 1}, "result": {}}}
+  }
+}

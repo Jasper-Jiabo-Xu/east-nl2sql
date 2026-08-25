@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from east_v5.artifacts import artifact_ref, content_hash
-from east_v5.governance import ContractError
+from east_v5.governance import ContractError, sha256
 
 from .generator import BoundDataGenerator
 
@@ -92,8 +92,9 @@ def _snapshot(mode: str) -> dict[str, Any]:
         "object_state_records": [
             {"record_keys": {"table_id": "FIXTURE_T002", "primary_key": "PK-1"}, "data": {"PK001": "脱敏主键"}},
         ],
-        "snapshot_hash": "e" * 64,
+        "snapshot_hash": "",
     }
+    payload["snapshot_hash"] = sha256({key: value for key, value in payload.items() if key != "snapshot_hash"})
     return _wrap("database_read_snapshot", "eas31-snapshot", payload, producer="EAS-19", mode=mode, qa_id="QA-EAS31" if mode == "event_data" else None)
 
 
@@ -103,6 +104,17 @@ def _fixed_groups(package: dict[str, Any]) -> list[dict[str, Any]]:
     first["value"] = f"{first['value']}-修订"
     groups[0]["group_summary"] = BoundDataGenerator._summarize(groups[0]["records"])
     return groups
+
+
+def _eas114_foundation_generation_inputs(task: dict[str, Any], closure: dict[str, Any], snapshot: dict[str, Any]) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
+    """Sanitized, metadata-only stand-in for the runtime EAS-19 context."""
+    payload = {"schema_version": "v5.foundation-generation-context/v1", "context_id": "eas114-probe-context", "foundation_task_ref": artifact_ref(task["envelope"]), "structure_closure_ref": artifact_ref(closure["envelope"]), "resolver_universe_ref": {"artifact_id": "eas114-probe-universe", "version": 1, "content_hash": "d" * 64}, "database_snapshot_ref": artifact_ref(snapshot["envelope"]), "snapshot_hash": snapshot["payload"]["snapshot_hash"], "hierarchy_refs": task["payload"]["hierarchy_asset_refs"], "catalog_refs": [{"artifact_id": "eas114-probe-catalog", "version": 1, "content_hash": "c" * 64}], "base_date": "2026-08-25", "seed": "eas114-probe-seed", "parent_record_refs": [], "deterministic_rules": []}
+    context = _wrap("foundation_generation_context", "eas114-probe-context", payload, producer="EAS-19", mode="foundation", qa_id=None, parents=[artifact_ref(task["envelope"]), artifact_ref(closure["envelope"]), artifact_ref(snapshot["envelope"])])
+    record = {"record_id": "agent-customer", "record_type": "foundation_object", "table_id": "FIXTURE_CUSTOMER", "field_values": [{"field_id": "C001", "value": "EAS114-CUST-001", "standard_type": "STRING", "is_null": False}, {"field_id": "C002", "value": "EAS114-CUSTOMER", "standard_type": "STRING", "is_null": False}], "existing_record_refs": [], "temporary_record_refs": [], "value_provenance": [{"source_type": "foundation_task_package", "source_ref": "EAS114-probe"}], "case_role": "foundation", "target_condition_refs": [], "constraint_refs": []}
+    groups = [{"data_group_id": "eas114-probe-group", "records": [record], "record_links": [], "group_summary": BoundDataGenerator._summarize([record])}]
+    traces = [{"record_id": "agent-customer", "field_id": f"FIXTURE_CUSTOMER.{item['field_id']}", "feasible_values": [item["value"]], "deterministic_rule_id": None, "chosen_value": item["value"], "business_reason": "满足冻结约束并保持基础对象语义一致", "constraint_refs": ["EAS114-probe-constraint"], "source_refs": ["EAS114-probe-catalog"], "tie_break_seed": None, "batch_distribution_before": {}, "batch_distribution_after": {}} for item in record["field_values"]]
+    receipt = {"agent_id": "241-初始数据生成与修改agent", "generation_kind": "business_agent", "input_context_ref": artifact_ref(context["envelope"]), "output_hash": sha256({"data_groups": groups, "selection_traces": traces})}
+    return context, groups, traces, receipt
 
 
 def _validation_feedback(previous: dict[str, Any]) -> dict[str, Any]:
@@ -158,7 +170,9 @@ def run_sanitized_probe(repo_root: Path) -> dict[str, Any]:
     task = _foundation_task()
     foundation_closure = _foundation_structure_closure(task)
     profile = _foundation_profile(task)
-    foundation = builder.build_bound_data(foundation_closure, foundation_task_package=task, foundation_profile=profile, created_at=FIXED_TIME)
+    foundation_snapshot = _snapshot("foundation")
+    context, foundation_groups, traces, receipt = _eas114_foundation_generation_inputs(task, foundation_closure, foundation_snapshot)
+    foundation = builder.build_bound_data(foundation_closure, foundation_task_package=task, foundation_profile=profile, snapshot=foundation_snapshot, foundation_generation_context=context, proposed_data_groups=foundation_groups, selection_traces=traces, generation_receipt=receipt, created_at=FIXED_TIME)
     builder.validate_bound_data(foundation)
 
     feedback = _validation_feedback(event)

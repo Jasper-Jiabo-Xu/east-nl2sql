@@ -27,6 +27,7 @@ from referencing import Registry, Resource
 
 from east_v5.artifacts import artifact_ref, content_hash, validate_envelope
 from east_v5.governance import ContractError, load_json
+from east_v5.agents.foundation_contract import validate_context as validate_foundation_context, validate_traces as validate_foundation_traces
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 _closure_contract = importlib.import_module("east_v5.agents.220.closure")
@@ -48,6 +49,7 @@ REGRESSION_FEEDBACK_SCHEMA = "contracts/packages/sql-regression-failed-feedback.
 SNAPSHOT_SCHEMA = "contracts/packages/database-read-snapshot.schema.json"
 FOUNDATION_PROFILE_SCHEMA = "contracts/packages/foundation-profile-package.schema.json"
 FOUNDATION_TASK_SCHEMA = "contracts/packages/foundation-task-package.schema.json"
+FOUNDATION_CONTEXT_SCHEMA = "contracts/packages/foundation-generation-context-package.schema.json"
 MANIFEST_SCHEMA = "contracts/packages/bound-data-manifest.schema.json"
 RUNTIME_SCHEMA = "contracts/v5-runtime-packages.schema.json"
 
@@ -147,6 +149,11 @@ class BoundDataGenerator:
             _fail("FOUNDATION_TASK_ENVELOPE_INVALID")
         if envelope["artifact_id"] != payload["foundation_task_id"]:
             _fail("FOUNDATION_TASK_IDENTITY_MISMATCH")
+
+    def validate_foundation_generation_context(self, package: dict[str, Any]) -> None:
+        self._validate_transport(package, "foundation_generation_context", FOUNDATION_CONTEXT_SCHEMA)
+        if package["envelope"]["producer_id"] != "EAS-19" or package["envelope"]["mode"] != "foundation":
+            _fail("FOUNDATION_GENERATION_CONTEXT_ENVELOPE_INVALID")
 
     def validate_snapshot(self, package: dict[str, Any]) -> None:
         self._validate_transport(package, "database_read_snapshot", SNAPSHOT_SCHEMA)
@@ -416,6 +423,8 @@ class BoundDataGenerator:
     def build_bound_data(
         self, structure_closure: dict[str, Any], *, operation_closure: dict[str, Any] | None = None,
         foundation_profile: dict[str, Any] | None = None, foundation_task_package: dict[str, Any] | None = None, snapshot: dict[str, Any] | None = None,
+        foundation_generation_context: dict[str, Any] | None = None, selection_traces: list[dict[str, Any]] | None = None,
+        generation_receipt: dict[str, Any] | None = None,
         proposed_data_groups: list[dict[str, Any]] | None = None,
         version: int = 1, attempt_no: int = 1, status: str = "candidate",
         created_at: str | None = None,
@@ -440,6 +449,7 @@ class BoundDataGenerator:
             # 241 consumes the closed scope but never repairs it: every frozen
             # 210 write field must already be present in the 220 package.
             _closure_contract.validate_foundation_closure_task_scope(foundation_task_package, structure_closure)
+            self.validate_foundation_generation_context(foundation_generation_context) if foundation_generation_context is not None else _fail("FOUNDATION_GENERATION_CONTEXT_REQUIRED")
             if foundation_profile is not None:
                 self.validate_foundation_profile(foundation_profile)
                 expected_profile = {
@@ -459,14 +469,20 @@ class BoundDataGenerator:
         qa_id = source["qa_id"]
         trace_id = source["trace_id"]
 
+        if mode == "foundation" and proposed_data_groups is None:
+            _fail("FOUNDATION_241_PROPOSED_DATA_GROUPS_REQUIRED")
         data_groups = list(proposed_data_groups) if proposed_data_groups is not None else self._deterministic_data_groups(closure, mode)
         self._validate_data_groups(data_groups, closure, snapshot, mode)
+        if mode == "foundation":
+            validate_foundation_context(foundation_generation_context, foundation_task_package, structure_closure, snapshot)
+            validate_foundation_traces(data_groups, selection_traces, foundation_generation_context, generation_receipt)
 
         parents = [artifact_ref(source)]
         if mode == "event_data":
             parents.append(artifact_ref(operation_closure["envelope"]))
         else:
             parents.append(artifact_ref(foundation_task_package["envelope"]))
+            parents.append(artifact_ref(foundation_generation_context["envelope"]))
             if foundation_profile is not None:
                 parents.append(artifact_ref(foundation_profile["envelope"]))
         if snapshot is not None:
@@ -479,6 +495,9 @@ class BoundDataGenerator:
             "operation_closure_ref": artifact_ref(operation_closure["envelope"]) if mode == "event_data" else None,
             "database_snapshot_ref": artifact_ref(snapshot["envelope"]) if snapshot is not None else None,
             "foundation_task_ref": artifact_ref(foundation_task_package["envelope"]) if mode == "foundation" else None,
+            "foundation_generation_context_ref": artifact_ref(foundation_generation_context["envelope"]) if mode == "foundation" else None,
+            "selection_traces": copy.deepcopy(selection_traces) if mode == "foundation" else [],
+            "generation_receipt": copy.deepcopy(generation_receipt) if mode == "foundation" else None,
             "data_groups": data_groups,
         }
         return self._wrap(

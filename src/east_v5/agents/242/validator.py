@@ -29,6 +29,7 @@ from referencing import Registry, Resource
 
 from east_v5.artifacts import artifact_ref, content_hash, validate_envelope
 from east_v5.governance import ContractError, load_json, sha256
+from east_v5.agents.foundation_contract import validate_context as validate_foundation_context, validate_traces as validate_foundation_traces
 from east_v5.validators import (
     REGISTRY_SCHEMA_VERSION,
     Snapshot,
@@ -55,8 +56,12 @@ CROSS_TABLE_VALIDATOR = "east_v5.validators.cross_table"
 _COLUMN_KINDS = frozenset({"UNIQUE", "PRIMARY_KEY"})
 
 TRANSPORT_KEYS = {"envelope", "payload"}
-BOUND_DATA_PAYLOAD_KEYS = {"schema_version", "data_package_id", "structure_closure_ref", "operation_closure_ref", "database_snapshot_ref", "foundation_task_ref", "data_groups"}
-LEGACY_BOUND_DATA_PAYLOAD_KEYS = BOUND_DATA_PAYLOAD_KEYS - {"foundation_task_ref"}
+BOUND_DATA_PAYLOAD_KEYS = {"schema_version", "data_package_id", "structure_closure_ref", "operation_closure_ref", "database_snapshot_ref", "foundation_task_ref", "foundation_generation_context_ref", "selection_traces", "generation_receipt", "data_groups"}
+# Event-data packages produced before EAS-114 have neither Foundation-only
+# fields nor a task reference; preserving this shape is the promised zero
+# semantic change for the event path.
+LEGACY_BOUND_DATA_PAYLOAD_KEYS = {"schema_version", "data_package_id", "structure_closure_ref", "operation_closure_ref", "database_snapshot_ref", "data_groups"}
+PRE_EAS114_FOUNDATION_PAYLOAD_KEYS = LEGACY_BOUND_DATA_PAYLOAD_KEYS | {"foundation_task_ref"}
 STRUCTURE_FIELDS = {"schema_version", "constraint_asset_version", "graph_version", "tables", "fields", "references"}
 FOUNDATION_STRUCTURE_FIELDS = STRUCTURE_FIELDS | {"foundation_task_ref"}
 
@@ -126,7 +131,7 @@ class DataValidator:
         if not isinstance(payload, dict) or set(payload) != expected:
             _fail("UNKNOWN_FIELD:STRUCTURE_CLOSURE")
 
-    def validate_bound_data(self, package: dict[str, Any], structure_closure: dict[str, Any]) -> None:
+    def validate_bound_data(self, package: dict[str, Any], structure_closure: dict[str, Any], *, foundation_task_package: dict[str, Any] | None = None, database_snapshot: dict[str, Any] | None = None, foundation_generation_context: dict[str, Any] | None = None) -> None:
         """Hard contract validation; raises ContractError on the first rejection.
 
         These rejections mean the package is not a well-formed bound data
@@ -137,7 +142,7 @@ class DataValidator:
         if not isinstance(package, dict) or set(package) != TRANSPORT_KEYS:
             _fail("TRANSPORT_PACKAGE_INVALID")
         envelope, payload = package["envelope"], package["payload"]
-        if not isinstance(payload, dict) or set(payload) not in (BOUND_DATA_PAYLOAD_KEYS, LEGACY_BOUND_DATA_PAYLOAD_KEYS):
+        if not isinstance(payload, dict) or set(payload) not in (BOUND_DATA_PAYLOAD_KEYS, LEGACY_BOUND_DATA_PAYLOAD_KEYS, PRE_EAS114_FOUNDATION_PAYLOAD_KEYS):
             _fail("UNKNOWN_FIELD:BOUND_DATA")
         validate_envelope(self.repo_root, envelope, payload)
         if (envelope["artifact_type"], envelope["producer_id"]) != ("bound_data", "241"):
@@ -156,6 +161,14 @@ class DataValidator:
                 _fail("FOUNDATION_TASK_REF_REQUIRED")
             if payload.get("foundation_task_ref") != structure_closure["payload"].get("foundation_task_ref"):
                 _fail("FOUNDATION_TASK_REF_DRIFT")
+            if payload.get("foundation_generation_context_ref") is None or not payload.get("selection_traces") or payload.get("generation_receipt") is None:
+                _fail("FOUNDATION_SELECTION_CONTRACT_REQUIRED")
+            if foundation_task_package is None or database_snapshot is None or foundation_generation_context is None:
+                _fail("FOUNDATION_CONTEXT_INPUTS_REQUIRED")
+            validate_foundation_context(foundation_generation_context, foundation_task_package, structure_closure, database_snapshot)
+            if payload["foundation_generation_context_ref"] != artifact_ref(foundation_generation_context["envelope"]):
+                _fail("FOUNDATION_CONTEXT_REFERENCE_MISMATCH")
+            validate_foundation_traces(payload["data_groups"], payload["selection_traces"], foundation_generation_context, payload["generation_receipt"])
         elif payload.get("foundation_task_ref") is not None:
             _fail("FOUNDATION_TASK_REF_FORBIDDEN")
         if envelope["mode"] == "event_data" and payload["operation_closure_ref"] is None:
@@ -287,14 +300,15 @@ class DataValidator:
 
     def freeze_bound_data(
         self, bound_data: dict[str, Any], structure_closure: dict[str, Any], resolver: RuleResolver, *,
-        validated_at: str | None = None,
+        validated_at: str | None = None, foundation_task_package: dict[str, Any] | None = None,
+        database_snapshot: dict[str, Any] | None = None, foundation_generation_context: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Validate read-only and return the reproducible verified package.
 
         ``validated_at`` defaults to the source ``created_at`` so the same input
         always reproduces the same immutable package.
         """
-        self.validate_bound_data(bound_data, structure_closure)
+        self.validate_bound_data(bound_data, structure_closure, foundation_task_package=foundation_task_package, database_snapshot=database_snapshot, foundation_generation_context=foundation_generation_context)
         before = copy.deepcopy((bound_data, structure_closure))
         located, module_results, registry_version, universe, receipts = self._run_checks(bound_data, structure_closure, resolver)
         if located:
@@ -335,10 +349,10 @@ class DataValidator:
         return output
 
     def build_validation_feedback(
-        self, bound_data: dict[str, Any], structure_closure: dict[str, Any], resolver: RuleResolver,
+        self, bound_data: dict[str, Any], structure_closure: dict[str, Any], resolver: RuleResolver, *, foundation_task_package: dict[str, Any] | None = None, database_snapshot: dict[str, Any] | None = None, foundation_generation_context: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Aggregate every validation failure and emit data_validation_failed_feedback."""
-        self.validate_bound_data(bound_data, structure_closure)
+        self.validate_bound_data(bound_data, structure_closure, foundation_task_package=foundation_task_package, database_snapshot=database_snapshot, foundation_generation_context=foundation_generation_context)
         located, _, registry_version, _, _ = self._run_checks(bound_data, structure_closure, resolver)
         if not located:
             _fail("VALIDATION_NOT_FAILED")

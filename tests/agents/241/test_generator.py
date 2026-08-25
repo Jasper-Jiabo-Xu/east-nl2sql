@@ -15,7 +15,11 @@ mod = importlib.import_module("east_v5.agents.241.generator")
 BoundDataGenerator = mod.BoundDataGenerator
 closure_mod = importlib.import_module("east_v5.agents.220.closure")
 from east_v5.artifacts import artifact_ref, content_hash
-from east_v5.governance import ContractError
+from east_v5.governance import ContractError, sha256
+try:
+    from tests.agents.foundation_eas114_helpers import context as foundation_context, groups_and_traces, receipt as foundation_receipt
+except ModuleNotFoundError:
+    from agents.foundation_eas114_helpers import context as foundation_context, groups_and_traces, receipt as foundation_receipt
 
 FIXED_TIME = "2026-08-16T00:00:00+00:00"
 
@@ -92,12 +96,19 @@ class GeneratorTests(unittest.TestCase):
         # in a hand-authored structure-closure fixture.
         self.foundation_closure = closure_mod.build_closure(self.task, [])
         self.snapshot = fixture("database-read-snapshot.json")
+        self.foundation_snapshot = copy.deepcopy(self.snapshot)
+        self.foundation_snapshot["envelope"]["mode"] = "foundation"
+        self.foundation_snapshot["payload"]["snapshot_hash"] = sha256({key: value for key, value in self.foundation_snapshot["payload"].items() if key != "snapshot_hash"})
+        rehash(self.foundation_snapshot)
 
     def _event(self, **kwargs):
         return self.builder.build_bound_data(self.event_closure, operation_closure=self.operation, snapshot=self.snapshot, created_at=FIXED_TIME, **kwargs)
 
     def _foundation(self, **kwargs):
-        return self.builder.build_bound_data(self.foundation_closure, foundation_task_package=self.task, foundation_profile=self.profile, created_at=FIXED_TIME, **kwargs)
+        context = foundation_context(self.task, self.foundation_closure, self.foundation_snapshot, created_at=FIXED_TIME)
+        groups, traces = groups_and_traces(self.foundation_closure)
+        groups = kwargs.pop("proposed_data_groups", groups)
+        return self.builder.build_bound_data(self.foundation_closure, foundation_task_package=self.task, foundation_profile=self.profile, snapshot=self.foundation_snapshot, foundation_generation_context=context, proposed_data_groups=groups, selection_traces=kwargs.pop("selection_traces", traces), generation_receipt=kwargs.pop("generation_receipt", foundation_receipt(context, groups, traces)), created_at=FIXED_TIME, **kwargs)
 
     # ------------------------------------------------------------ success path
     def test_event_build_valid(self):
@@ -145,6 +156,36 @@ class GeneratorTests(unittest.TestCase):
         first = self._event()
         second = self._event()
         self.assertEqual(first["envelope"]["content_hash"], second["envelope"]["content_hash"])
+
+    def test_foundation_reproducible_with_real_agent_receipt(self):
+        self.assertEqual(self._foundation(), self._foundation())
+
+    def test_foundation_requires_runtime_context(self):
+        groups, traces = groups_and_traces(self.foundation_closure)
+        with self.assertRaisesRegex(ContractError, "FOUNDATION_GENERATION_CONTEXT_REQUIRED"):
+            self.builder.build_bound_data(
+                self.foundation_closure, foundation_task_package=self.task, foundation_profile=self.profile,
+                snapshot=self.foundation_snapshot, proposed_data_groups=groups, selection_traces=traces,
+                generation_receipt={}, created_at=FIXED_TIME,
+            )
+
+    def test_foundation_rejects_incomplete_or_infeasible_selection_trace(self):
+        context = foundation_context(self.task, self.foundation_closure, self.foundation_snapshot, created_at=FIXED_TIME)
+        groups, traces = groups_and_traces(self.foundation_closure)
+        with self.assertRaisesRegex(ContractError, "FOUNDATION_SELECTION_TRACE_COVERAGE_MISMATCH"):
+            self.builder.build_bound_data(
+                self.foundation_closure, foundation_task_package=self.task, foundation_profile=self.profile,
+                snapshot=self.foundation_snapshot, foundation_generation_context=context, proposed_data_groups=groups,
+                selection_traces=traces[:-1], generation_receipt=foundation_receipt(context, groups, traces[:-1]), created_at=FIXED_TIME,
+            )
+        infeasible = copy.deepcopy(traces)
+        infeasible[0]["feasible_values"] = ["EAS114-not-chosen"]
+        with self.assertRaisesRegex(ContractError, "FOUNDATION_SELECTION_OUTSIDE_FEASIBLE_SET"):
+            self.builder.build_bound_data(
+                self.foundation_closure, foundation_task_package=self.task, foundation_profile=self.profile,
+                snapshot=self.foundation_snapshot, foundation_generation_context=context, proposed_data_groups=groups,
+                selection_traces=infeasible, generation_receipt=foundation_receipt(context, groups, infeasible), created_at=FIXED_TIME,
+            )
 
     # ------------------------------------------------------------- mode gates
     def test_foundation_rejects_operation(self):
