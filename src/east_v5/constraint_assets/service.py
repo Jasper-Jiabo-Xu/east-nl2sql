@@ -184,6 +184,38 @@ def _normalized_json_text(value: Any) -> str:
         raise ContractError("ASSET_RECORD_NORMALIZATION_FAILED") from exc
 
 
+def _validated_graph_edge(record: Any) -> dict[str, Any]:
+    """Validate one immutable TRG-V1.0.0 edge without changing its payload.
+
+    The published graph's authoritative orientation is ``source -> target``.
+    A graph query therefore consumes its real field-level endpoint names; the
+    legacy synthetic provider/consumer table fields are intentionally not a
+    compatibility format.
+    """
+    if not isinstance(record, dict):
+        _fail("ASSET_GRAPH_RECORD_INVALID")
+    required = ("source_table", "source_field", "target_table", "target_field", "edge_type")
+    if not all(isinstance(record.get(key), str) and record[key] for key in required):
+        _fail("ASSET_GRAPH_RECORD_INVALID")
+    for table_key, field_key in (("source_table", "source_field"), ("target_table", "target_field")):
+        field_table, separator, field_code = record[field_key].partition(".")
+        if not separator or not field_table or not field_code or field_table != record[table_key]:
+            _fail("ASSET_GRAPH_RECORD_INVALID")
+
+    expression = record.get("expression")
+    if isinstance(expression, dict) and any(key in expression for key in ("direction", "provider_fields", "consumer_field")):
+        providers = expression.get("provider_fields")
+        if (
+            expression.get("direction") != "PROVIDER_TO_CONSUMER"
+            or expression.get("consumer_field") != record["target_field"]
+            or not isinstance(providers, list)
+            or not all(isinstance(field, str) and field for field in providers)
+            or record["source_field"] not in providers
+        ):
+            _fail("ASSET_GRAPH_RECORD_INVALID")
+    return json.loads(_canonical(record))
+
+
 def _mac(key: bytes, value: Any) -> str:
     return hmac.new(key, _canonical(value).encode("utf-8"), hashlib.sha256).hexdigest()
 
@@ -495,15 +527,13 @@ class ConstraintAssetService:
                     if not line.strip():
                         continue
                     record = json.loads(line)
-                    if not isinstance(record, dict) or not all(isinstance(record.get(key), str) and record[key] for key in ("provider_table_code", "consumer_table_code", "edge_type")):
-                        _fail("ASSET_GRAPH_RECORD_INVALID")
-                    if table_code in {record["provider_table_code"], record["consumer_table_code"]}:
-                        normalized = json.loads(_canonical(record))
+                    normalized = _validated_graph_edge(record)
+                    if table_code in {normalized["source_table"], normalized["target_table"]}:
                         normalized["canonical_edge_hash"] = _digest(normalized)
                         records.append(normalized)
         except (OSError, json.JSONDecodeError) as exc:
             raise ContractError("ASSET_GRAPH_QUERY_FAILED") from exc
-        records.sort(key=lambda record: (record["provider_table_code"], record["consumer_table_code"], record["edge_type"], record["canonical_edge_hash"]))
+        records.sort(key=lambda record: (record["source_table"], record["target_table"], record["edge_type"], record["canonical_edge_hash"]))
         return self._page(graph, "graph_edges_for_table", table_code, records, limit, cursor)
 
 

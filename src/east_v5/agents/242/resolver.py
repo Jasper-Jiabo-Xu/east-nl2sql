@@ -305,11 +305,29 @@ class AssetBoundResolver:
     @staticmethod
     def _ingest_graph(records: list[dict[str, Any]], graph_edges: set[tuple[str, str]]) -> None:
         for edge in records:
-            if not isinstance(edge, dict) or not isinstance(edge.get("provider_table_code"), str) or not edge["provider_table_code"] or not isinstance(edge.get("consumer_table_code"), str) or not edge["consumer_table_code"]:
+            if not isinstance(edge, dict) or not all(isinstance(edge.get(key), str) and edge[key] for key in ("source_table", "source_field", "target_table", "target_field", "edge_type", "canonical_edge_hash")):
                 _fail("QUERY_RECEIPT_INVALID")
-            if edge.get("canonical_edge_hash") is not None and edge["canonical_edge_hash"] != sha256({key: value for key, value in edge.items() if key != "canonical_edge_hash"}):
+            try:
+                source_table, _ = split_endpoint(edge["source_field"])
+                target_table, _ = split_endpoint(edge["target_field"])
+            except ContractError:
                 _fail("QUERY_RECEIPT_INVALID")
-            graph_edges.add((edge["provider_table_code"], edge["consumer_table_code"]))
+            if source_table != edge["source_table"] or target_table != edge["target_table"]:
+                _fail("QUERY_RECEIPT_INVALID")
+            expression = edge.get("expression")
+            if isinstance(expression, dict) and any(key in expression for key in ("direction", "provider_fields", "consumer_field")):
+                providers = expression.get("provider_fields")
+                if (
+                    expression.get("direction") != "PROVIDER_TO_CONSUMER"
+                    or expression.get("consumer_field") != edge["target_field"]
+                    or not isinstance(providers, list)
+                    or not all(isinstance(field, str) and field for field in providers)
+                    or edge["source_field"] not in providers
+                ):
+                    _fail("QUERY_RECEIPT_INVALID")
+            if edge["canonical_edge_hash"] != sha256({key: value for key, value in edge.items() if key != "canonical_edge_hash"}):
+                _fail("QUERY_RECEIPT_INVALID")
+            graph_edges.add((edge["source_table"], edge["target_table"]))
 
     @staticmethod
     def _verify_references_covered(closure: dict[str, Any], graph_edges: set[tuple[str, str]]) -> None:

@@ -70,7 +70,16 @@ class SanitizedRuntime:
         self._create_sqlite()
         self._create_single_field_sqlite()
         self.edges.write_text(
-            json.dumps({"provider_table_code": "FIXTURE_T002", "consumer_table_code": "FIXTURE_T001", "edge_type": "REFERENCE"}) + "\n",
+            json.dumps({
+                "source_table": "FIXTURE_T002", "source_field": "FIXTURE_T002.PK001",
+                "target_table": "FIXTURE_T001", "target_field": "FIXTURE_T001.F001",
+                "edge_type": "REFERENCE",
+                "expression": {
+                    "direction": "PROVIDER_TO_CONSUMER",
+                    "provider_fields": ["FIXTURE_T002.PK001"],
+                    "consumer_field": "FIXTURE_T001.F001",
+                },
+            }) + "\n",
             encoding="utf-8",
         )
         for path in (self.nodes, self.projections, self.closures):
