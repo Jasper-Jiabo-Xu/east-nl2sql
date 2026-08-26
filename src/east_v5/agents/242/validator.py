@@ -411,6 +411,13 @@ class DataValidator:
         return output
 
 
+def freeze_foundation_bound_data_from_runtime(bootstrap: Any, assembly: Any, launch_receipt: dict[str, Any], bound_data: dict[str, Any], structure_closure: dict[str, Any], resolver: RuleResolver, **kwargs: Any) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Production 242 entrance: consume the sealed 241 edge before validation."""
+    accepted = bootstrap.foundation_242_launcher().verify_downstream(launch_receipt)
+    frozen = assembly.validator(Path(__file__).resolve().parents[4]).freeze_bound_data(bound_data, structure_closure, resolver, **kwargs)
+    return frozen, accepted
+
+
 def _table_of(rule: dict[str, Any]) -> str:
     """The single table an INTRA_TABLE rule operates on (from its endpoints)."""
     fields = rule.get("fields") or []

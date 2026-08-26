@@ -76,11 +76,14 @@ def _ref(value: Any, code: str) -> dict[str, Any]:
 class FoundationRepoLauncher:
     """Derive the four v12 launch inputs from the sealed local data plane."""
 
-    def __init__(self, bootstrap: RuntimeBootstrap) -> None:
+    def __init__(self, bootstrap: RuntimeBootstrap, *, agent_role: str = "241") -> None:
         if not isinstance(bootstrap, RuntimeBootstrap):
             _fail("FOUNDATION_REPO_LAUNCHER_BOOTSTRAP_REQUIRED")
+        if agent_role not in {"000", "241", "242", "260"}:
+            _fail("FOUNDATION_REPO_LAUNCHER_ROLE_FORBIDDEN")
         self.bootstrap = bootstrap
         self.checkout = bootstrap.checkout
+        self.agent_role = agent_role
 
     def _root(self, evidence: BootstrapEvidence) -> Path:
         if "V5_RUNTIME_ROOT" in self.bootstrap.environ:
@@ -219,24 +222,33 @@ class FoundationRepoLauncher:
         return claims, graph, manifest
 
     def _identity(self, evidence: BootstrapEvidence, graph: dict[str, Any], inputs: dict[str, Any], *, agent_id: str) -> dict[str, Any]:
-        # The task-local identity is sealed inside the bootstrap envelope.
-        # launch() deliberately has no identity parameter.
-        value = self.bootstrap.envelope.get("runtime_task_identity")
-        needed = {"workspace_id", "project_id", "issue_id", "task_id", "agent_uuid", "runtime_id", "run_id", "attempt"}
+        # Identity is an already signed root-registry record, derived by the
+        # repo-side Bootstrap entrypoint.  In particular, the task envelope
+        # has no identity override field that a caller can simply move here.
+        try:
+            value = self.bootstrap.foundation_task_identity_issuer().load(agent_id)
+        except ContractError as exc:
+            raise FoundationRepoLauncherError(str(exc)) from exc
+        needed = {"schema_version", "workspace_id", "project_id", "issue_id", "task_id", "agent_id", "agent_uuid", "runtime_id", "run_id", "attempt", "root_binding_id", "inputs_sha256", "git_head", "content_hash", "attestation"}
         if not isinstance(value, dict) or set(value) != needed:
             _fail("FOUNDATION_REPO_LAUNCHER_TASK_IDENTITY_INVALID")
         context = self.bootstrap.declaration["runtime_context"]
-        if (not all(isinstance(value[key], str) and value[key] for key in needed - {"attempt"})
-                or agent_id not in {"241", "242", "260"} or value["issue_id"] != "EAS-114"
+        identity_body = {key: item for key, item in value.items() if key not in {"content_hash", "attestation"}}
+        if (value.get("schema_version") != "foundation-task-identity/v1"
+                or value.get("content_hash") != sha256(identity_body)
+                or not all(isinstance(value[key], str) and value[key] for key in ("workspace_id", "project_id", "issue_id", "task_id", "agent_id", "agent_uuid", "runtime_id", "run_id", "root_binding_id", "inputs_sha256", "git_head"))
+                or agent_id not in {"241", "242", "260"} or value["agent_id"] != agent_id or value["issue_id"] != "EAS-114"
                 or value["agent_uuid"] != graph["real_agents"][agent_id]["uuid"]
                 or value["runtime_id"] != graph["real_agents"][agent_id]["runtime_id"]
-                or value["run_id"] != inputs["run_id"] or value["attempt"] != inputs["attempt"]):
+                or value["run_id"] != inputs["run_id"] or value["attempt"] != inputs["attempt"]
+                or value["root_binding_id"] != evidence.root_binding_id or value["inputs_sha256"] != inputs["inputs_sha256"]
+                or value["git_head"] != evidence.candidate_head_sha):
             _fail("FOUNDATION_REPO_LAUNCHER_TASK_IDENTITY_INVALID")
         # Context identifiers are checked against the bootstrap declaration,
         # not trusted merely because the task supplied text.
         if (value["workspace_id"], value["project_id"]) != (context["workspace_id"], context["project_id"]):
             _fail("FOUNDATION_REPO_LAUNCHER_TASK_IDENTITY_INVALID")
-        return dict(value)
+        return {key: value[key] for key in ("workspace_id", "project_id", "issue_id", "task_id", "agent_uuid", "runtime_id", "run_id", "attempt")}
 
     def launch(self) -> dict[str, Any]:
         """Prepare one idempotent 241 launch from sealed Foundation inputs."""
@@ -282,11 +294,10 @@ class FoundationRepoLauncher:
         inputs = self._sealed_inputs(root, evidence)
         bundle = self._install_bundle(root)
         claims, graph, _manifest = self._claims(bundle)
-        value = self.bootstrap.envelope.get("runtime_task_identity")
-        if not isinstance(value, dict):
-            _fail("FOUNDATION_REPO_LAUNCHER_TASK_IDENTITY_INVALID")
-        target_agent_id = next((agent for agent in ("242", "260") if value.get("agent_uuid") == graph["real_agents"][agent]["uuid"]), None)
-        if target_agent_id is None:
+        # The caller cannot nominate its agent identity.  Downstream adapters
+        # carry a fixed node role selected by their production entrypoint.
+        target_agent_id = self.agent_role
+        if target_agent_id not in {"242", "260"}:
             _fail("FOUNDATION_REPO_LAUNCHER_TASK_IDENTITY_INVALID")
         identity = self._identity(evidence, graph, inputs, agent_id=target_agent_id)
         # Re-read all 000 inputs rather than trusting its outer launch HMAC.

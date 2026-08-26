@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from east_v5.governance import canonical_bytes, sha256
 from east_v5.runtime.bootstrap import RuntimeBootstrap, root_binding_id
@@ -32,11 +33,6 @@ class FoundationRepoLauncherTests(unittest.TestCase):
         def digest(relative: str) -> str:
             return hashlib.sha256((ROOT / relative).read_bytes()).hexdigest()
 
-        self.identity = {
-            "workspace_id": "workspace", "project_id": "project", "issue_id": "EAS-114",
-            "task_id": "task-241", "agent_uuid": "7df640f9-973f-4c46-8302-df1256f60146",
-            "runtime_id": "0e5e9dd9-5135-4937-bb03-92b77adb8395", "run_id": "accepted-run", "attempt": 1,
-        }
         self.envelope = {
             "root_binding_id": root_binding_id(self.context),
             "execution_bootstrap": {
@@ -48,7 +44,6 @@ class FoundationRepoLauncherTests(unittest.TestCase):
                 "runtime_context": self.context,
                 "skill_bundle": {"skill_name": "east-v5-runtime-bootstrap-v1", "skill_version": "v1", "skill_manifest_sha256": "a" * 64},
             },
-            "runtime_task_identity": self.identity,
         }
 
         def git_runner(args: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
@@ -76,16 +71,23 @@ class FoundationRepoLauncherTests(unittest.TestCase):
         (recovery / "recovery-receipt.json").write_text(json.dumps({"root_binding_id": self.envelope["root_binding_id"], "receipt_sha256": "d" * 64}))
         (recovery / "recovery-receipt.json").chmod(0o600)
         self._write_inputs()
+        # This suite isolates the launch/task-edge contract.  Full immutable
+        # parent-chain byte checks are exercised by the data-plane suite.
+        self.parent_chain = patch("east_v5.runtime.foundation_fixed_component_000.FoundationFixedComponent000Issuer._verify_parent_chain", return_value=(
+            {"root_binding_id": self.envelope["root_binding_id"], "container_sha256": "c" * 64},
+            {"receipt_sha256": "d" * 64},
+        ))
+        self.parent_chain.start()
 
     def _issue_000(self) -> None:
         self.bootstrap.foundation_fixed_component_issuer().issue()
+        self.bootstrap.foundation_task_identity_issuer().issue("241")
 
-    def _task_bootstrap(self, *, task_id: str, agent_uuid: str) -> RuntimeBootstrap:
-        identity = {**self.identity, "task_id": task_id, "agent_uuid": agent_uuid}
-        envelope = {**self.envelope, "runtime_task_identity": identity}
-        return RuntimeBootstrap(ROOT, envelope, environ={}, platform="darwin", home=self.home, runner=self.bootstrap.runner)
+    def _task_bootstrap(self, agent_id: str) -> RuntimeBootstrap:
+        return RuntimeBootstrap(ROOT, self.envelope, environ={}, platform="darwin", home=self.home, runner=self.bootstrap.runner)
 
     def tearDown(self) -> None:
+        self.parent_chain.stop()
         shutil.rmtree(self.home, ignore_errors=True)
 
     def _write_inputs(self) -> None:
@@ -115,11 +117,13 @@ class FoundationRepoLauncherTests(unittest.TestCase):
         self.assertEqual(receipt["runtime_graph_envelope"]["target_agent_id"], "241")
         self.assertEqual(receipt["route"], {"241": "242", "242": "260"})
         self.assertEqual(launcher.launch(), receipt)  # idempotent launch replay
-        validator = self._task_bootstrap(task_id="task-242", agent_uuid="4e801c18-7048-4227-a5c7-515f51a5e5ba")
-        accepted_242 = validator.foundation_repo_launcher().verify_downstream(receipt)
+        self.bootstrap.foundation_task_identity_issuer().issue("242")
+        validator = self._task_bootstrap("242")
+        accepted_242 = validator.foundation_242_launcher().verify_downstream(receipt)
         self.assertEqual(accepted_242["status"], "accepted")
-        regression = self._task_bootstrap(task_id="task-260", agent_uuid="f89e7039-e213-4e1e-9204-64f7ce69ac1c")
-        accepted_260 = regression.foundation_repo_launcher().verify_downstream(accepted_242)
+        self.bootstrap.foundation_task_identity_issuer().issue("260")
+        regression = self._task_bootstrap("260")
+        accepted_260 = regression.foundation_260_launcher().verify_downstream(accepted_242)
         self.assertEqual(accepted_260["upstream_agent_id"], "242")
 
     def test_rejects_input_forgery_before_bundle_or_graph_state(self) -> None:
@@ -135,9 +139,10 @@ class FoundationRepoLauncherTests(unittest.TestCase):
         receipt = self.bootstrap.foundation_repo_launcher().launch()
         # 260 cannot consume the 241 receipt directly, even with a valid
         # task-local identity and root key.
-        regression = self._task_bootstrap(task_id="task-260", agent_uuid="f89e7039-e213-4e1e-9204-64f7ce69ac1c")
+        self.bootstrap.foundation_task_identity_issuer().issue("260")
+        regression = self._task_bootstrap("260")
         with self.assertRaisesRegex(FoundationRepoLauncherError, "FOUNDATION_REPO_LAUNCHER_DOWNSTREAM_DRIFT"):
-            regression.foundation_repo_launcher().verify_downstream(receipt)
+            regression.foundation_260_launcher().verify_downstream(receipt)
 
     def test_rejects_environment_root_override(self) -> None:
         overridden = RuntimeBootstrap(ROOT, self.envelope, environ={"V5_RUNTIME_ROOT": str(self.root)}, platform="darwin", home=self.home, runner=self.bootstrap.runner)
@@ -147,22 +152,37 @@ class FoundationRepoLauncherTests(unittest.TestCase):
     def test_identity_cannot_be_injected_into_launch(self) -> None:
         self._issue_000()
         with self.assertRaises(TypeError):
-            self.bootstrap.foundation_repo_launcher().launch(self.identity)  # type: ignore[call-arg]
+            self.bootstrap.foundation_repo_launcher().launch({})  # type: ignore[call-arg]
+
+    def test_signed_task_identity_tamper_fails_before_241_launch(self) -> None:
+        self._issue_000()
+        identity_dir = self.root / "foundation-task-identities-v1"
+        record = next(identity_dir.glob("241-*.json"))
+        value = json.loads(record.read_text()); value["run_id"] = "forged-run"
+        record.write_text(json.dumps(value)); record.chmod(0o600)
+        with self.assertRaisesRegex(FoundationRepoLauncherError, "FOUNDATION_TASK_IDENTITY_DRIFT"):
+            self.bootstrap.foundation_repo_launcher().launch()
 
     def test_launcher_requires_preissued_production_record(self) -> None:
-        with self.assertRaisesRegex(Exception, "FOUNDATION_000_ISSUER_KEY_UNSAFE|FOUNDATION_000_REGISTRY_REQUIRED"):
+        with self.assertRaisesRegex(Exception, "FOUNDATION_TASK_IDENTITY_REQUIRED|FOUNDATION_000_ISSUER_KEY_UNSAFE|FOUNDATION_000_REGISTRY_REQUIRED"):
             self.bootstrap.foundation_repo_launcher().launch()
 
     def test_issuer_is_idempotent_and_tampered_registry_record_is_rejected(self) -> None:
         issuer = self.bootstrap.foundation_fixed_component_issuer()
         first = issuer.issue()
         self.assertEqual(first, issuer.issue())
+        self.bootstrap.foundation_task_identity_issuer().issue("241")
         self.assertNotEqual((self.root / ".foundation-fixed-component-000-v1.key").read_bytes(), (self.root / ".foundation-parent-chain-materializer-v1.key").read_bytes())
         record = self.root / "foundation-fixed-component-000-v1" / f"{first['issued_replay_key']}.json"
         tampered = json.loads(record.read_text()); tampered["git_head"] = "0" * 40
         record.write_text(json.dumps(tampered)); record.chmod(0o600)
         with self.assertRaisesRegex(Exception, "FOUNDATION_000_PRODUCTION_RECORD_DRIFT"):
             self.bootstrap.foundation_repo_launcher().launch()
+
+    def test_issuer_recomputes_recovery_before_signing(self) -> None:
+        self.parent_chain.stop()
+        with self.assertRaisesRegex(Exception, "FOUNDATION_000_RECOVERY_INVALID"):
+            self.bootstrap.foundation_fixed_component_issuer().issue()
 
 
 if __name__ == "__main__":

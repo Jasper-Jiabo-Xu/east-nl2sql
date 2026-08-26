@@ -456,10 +456,28 @@ class RuntimeBootstrap:
         """
         self.preflight()
         from east_v5.runtime.foundation_repo_launcher import FoundationRepoLauncher
-        return FoundationRepoLauncher(self)
+        return FoundationRepoLauncher(self, agent_role="241")
+
+    def foundation_242_launcher(self) -> Any:
+        """The only repository-side 242 entry into the Foundation edge gate."""
+        self.preflight()
+        from east_v5.runtime.foundation_repo_launcher import FoundationRepoLauncher
+        return FoundationRepoLauncher(self, agent_role="242")
+
+    def foundation_260_launcher(self) -> Any:
+        """The only repository-side 260 entry into the Foundation edge gate."""
+        self.preflight()
+        from east_v5.runtime.foundation_repo_launcher import FoundationRepoLauncher
+        return FoundationRepoLauncher(self, agent_role="260")
 
     def foundation_fixed_component_issuer(self) -> Any:
         """Return the sole, parameterless production issuer for fixed 000."""
         self.preflight()
         from east_v5.runtime.foundation_fixed_component_000 import FoundationFixedComponent000Issuer
         return FoundationFixedComponent000Issuer(self)
+
+    def foundation_task_identity_issuer(self) -> Any:
+        """Return the root-bound, repo-side Foundation task identity issuer."""
+        self.preflight()
+        from east_v5.runtime.foundation_task_identity import FoundationTaskIdentityIssuer
+        return FoundationTaskIdentityIssuer(self)

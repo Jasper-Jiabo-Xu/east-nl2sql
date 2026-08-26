@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import importlib
 import json
 import os
 import stat
@@ -16,6 +17,9 @@ _PRODUCER = "east-v5-foundation-fixed-000-issuer/v1"
 _KEY = ".foundation-fixed-component-000-v1.key"
 _DIR = "foundation-fixed-component-000-v1"
 _INPUTS = "foundation-launch-inputs-v1.json"
+_TASK_HASH = "899ac6cdea3a9e08fa01d77102850952f9b8c83db3bf94672fe5ae8a31982fbe"
+_CLOSURE_HASH = "168aab095660895c36eaece21e9f4de6ea3a8874939dd1d195950fc70a57dfce"
+_RESOLVER_HASH = "5dd7a81e22c68199f212e1e37aa1ad8dd989eb34de33098c14fe6da656fcaa26"
 
 
 class FoundationFixedComponent000Error(ContractError):
@@ -71,6 +75,67 @@ class FoundationFixedComponent000Issuer:
         except OSError as exc:
             raise FoundationFixedComponent000Error("FOUNDATION_000_ISSUER_KEY_UNAVAILABLE") from exc
 
+    def _verify_parent_chain(self, root: Path, evidence: Any, inputs: dict[str, Any], materialization: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+        """Re-authenticate every immutable parent, not just receipt labels."""
+        container = root / "foundation-parent-chain-container-v1"
+        self._private(container, 0o700, "FOUNDATION_000_MATERIALIZER_UNAVAILABLE")
+        manifest = _load(container / "foundation-parent-chain-container-manifest.json", "FOUNDATION_000_MATERIALIZER_UNAVAILABLE")
+        recovery_dir = root / "foundation-parent-chain-recovery-v1"
+        self._private(recovery_dir, 0o700, "FOUNDATION_000_RECOVERY_UNAVAILABLE")
+        recovery = _load(recovery_dir / "recovery-receipt.json", "FOUNDATION_000_RECOVERY_UNAVAILABLE")
+        recovery_body = {key: value for key, value in recovery.items() if key != "receipt_sha256"}
+        required_recovery = {"schema_version", "source_issue_id", "source_task_id", "source_runtime_id", "source_comment_id", "closure_sha256", "evidence_sha256", "foundation_task_hash", "closure_hash", "ancestor_000_hash", "root_binding_id", "registry_task_ref", "rehydrated_from_accepted_projection", "receipt_sha256"}
+        if (set(recovery) != required_recovery or recovery.get("schema_version") != "foundation_parent_chain_recovery_receipt/v1"
+                or recovery.get("receipt_sha256") != sha256(recovery_body) or recovery.get("root_binding_id") != evidence.root_binding_id
+                or recovery.get("foundation_task_hash") != _TASK_HASH or recovery.get("closure_hash") != _CLOSURE_HASH
+                or inputs.get("resolver_universe_hash") != _RESOLVER_HASH):
+            _fail("FOUNDATION_000_RECOVERY_INVALID")
+        closure_path, evidence_path = recovery_dir / "structure_closure.json", recovery_dir / "evidence.json"
+        self._private(closure_path, 0o600, "FOUNDATION_000_RECOVERY_INVALID")
+        self._private(evidence_path, 0o600, "FOUNDATION_000_RECOVERY_INVALID")
+        if hashlib.sha256(closure_path.read_bytes()).hexdigest() != recovery["closure_sha256"] or hashlib.sha256(evidence_path.read_bytes()).hexdigest() != recovery["evidence_sha256"]:
+            _fail("FOUNDATION_000_RECOVERY_INVALID")
+        closure = _load(closure_path, "FOUNDATION_000_RECOVERY_INVALID")
+        try:
+            importlib.import_module("east_v5.agents.220.closure").validate_structure_closure_package(closure)
+        except Exception as exc:
+            raise FoundationFixedComponent000Error("FOUNDATION_000_RECOVERY_INVALID") from exc
+        envelope, payload = closure["envelope"], closure["payload"]
+        if (envelope.get("content_hash") != _CLOSURE_HASH
+                or payload.get("foundation_task_ref", {}).get("content_hash") != _TASK_HASH
+                or recovery.get("registry_task_ref", {}).get("content_hash") != _TASK_HASH):
+            _fail("FOUNDATION_000_RECOVERY_INVALID")
+        config, config_hash = self.bootstrap._materializer_config()
+        if (manifest.get("container_sha256") != sha256({key: value for key, value in manifest.items() if key != "container_sha256"})
+                or manifest.get("root_binding_id") != evidence.root_binding_id or manifest.get("config_sha256") != config_hash
+                or manifest.get("attachments") != config["attachments"] or manifest.get("assets") != materialization.get("assets")
+                or manifest.get("container_sha256") != materialization.get("container_sha256")
+                or manifest.get("runtime_manifest_sha256") != materialization.get("runtime_manifest_sha256")
+                or manifest.get("hierarchy_mapping_sha256") != materialization.get("hierarchy_mapping_sha256")):
+            _fail("FOUNDATION_000_MATERIALIZER_DRIFT")
+        for item in config["attachments"]:
+            path = container / item["filename"]
+            self._private(path, 0o600, "FOUNDATION_000_MATERIALIZER_DRIFT")
+            if hashlib.sha256(path.read_bytes()).hexdigest() != item["byte_sha256"]:
+                _fail("FOUNDATION_000_MATERIALIZER_DRIFT")
+            self.bootstrap._semantic_attachment(item, path)
+        for item in config["assets"]:
+            path = container / "approved-assets" / item["filename"]
+            self._private(path, 0o600, "FOUNDATION_000_MATERIALIZER_DRIFT")
+            if hashlib.sha256(path.read_bytes()).hexdigest() != item["byte_sha256"]:
+                _fail("FOUNDATION_000_MATERIALIZER_DRIFT")
+        runtime_manifest_path = container / "constraint-assets-runtime-manifest.json"
+        mapping_path = container / "foundation-hierarchy-endpoint-mapping.json"
+        self._private(runtime_manifest_path, 0o600, "FOUNDATION_000_MATERIALIZER_DRIFT")
+        self._private(mapping_path, 0o600, "FOUNDATION_000_MATERIALIZER_DRIFT")
+        runtime_manifest = _load(runtime_manifest_path, "FOUNDATION_000_MATERIALIZER_DRIFT")
+        if sha256(self.bootstrap._without_locators(runtime_manifest)) != config["runtime_manifest_without_locators_sha256"]:
+            _fail("FOUNDATION_000_MATERIALIZER_DRIFT")
+        mapping = _load(mapping_path, "FOUNDATION_000_MATERIALIZER_DRIFT")
+        if mapping.get("content_hash") != config["hierarchy_mapping_sha256"]:
+            _fail("FOUNDATION_000_MATERIALIZER_DRIFT")
+        return manifest, recovery
+
     def _expected_record(self, *, create_key: bool) -> tuple[Path, Path, dict[str, Any]]:
         """Recompute the only record this root may contain for the run.
 
@@ -101,15 +166,12 @@ class FoundationFixedComponent000Issuer:
                 or materialization.get("receipt_sha256") != sha256(materialization_bare)
                 or not hmac.compare_digest(str(materialization.get("attestation", "")), hmac.new(materializer_key.read_bytes(), canonical_bytes({**materialization_bare, "receipt_sha256": materialization["receipt_sha256"]}), hashlib.sha256).hexdigest())):
             _fail("FOUNDATION_000_MATERIALIZER_INVALID")
-        container = root / "foundation-parent-chain-container-v1"
-        self._private(container, 0o700, "FOUNDATION_000_MATERIALIZER_UNAVAILABLE")
-        manifest = _load(container / "foundation-parent-chain-container-manifest.json", "FOUNDATION_000_MATERIALIZER_UNAVAILABLE")
-        recovery = _load(root / "foundation-parent-chain-recovery-v1/recovery-receipt.json", "FOUNDATION_000_RECOVERY_UNAVAILABLE")
-        if (manifest.get("root_binding_id") != evidence.root_binding_id or recovery.get("root_binding_id") != evidence.root_binding_id
-                or materialization.get("container_sha256") != manifest.get("container_sha256")):
-            _fail("FOUNDATION_000_PARENT_CHAIN_DRIFT")
+        try:
+            manifest, recovery = self._verify_parent_chain(root, evidence, inputs, materialization)
+        except RuntimeBootstrapError as exc:
+            raise FoundationFixedComponent000Error(str(exc)) from exc
         from east_v5.runtime.foundation_repo_launcher import FoundationRepoLauncher
-        launcher = FoundationRepoLauncher(self.bootstrap)
+        launcher = FoundationRepoLauncher(self.bootstrap, agent_role="000")
         bundle = launcher._install_bundle(root)
         _claims, graph, _manifest = launcher._claims(bundle)
         fixed = graph.get("fixed_components")
