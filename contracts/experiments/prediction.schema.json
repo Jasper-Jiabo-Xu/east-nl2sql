@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "EAST V5 baseline prediction JSONL row",
+  "type": "object",
+  "required": [
+    "qa_id",
+    "baseline_id",
+    "baseline_commit",
+    "backbone_model_id",
+    "attempt",
+    "prediction_sql_raw",
+    "prediction_sql_normalized",
+    "raw_sql_hash",
+    "normalized_sql_hash",
+    "execution_status",
+    "failure_code",
+    "trace_ref",
+    "token_calls",
+    "token_total"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "qa_id": {
+      "type": "string"
+    },
+    "baseline_id": {
+      "type": "string"
+    },
+    "baseline_commit": {
+      "type": "string"
+    },
+    "backbone_model_id": {
+      "type": "string"
+    },
+    "attempt": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "prediction_sql_raw": {
+      "type": "string"
+    },
+    "prediction_sql_normalized": {
+      "type": "string"
+    },
+    "raw_sql_hash": {
+      "type": "string"
+    },
+    "normalized_sql_hash": {
+      "type": "string"
+    },
+    "execution_status": {
+      "enum": [
+        "ok",
+        "failed"
+      ]
+    },
+    "failure_code": {
+      "type": "string"
+    },
+    "trace_ref": {
+      "type": "string"
+    },
+    "token_calls": {
+      "type": "integer"
+    },
+    "token_total": {
+      "type": "integer"
+    }
+  }
+}

@@ -1,0 +1,175 @@
+{
+  "manifest_id": "EAS-120-stage1b-six-baseline-synthetic-run",
+  "notes": "Stage 1 only. Repo URLs, commits, licenses and native entrypoints are explicit placeholders for the approved synthetic smoke harness; replace them with frozen upstream evidence before real smoke/pilot.",
+  "baselines": [
+    {
+      "baseline_id": "DeepEye-SQL",
+      "repo_url": "synthetic://deepeye-sql",
+      "commit": "synthetic-stage1b-deepeye-sql",
+      "license": "synthetic-fixture-only",
+      "native_entrypoint": "python -m east_v5.experiments.fixture_baseline",
+      "cache_namespace": "eas120-deepeye-sql",
+      "model_contract": {
+        "model_id": "synthetic-local-v1",
+        "base_url": "local://synthetic",
+        "temperature": 0,
+        "max_tokens": 256,
+        "timeout_seconds": 20,
+        "retry_count": 0
+      },
+      "command": [
+        "{python}",
+        "-m",
+        "east_v5.experiments.fixture_baseline",
+        "--baseline-id",
+        "{baseline_id}",
+        "--dataset",
+        "{dataset}",
+        "--output-jsonl",
+        "{output_jsonl}"
+      ],
+      "timeout_seconds": 20
+    },
+    {
+      "baseline_id": "DataGallery-Text2SQL",
+      "repo_url": "synthetic://datagallery-text2sql",
+      "commit": "synthetic-stage1b-datagallery-text2sql",
+      "license": "synthetic-fixture-only",
+      "native_entrypoint": "python -m east_v5.experiments.fixture_baseline",
+      "cache_namespace": "eas120-datagallery-text2sql",
+      "model_contract": {
+        "model_id": "synthetic-local-v1",
+        "base_url": "local://synthetic",
+        "temperature": 0,
+        "max_tokens": 256,
+        "timeout_seconds": 20,
+        "retry_count": 0
+      },
+      "command": [
+        "{python}",
+        "-m",
+        "east_v5.experiments.fixture_baseline",
+        "--baseline-id",
+        "{baseline_id}",
+        "--dataset",
+        "{dataset}",
+        "--output-jsonl",
+        "{output_jsonl}"
+      ],
+      "timeout_seconds": 20
+    },
+    {
+      "baseline_id": "JoyDataAgent-SQL",
+      "repo_url": "synthetic://joydataagent-sql",
+      "commit": "synthetic-stage1b-joydataagent-sql",
+      "license": "synthetic-fixture-only",
+      "native_entrypoint": "python -m east_v5.experiments.fixture_baseline",
+      "cache_namespace": "eas120-joydataagent-sql",
+      "model_contract": {
+        "model_id": "synthetic-local-v1",
+        "base_url": "local://synthetic",
+        "temperature": 0,
+        "max_tokens": 256,
+        "timeout_seconds": 20,
+        "retry_count": 0
+      },
+      "command": [
+        "{python}",
+        "-m",
+        "east_v5.experiments.fixture_baseline",
+        "--baseline-id",
+        "{baseline_id}",
+        "--dataset",
+        "{dataset}",
+        "--output-jsonl",
+        "{output_jsonl}"
+      ],
+      "timeout_seconds": 20
+    },
+    {
+      "baseline_id": "Databao Agent",
+      "repo_url": "https://github.com/JetBrains/databao-agent.git",
+      "commit": "6a5c676a4e93e52b814459dcb8e48911105cbe33",
+      "license": "Apache-2.0 AND LicenseRef-Additional-Terms",
+      "native_entrypoint": "databao.agent.api:agent/domain; smoke adapter remains python -m east_v5.experiments.fixture_baseline for Stage 1 no-model transfer test",
+      "cache_namespace": "eas120-databao-agent",
+      "pin_decision": "Unique real upstream pin selected for Stage 1B on 2026-08-26: https://github.com/JetBrains/databao-agent.git main HEAD 6a5c676a4e93e52b814459dcb8e48911105cbe33. License observed in LICENSE.md and pyproject.toml as Apache-2.0 with Additional Terms.",
+      "model_contract": {
+        "model_id": "synthetic-local-v1",
+        "base_url": "local://synthetic",
+        "temperature": 0,
+        "max_tokens": 256,
+        "timeout_seconds": 20,
+        "retry_count": 0
+      },
+      "command": [
+        "{python}",
+        "-m",
+        "east_v5.experiments.fixture_baseline",
+        "--baseline-id",
+        "{baseline_id}",
+        "--dataset",
+        "{dataset}",
+        "--output-jsonl",
+        "{output_jsonl}"
+      ],
+      "timeout_seconds": 20
+    },
+    {
+      "baseline_id": "ReFoRCE",
+      "repo_url": "synthetic://reforce",
+      "commit": "synthetic-stage1b-reforce",
+      "license": "synthetic-fixture-only",
+      "native_entrypoint": "python -m east_v5.experiments.fixture_baseline",
+      "cache_namespace": "eas120-reforce",
+      "model_contract": {
+        "model_id": "synthetic-local-v1",
+        "base_url": "local://synthetic",
+        "temperature": 0,
+        "max_tokens": 256,
+        "timeout_seconds": 20,
+        "retry_count": 0
+      },
+      "command": [
+        "{python}",
+        "-m",
+        "east_v5.experiments.fixture_baseline",
+        "--baseline-id",
+        "{baseline_id}",
+        "--dataset",
+        "{dataset}",
+        "--output-jsonl",
+        "{output_jsonl}"
+      ],
+      "timeout_seconds": 20
+    },
+    {
+      "baseline_id": "AutoLink",
+      "repo_url": "synthetic://autolink",
+      "commit": "synthetic-stage1b-autolink",
+      "license": "synthetic-fixture-only",
+      "native_entrypoint": "python -m east_v5.experiments.fixture_baseline",
+      "cache_namespace": "eas120-autolink",
+      "model_contract": {
+        "model_id": "synthetic-local-v1",
+        "base_url": "local://synthetic",
+        "temperature": 0,
+        "max_tokens": 256,
+        "timeout_seconds": 20,
+        "retry_count": 0
+      },
+      "command": [
+        "{python}",
+        "-m",
+        "east_v5.experiments.fixture_baseline",
+        "--baseline-id",
+        "{baseline_id}",
+        "--dataset",
+        "{dataset}",
+        "--output-jsonl",
+        "{output_jsonl}"
+      ],
+      "timeout_seconds": 20
+    }
+  ]
+}

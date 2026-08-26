@@ -1,0 +1,18 @@
+{
+  "baseline_id": "Databao Agent",
+  "repo_url": "https://github.com/JetBrains/databao-agent.git",
+  "branch": "main",
+  "commit": "6a5c676a4e93e52b814459dcb8e48911105cbe33",
+  "license": "Apache-2.0 AND LicenseRef-Additional-Terms",
+  "license_evidence": [
+    "LICENSE.md",
+    "pyproject.toml"
+  ],
+  "native_entrypoint": "databao.agent.api:agent/domain",
+  "entrypoint_evidence": [
+    "README.md quickstart imports databao.agent as bao and calls bao.domain()/bao.agent(...)",
+    "databao/agent/__init__.py exports agent, domain and LLMConfig",
+    "databao/agent/api.py defines agent(...) and domain(...)"
+  ],
+  "pin_decision": "Unique real upstream pin selected for Stage 1B on 2026-08-26. Synthetic pin is no longer used as the Databao source pin."
+}

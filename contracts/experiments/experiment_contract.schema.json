@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "EAST V5 Stage 1B S0 experiment contract",
+  "type": "object",
+  "required": [
+    "contract_id",
+    "stage",
+    "s0_input_boundary",
+    "hard_rules_hash",
+    "concurrency",
+    "retry_policy"
+  ],
+  "additionalProperties": true,
+  "properties": {
+    "contract_id": {
+      "type": "string"
+    },
+    "stage": {
+      "const": "stage1b_s0_synthetic_smoke"
+    },
+    "s0_input_boundary": {
+      "const": "qa_id + clear_question + public_semantic_schema"
+    },
+    "hard_rules_hash": {
+      "const": "d00fa6028ff729f2776a7e779db2f530bcba8fba892765c8aa08c6e0aee6b463"
+    },
+    "concurrency": {
+      "const": 6
+    },
+    "retry_policy": {
+      "type": "object",
+      "required": [
+        "retryable_failure_codes",
+        "max_attempts"
+      ],
+      "properties": {
+        "retryable_failure_codes": {
+          "const": [
+            "TRANSPORT_ERROR"
+          ]
+        },
+        "max_attempts": {
+          "const": 3
+        }
+      }
+    }
+  }
+}

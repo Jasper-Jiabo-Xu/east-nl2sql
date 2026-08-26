@@ -1,0 +1,23 @@
+{
+  "issue": "EAS-120",
+  "source_issue": "EAS-118",
+  "mode": "contract_consumption_only",
+  "model_calls": 0,
+  "sql_generated": false,
+  "receipt_checked": true,
+  "question_count": 5,
+  "qa_ids": [
+    "QA800_00004",
+    "QA800_00005",
+    "QA800_00020",
+    "QA800_00023",
+    "QA800_00006"
+  ],
+  "s0_bytes": 77448,
+  "s0_dataset_manifest_sha256": "857bce76268890b9a14fffaa278ffbfb5dd41d27f6b549075a2bce923548c69d",
+  "selection_manifest_sha256": "256093b54843ba2ee99d8837f7188edbd8de83acf96ba6b12ae07a86e9a692e1",
+  "positive_command": "python3 scripts/east_baseline_harness.py consume-s0 --dataset-manifest ../EAS-118-artifacts/s0_dataset_manifest.json --evidence-receipt ../EAS-118-artifacts/evidence.json",
+  "positive_result": "pass",
+  "mutation_case": "inject forbidden gold_sql field into first question",
+  "mutation_failure_code": "S0_LEAKAGE_FIELD"
+}
