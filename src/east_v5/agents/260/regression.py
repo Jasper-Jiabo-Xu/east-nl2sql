@@ -453,6 +453,13 @@ def run_foundation_regression(repo_root: Path, task_package: dict[str, Any], str
     return DatabaseCopyRegression._wrap("database_copy_regression", payload, verified_bound_data["envelope"], parents, attempt_no, "validated", mode="foundation")
 
 
+def run_foundation_regression_from_runtime(bootstrap: Any, accepted_242_receipt: dict[str, Any], repo_root: Path, task_package: dict[str, Any], structure_closure: dict[str, Any], verified_bound_data: dict[str, Any], database_snapshot: dict[str, Any], copy_connection: sqlite3.Connection, formal_connection: sqlite3.Connection, event_owned_tables: set[str], *, attempt_no: int = 1) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Production 260 entrance: only a 242 accepted edge reaches the copy gate."""
+    accepted = bootstrap.foundation_260_launcher().verify_downstream(accepted_242_receipt)
+    report = run_foundation_regression(repo_root, task_package, structure_closure, verified_bound_data, database_snapshot, copy_connection, formal_connection, event_owned_tables, attempt_no=attempt_no)
+    return report, accepted
+
+
 # Event-data support intentionally lives beside (not inside) the Foundation
 # execution path above.  Foundation has a distinct frozen task contract and
 # deterministic compiler; event data alone can execute the already validated

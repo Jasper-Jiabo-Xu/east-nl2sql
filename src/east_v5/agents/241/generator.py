@@ -664,3 +664,10 @@ class BoundDataGenerator:
         }
         self._validate_manifest(manifest, bound_data, issue_key)
         return manifest
+
+
+def build_foundation_bound_data_from_runtime(bootstrap: Any, assembly: Any, structure_closure: dict[str, Any], **kwargs: Any) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Production 241 start: acquire the sealed launch before generation."""
+    launch = bootstrap.foundation_repo_launcher().launch()
+    package = assembly.generator(Path(__file__).resolve().parents[4]).build_bound_data(structure_closure, **kwargs)
+    return package, launch

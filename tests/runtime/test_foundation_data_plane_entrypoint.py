@@ -9,6 +9,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import east_v5.runtime.foundation_data_plane_entrypoint as entrypoint_module
@@ -53,6 +54,25 @@ class FoundationDataPlaneEntrypointTests(unittest.TestCase):
         marker.chmod(0o600)
         with self.assertRaisesRegex(FoundationDataPlaneError, "FOUNDATION_DATA_PLANE_ROOT_MARKER_DRIFT"):
             self.entrypoint.provision(self.context)
+
+    def test_eas19_seals_only_refs_and_hashes_for_the_repo_launcher(self) -> None:
+        runtime = self.entrypoint.provision(self.context)
+        key = runtime.runtime_root / ".foundation-parent-chain-materializer-v1.key"
+        key.write_bytes(b"k" * 32); key.chmod(0o600)
+        envelope = lambda name: {"artifact_id": name, "version": 1, "content_hash": hashlib.sha256(name.encode()).hexdigest()}
+        task_envelope = {**envelope("task"), "run_id": "accepted-run", "attempt_no": 1}
+        recovered = entrypoint_module.RecoveredParentChain(
+            {"envelope": task_envelope}, {"envelope": envelope("closure")}, "e" * 64, {},
+        )
+        selection = SimpleNamespace(
+            database_snapshot={"envelope": envelope("snapshot")},
+            generation_context={"envelope": envelope("context")},
+            resolver_universe_ref=envelope("universe"),
+        )
+        receipt = self.entrypoint._seal_launch_inputs(runtime, recovered, selection)
+        self.assertEqual(receipt["schema_version"], "foundation-launch-inputs/v1")
+        self.assertEqual(receipt["root_binding_id"], runtime.root_binding_id)
+        self.assertEqual(receipt, self.entrypoint._seal_launch_inputs(runtime, recovered, selection))
 
     def test_resolve_formal_baseline_normalizes_once_and_checks_full_hash(self) -> None:
         source = self.reference / "formal.db"; source.write_bytes(b"approved-formal-baseline")

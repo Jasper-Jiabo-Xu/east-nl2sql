@@ -420,6 +420,17 @@ class RuntimeBootstrap:
         body = {"schema_version": "foundation-parent-chain-materialization-receipt/v2", "root_binding_id": evidence.root_binding_id, "bootstrap": evidence.redacted(), "skill_manifest_sha256": self.declaration["skill_bundle"]["skill_manifest_sha256"], "config_sha256": config_hash, "attachments": config["attachments"], "eas111_evidence": config["eas111_evidence"], "assets": manifest["assets"], "runtime_manifest_sha256": manifest["runtime_manifest_sha256"], "runtime_manifest_local_sha256": manifest["runtime_manifest_local_sha256"], "hierarchy_mapping_sha256": manifest["hierarchy_mapping_sha256"], "container_sha256": manifest["container_sha256"]}
         body["receipt_sha256"] = sha256(body)
         body["attestation"] = hmac.new(self._materializer_key(root), canonical_bytes(body), hashlib.sha256).hexdigest()
+        receipt_path = root / "foundation-parent-chain-materialization-receipt-v2.json"
+        if receipt_path.exists() or receipt_path.is_symlink():
+            self._private(receipt_path, 0o600, "FOUNDATION_PARENT_MATERIALIZER_RECEIPT_UNSAFE")
+            try:
+                if json.loads(receipt_path.read_text(encoding="utf-8")) != body:
+                    _fail("FOUNDATION_PARENT_MATERIALIZER_RECEIPT_DRIFT")
+            except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+                raise RuntimeBootstrapError("FOUNDATION_PARENT_MATERIALIZER_RECEIPT_DRIFT") from exc
+        else:
+            self._atomic_json(receipt_path, body)
+            self._private(receipt_path, 0o600, "FOUNDATION_PARENT_MATERIALIZER_RECEIPT_UNSAFE")
         return body
 
     def build_adapter(self, roots: dict[str, Any]) -> Any:
@@ -435,3 +446,38 @@ class RuntimeBootstrap:
             _fail("RUNTIME_BOOTSTRAP_RUNTIME_ROOT_DRIFT")
         from east_v5.runtime.adapter import RuntimeAdapter
         return RuntimeAdapter(self.checkout, roots, self.envelope, preflight=evidence)
+
+    def foundation_repo_launcher(self) -> Any:
+        """Return the parameterless, root-bound Foundation launch seam.
+
+        The returned object accepts only the task's authenticated identity;
+        claims, local paths, graph routes and component receipts are derived by
+        the launcher from the verified runtime root.
+        """
+        self.preflight()
+        from east_v5.runtime.foundation_repo_launcher import FoundationRepoLauncher
+        return FoundationRepoLauncher(self, agent_role="241")
+
+    def foundation_242_launcher(self) -> Any:
+        """The only repository-side 242 entry into the Foundation edge gate."""
+        self.preflight()
+        from east_v5.runtime.foundation_repo_launcher import FoundationRepoLauncher
+        return FoundationRepoLauncher(self, agent_role="242")
+
+    def foundation_260_launcher(self) -> Any:
+        """The only repository-side 260 entry into the Foundation edge gate."""
+        self.preflight()
+        from east_v5.runtime.foundation_repo_launcher import FoundationRepoLauncher
+        return FoundationRepoLauncher(self, agent_role="260")
+
+    def foundation_fixed_component_issuer(self) -> Any:
+        """Return the sole, parameterless production issuer for fixed 000."""
+        self.preflight()
+        from east_v5.runtime.foundation_fixed_component_000 import FoundationFixedComponent000Issuer
+        return FoundationFixedComponent000Issuer(self)
+
+    def foundation_task_identity_issuer(self) -> Any:
+        """Return the root-bound, repo-side Foundation task identity issuer."""
+        self.preflight()
+        from east_v5.runtime.foundation_task_identity import FoundationTaskIdentityIssuer
+        return FoundationTaskIdentityIssuer(self)
