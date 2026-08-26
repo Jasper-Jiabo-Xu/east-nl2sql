@@ -5,6 +5,7 @@ import hashlib
 import hmac
 import json
 import stat
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -95,6 +96,70 @@ class FoundationDataPlaneEntrypointTests(unittest.TestCase):
         with self.assertRaisesRegex(FoundationDataPlaneError, "FOUNDATION_DATA_PLANE_LOCATOR_INVALID"):
             self.entrypoint.resolve_formal_baseline(lock)
 
+    def test_platform_run_record_accepts_only_the_projected_cli_list(self) -> None:
+        """The production CLI list is the only accepted control-plane shape."""
+        valid = {
+            "id": "accepted-task", "status": "completed", "runtime_id": "runtime",
+            "delivered_comment_ids": ["trigger-comment"], "trigger_comment_id": "trigger-comment",
+            "work_dir": "/controlled/run", "display_only": "must-not-survive-projection",
+        }
+        calls: list[tuple[list[str], dict[str, object]]] = []
+
+        def runner(argv: list[str], **kwargs: object) -> SimpleNamespace:
+            calls.append((argv, kwargs))
+            return SimpleNamespace(stdout=json.dumps([valid]))
+
+        with patch.object(entrypoint_module.subprocess, "run", side_effect=runner):
+            result = FoundationDataPlaneEntrypoint._platform_run_record("fixed-issue")
+        self.assertEqual(calls, [(
+            ["multica", "issue", "runs", "fixed-issue", "--output", "json"],
+            {"check": True, "capture_output": True, "text": True},
+        )])
+        self.assertEqual(result, [{
+            "id": "accepted-task", "status": "completed", "runtime_id": "runtime",
+            "delivered_comment_ids": ["trigger-comment"], "trigger_comment_id": "trigger-comment",
+            "work_dir": "/controlled/run",
+        }])
+        invalid = {
+            "wrapper": {"runs": [valid]}, "empty": [], "scalar": "invalid", "non_object": ["invalid"],
+            "missing_field": [{key: value for key, value in valid.items() if key != "work_dir"}],
+            "wrong_delivered": [{**valid, "delivered_comment_ids": []}],
+            "wrong_trigger": [{**valid, "trigger_comment_id": 1}],
+            "duplicate_id": [valid, {**valid, "work_dir": "/controlled/other"}],
+        }
+        for name, value in invalid.items():
+            with self.subTest(name=name), patch.object(
+                entrypoint_module.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, stdout=json.dumps(value)),
+            ):
+                with self.assertRaisesRegex(FoundationDataPlaneError, "FOUNDATION_PARENT_CHAIN_RUN_RECORD_INVALID"):
+                    FoundationDataPlaneEntrypoint._platform_run_record("fixed-issue")
+
+    def test_recovery_rejects_source_run_lineage_before_writes(self) -> None:
+        runtime = self.entrypoint.provision(self.context)
+        good = {
+            "id": "source-task", "status": "completed", "runtime_id": "source-runtime",
+            "delivered_comment_ids": ["source-trigger"], "trigger_comment_id": "source-trigger",
+            "work_dir": "/controlled/run",
+        }
+        cases = {
+            "source_zero": ([], "FOUNDATION_PARENT_CHAIN_SOURCE_TASK_INVALID"),
+            "source_two": ([good, {**good, "work_dir": "/controlled/other"}], "FOUNDATION_PARENT_CHAIN_SOURCE_TASK_INVALID"),
+            "wrong_trigger": ([{**good, "trigger_comment_id": "wrong"}], "FOUNDATION_PARENT_CHAIN_SOURCE_LINEAGE_DRIFT"),
+            "wrong_delivered": ([{**good, "delivered_comment_ids": ["wrong"]}], "FOUNDATION_PARENT_CHAIN_SOURCE_LINEAGE_DRIFT"),
+            "wrong_runtime": ([{**good, "runtime_id": "wrong"}], "FOUNDATION_PARENT_CHAIN_SOURCE_LINEAGE_DRIFT"),
+            "wrong_status": ([{**good, "status": "failed"}], "FOUNDATION_PARENT_CHAIN_SOURCE_LINEAGE_DRIFT"),
+            "bad_work_dir": ([{**good, "work_dir": "relative"}], "FOUNDATION_PARENT_CHAIN_SOURCE_WORKDIR_INVALID"),
+        }
+        for name, (record, code) in cases.items():
+            with self.subTest(name=name), patch.object(self.entrypoint, "_verify_materialization"), patch.object(
+                self.entrypoint, "_platform_run_record", return_value=record,
+            ), patch.object(entrypoint_module, "_RECOVERY_SOURCE_TASK", "source-task"), patch.object(
+                entrypoint_module, "_RECOVERY_SOURCE_RUNTIME", "source-runtime",
+            ), patch.object(entrypoint_module, "_RECOVERY_SOURCE_COMMENT", "source-trigger"):
+                with self.assertRaisesRegex(FoundationDataPlaneError, code):
+                    self.entrypoint.recover_parent_chain(runtime, {})
+            self.assertFalse((runtime.runtime_root / "foundation-parent-chain-recovery-v1").exists())
+
     def test_recover_parent_chain_uses_only_the_accepted_run_record_and_bytes(self) -> None:
         """The public recovery seam accepts neither a source path nor packages."""
         runtime = self.entrypoint.provision(self.context)
@@ -130,7 +195,7 @@ class FoundationDataPlaneEntrypointTests(unittest.TestCase):
         closure["envelope"]["content_hash"] = content_hash(closure["envelope"], closure["payload"])
         (output / "structure_closure.json").write_text(json.dumps(closure))
         (output / "evidence.json").write_text(json.dumps({"asset_000": {"ref": {"content_hash": "d" * 64}}, "closure_220": {"ref": {"content_hash": closure["envelope"]["content_hash"]}}, "closure_self_validation": {"closure_envelope_hash_identical": True}, "forbidden_module_calls": {"230": 0, "251": 0, "252": 0}}))
-        record = {"runs": [{"id": "accepted-task", "status": "completed", "runtime_id": "accepted-runtime", "delivered_comment_ids": ["accepted-comment"], "work_dir": str(source)}]}
+        record = [{"id": "accepted-task", "status": "completed", "runtime_id": "accepted-runtime", "trigger_comment_id": "accepted-comment", "delivered_comment_ids": ["accepted-comment"], "work_dir": str(source)}]
         bytes_by_name = {path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in container.iterdir() if path.name in entrypoint_module._PARENT_CONTAINER_BYTES}
         config = self.base / "materializer-config.json"; config.write_text("{}")
         config_hash = hashlib.sha256(config.read_bytes()).hexdigest()

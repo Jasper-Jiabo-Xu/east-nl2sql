@@ -74,7 +74,7 @@ _RECOVERED_CLOSURE_HASH = "168aab095660895c36eaece21e9f4de6ea3a8874939dd1d195950
 _RECOVERY_SOURCE_ISSUE = "01a0386f-c03f-7be9-b2d6-45841f1a4a74"
 _RECOVERY_SOURCE_TASK = "01a03882-8b63-7480-9c58-acf2213573a6"
 _RECOVERY_SOURCE_RUNTIME = "0e5e9dd9-5135-4937-bb03-92b77adb8395"
-_RECOVERY_SOURCE_COMMENT = "01a0388e-729c-7289-9c99-b94d075e984e"
+_RECOVERY_SOURCE_COMMENT = "01a03882-8b49-7777-8e22-e6221a70917e"
 _RECOVERED_CLOSURE_BYTES = "15f1e12e0fce75ac99fec764896dd7acadc055ee2c0771897affb67ab1990f8a"
 _RECOVERED_EVIDENCE_BYTES = "0bd3ea76bf7f11f6b127bc3e6f6c88fb477d185547d1c963a2bf3f6c248f90a7"
 _RECOVERED_TASK_HASH = "899ac6cdea3a9e08fa01d77102850952f9b8c83db3bf94672fe5ae8a31982fbe"
@@ -207,7 +207,7 @@ class FoundationDataPlaneEntrypoint:
         return FormalBaseline(candidate, observed, expected_size)
 
     @staticmethod
-    def _platform_run_record(issue_id: str) -> dict[str, Any]:
+    def _platform_run_record(issue_id: str) -> list[dict[str, Any]]:
         """Read a source task from Multica; no caller-provided source path exists."""
         try:
             completed = subprocess.run(
@@ -217,9 +217,30 @@ class FoundationDataPlaneEntrypoint:
             value = json.loads(completed.stdout)
         except (OSError, subprocess.SubprocessError, UnicodeError, json.JSONDecodeError) as exc:
             raise FoundationDataPlaneError("FOUNDATION_PARENT_CHAIN_RUN_RECORD_UNAVAILABLE") from exc
-        if not isinstance(value, dict) or not isinstance(value.get("runs"), list):
+        if not isinstance(value, list) or not value:
             _fail("FOUNDATION_PARENT_CHAIN_RUN_RECORD_INVALID")
-        return value
+        required_strings = ("id", "status", "runtime_id", "work_dir")
+        projected: list[dict[str, Any]] = []
+        task_ids: set[str] = set()
+        for item in value:
+            if not isinstance(item, dict) or any(not isinstance(item.get(key), str) or not item[key] for key in required_strings):
+                _fail("FOUNDATION_PARENT_CHAIN_RUN_RECORD_INVALID")
+            delivered = item.get("delivered_comment_ids")
+            if (not isinstance(delivered, list) or not delivered
+                    or any(not isinstance(comment, str) or not comment for comment in delivered)):
+                _fail("FOUNDATION_PARENT_CHAIN_RUN_RECORD_INVALID")
+            trigger = item.get("trigger_comment_id")
+            if trigger is not None and (not isinstance(trigger, str) or not trigger):
+                _fail("FOUNDATION_PARENT_CHAIN_RUN_RECORD_INVALID")
+            if item["id"] in task_ids:
+                _fail("FOUNDATION_PARENT_CHAIN_RUN_RECORD_INVALID")
+            task_ids.add(item["id"])
+            projected.append({
+                "id": item["id"], "status": item["status"], "runtime_id": item["runtime_id"],
+                "delivered_comment_ids": delivered, "work_dir": item["work_dir"],
+                **({"trigger_comment_id": trigger} if trigger is not None else {}),
+            })
+        return projected
 
     @staticmethod
     def _private_directory(path: Path, code: str) -> None:
@@ -439,11 +460,13 @@ class FoundationDataPlaneEntrypoint:
             _fail("FOUNDATION_PARENT_CHAIN_ROOT_INVALID")
         self._verify_materialization(runtime, materialization_receipt)
         record = self._platform_run_record(_RECOVERY_SOURCE_ISSUE)
-        matches = [item for item in record["runs"] if isinstance(item, dict) and item.get("id") == _RECOVERY_SOURCE_TASK]
+        matches = [item for item in record if item["id"] == _RECOVERY_SOURCE_TASK]
         if len(matches) != 1:
             _fail("FOUNDATION_PARENT_CHAIN_SOURCE_TASK_INVALID")
         source = matches[0]
-        if source.get("status") != "completed" or source.get("runtime_id") != _RECOVERY_SOURCE_RUNTIME or source.get("delivered_comment_ids") != [_RECOVERY_SOURCE_COMMENT]:
+        if (source.get("status") != "completed" or source.get("runtime_id") != _RECOVERY_SOURCE_RUNTIME
+                or source.get("trigger_comment_id") != _RECOVERY_SOURCE_COMMENT
+                or source.get("delivered_comment_ids") != [_RECOVERY_SOURCE_COMMENT]):
             _fail("FOUNDATION_PARENT_CHAIN_SOURCE_LINEAGE_DRIFT")
         raw_work_dir = source.get("work_dir")
         if not isinstance(raw_work_dir, str) or not Path(raw_work_dir).is_absolute():
