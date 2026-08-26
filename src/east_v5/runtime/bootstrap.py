@@ -435,3 +435,14 @@ class RuntimeBootstrap:
             _fail("RUNTIME_BOOTSTRAP_RUNTIME_ROOT_DRIFT")
         from east_v5.runtime.adapter import RuntimeAdapter
         return RuntimeAdapter(self.checkout, roots, self.envelope, preflight=evidence)
+
+    def foundation_repo_launcher(self) -> Any:
+        """Return the parameterless, root-bound Foundation launch seam.
+
+        The returned object accepts only the task's authenticated identity;
+        claims, local paths, graph routes and component receipts are derived by
+        the launcher from the verified runtime root.
+        """
+        self.preflight()
+        from east_v5.runtime.foundation_repo_launcher import FoundationRepoLauncher
+        return FoundationRepoLauncher(self)

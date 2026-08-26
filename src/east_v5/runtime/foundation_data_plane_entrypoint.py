@@ -57,6 +57,7 @@ class RecoveredParentChain:
 _CONTEXT_KEYS = {"resolver_version", "workspace_id", "project_id", "daemon_id"}
 _MARKER = "daemon-root-binding-v12.json"
 _STATE = "east-v5-full-runtime-v12-state.json"
+_LAUNCH_INPUTS = "foundation-launch-inputs-v1.json"
 _RECOVERY_DIR = "foundation-parent-chain-recovery-v1"
 _CONTAINER_DIR = "foundation-parent-chain-container-v1"
 _CONTAINER_MANIFEST = "foundation-parent-chain-container-manifest.json"
@@ -358,11 +359,74 @@ class FoundationDataPlaneEntrypoint:
                 registered = registry.register(package["envelope"], package["payload"])
                 if registry.resolve({key: registered[key] for key in ("artifact_id", "version", "content_hash")}) != package:
                     _fail("EAS19_FOUNDATION_SELECTOR_REGISTRY_READBACK_DRIFT")
+            # This is the only hand-off from EAS-19 to the repo-side launcher.
+            # It contains refs and hashes only; physical locators and tuple
+            # values remain in the private registry/snapshot files.
+            self._seal_launch_inputs(runtime, recovered, selection)
             return selection
         except FoundationDataPlaneError:
             raise
         except ContractError as exc:
             raise FoundationDataPlaneError(str(exc)) from exc
+
+    def _seal_launch_inputs(self, runtime: ProvisionedRuntime, recovered: RecoveredParentChain, selection: Any) -> dict[str, Any]:
+        """Atomically seal the four verified Foundation inputs for launch.
+
+        This method is deliberately private to the production data-plane
+        entrypoint.  A caller cannot supply refs, a path, a component receipt,
+        or a claim set: each value is derived from packages which have just
+        passed the EAS-19 validator and immutable registry read-back.
+        """
+        try:
+            from east_v5.artifacts import artifact_ref
+            snapshot = selection.database_snapshot
+            context = selection.generation_context
+            refs = {
+                "foundation_task_ref": artifact_ref(recovered.task["envelope"]),
+                "structure_closure_ref": artifact_ref(recovered.closure["envelope"]),
+                "database_snapshot_ref": artifact_ref(snapshot["envelope"]),
+                "generation_context_ref": artifact_ref(context["envelope"]),
+            }
+            task_env = recovered.task["envelope"]
+            if (not isinstance(selection.resolver_universe_ref, dict)
+                    or not isinstance(selection.resolver_universe_ref.get("content_hash"), str)):
+                _fail("FOUNDATION_LAUNCH_INPUTS_INVALID")
+            body = {
+                "schema_version": "foundation-launch-inputs/v1",
+                "root_binding_id": runtime.root_binding_id,
+                "issue_id": "EAS-114",
+                "run_id": task_env["run_id"],
+                "attempt": task_env["attempt_no"],
+                "resolver_universe_hash": selection.resolver_universe_ref["content_hash"],
+                **refs,
+            }
+            if (not isinstance(body["run_id"], str) or not body["run_id"]
+                    or body["attempt"] not in {1, 2, 3}):
+                _fail("FOUNDATION_LAUNCH_INPUTS_INVALID")
+            key_path = runtime.runtime_root / _MATERIALIZER_KEY
+            self._assert_private(key_path, 0o600, "FOUNDATION_LAUNCH_INPUTS_KEY_UNSAFE")
+            key = key_path.read_bytes()
+            if len(key) != 32:
+                _fail("FOUNDATION_LAUNCH_INPUTS_KEY_UNSAFE")
+            receipt = {
+                **body,
+                "inputs_sha256": sha256(body),
+                "attestation": hmac.new(key, canonical_bytes(body), hashlib.sha256).hexdigest(),
+            }
+            path = runtime.runtime_root / _LAUNCH_INPUTS
+            if path.exists() or path.is_symlink():
+                self._assert_private(path, 0o600, "FOUNDATION_LAUNCH_INPUTS_DRIFT")
+                existing = json.loads(path.read_text(encoding="utf-8"))
+                if existing != receipt:
+                    _fail("FOUNDATION_LAUNCH_INPUTS_DRIFT")
+            else:
+                self._atomic_json(path, receipt)
+                self._assert_private(path, 0o600, "FOUNDATION_LAUNCH_INPUTS_DRIFT")
+            return receipt
+        except FoundationDataPlaneError:
+            raise
+        except (KeyError, OSError, UnicodeError, json.JSONDecodeError, AttributeError) as exc:
+            raise FoundationDataPlaneError("FOUNDATION_LAUNCH_INPUTS_INVALID") from exc
 
     def recover_parent_chain(self, runtime: ProvisionedRuntime, materialization_receipt: dict[str, Any]) -> RecoveredParentChain:
         """Recover the accepted EAS-113 output with one fixed, fail-closed route.
