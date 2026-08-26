@@ -104,13 +104,14 @@ class FoundationGraphAdapterBridgeTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         return json.loads(result.stdout)
 
-    def _package(self, artifact_id: str, artifact_type: str, producer: str, *, run: str = "bridge-run") -> dict[str, object]:
-        envelope = {"artifact_id": artifact_id, "artifact_type": artifact_type, "run_id": run, "qa_id": None, "version": 1, "schema_version": "COMMON-ENVELOPE/v1", "content_hash": "0" * 64, "supersedes_ref": None, "attempt_no": 1, "producer_id": producer, "parent_artifact_refs": [], "input_hashes": [], "status": "candidate", "mode": "foundation", "created_at": "2026-08-26T00:00:00+00:00", "trace_id": "bridge-trace", "storage_locator": None}
+    def _package(self, artifact_id: str, artifact_type: str, producer: str, *, run: str = "bridge-run", parent: dict[str, object] | None = None) -> dict[str, object]:
+        parents = [] if parent is None else [artifact_ref(parent["envelope"])]
+        envelope = {"artifact_id": artifact_id, "artifact_type": artifact_type, "run_id": run, "qa_id": None, "version": 1, "schema_version": "COMMON-ENVELOPE/v1", "content_hash": "0" * 64, "supersedes_ref": None, "attempt_no": 1, "producer_id": producer, "parent_artifact_refs": parents, "input_hashes": [item["content_hash"] for item in parents], "status": "candidate", "mode": "foundation", "created_at": "2026-08-26T00:00:00+00:00", "trace_id": "bridge-trace", "storage_locator": None}
         payload = {"sanitized": True, "producer": producer}
         envelope["content_hash"] = content_hash(envelope, payload)
         return {"envelope": envelope, "payload": payload}
 
-    def _adapter_220(self) -> RuntimeAdapter:
+    def _adapter_220(self) -> tuple[RuntimeAdapter, dict[str, object]]:
         context = {"resolver_version": "daemon_local_platform_data_resolver_v1", "workspace_id": "bridge", "project_id": "test", "daemon_id": "adapter"}
         binding = root_binding_id(context)
         declaration = {"bootstrap_version": "east-v5-runtime-bootstrap/v1", "candidate_base_sha": self.head, "candidate_head_sha": self.head, "adapter_sha256": hashlib.sha256((self.candidate / "src/east_v5/runtime/adapter.py").read_bytes()).hexdigest(), "bootstrap_sha256": hashlib.sha256((self.candidate / "src/east_v5/runtime/bootstrap.py").read_bytes()).hexdigest(), "runner_sha256": hashlib.sha256((self.candidate / "scripts/runtime_bootstrap.py").read_bytes()).hexdigest(), "runtime_context": context, "skill_bundle": {"skill_name": "east-v5-runtime-bootstrap-v1", "skill_version": "v1", "skill_manifest_sha256": "f" * 64}}
@@ -118,14 +119,36 @@ class FoundationGraphAdapterBridgeTests(unittest.TestCase):
         ArtifactRegistry(self.candidate, self.roots, "EAS-115", "bridge-run", 1).register(seed["envelope"], seed["payload"])
         envelope = {"schema_version": "task_input_envelope/v1", "adapter_version": "east-v5-runtime-adapter/v1", "issue_id": "EAS-115", "run_id": "bridge-run", "trace_id": "bridge-trace", "qa_id": None, "attempt": 1, "target_agent_id": "220", "target_agent_uuid": self.graph["real_agents"]["220"]["uuid"], "root_binding_id": binding, "input_ref": artifact_ref(seed["envelope"]), "expected_output": {"artifact_type": "structure_closure", "producer_id": "220", "route_target": "241"}, "execution_bootstrap": declaration}
         evidence = BootstrapEvidence(candidate_head_sha=self.head, adapter_sha256=declaration["adapter_sha256"], bootstrap_sha256=declaration["bootstrap_sha256"], runner_sha256=declaration["runner_sha256"], root_binding_id=binding, runner_entrypoint="scripts/runtime_bootstrap.py")
-        return RuntimeAdapter(self.candidate, self.roots, envelope, preflight=evidence)
+        return RuntimeAdapter(self.candidate, self.roots, envelope, preflight=evidence), seed
+
+    @staticmethod
+    def _rehash_receipt(receipt: dict[str, object]) -> dict[str, object]:
+        result = dict(receipt)
+        result["content_hash"] = hashlib.sha256(canonical({key: value for key, value in result.items() if key != "content_hash"}).encode()).hexdigest()
+        return result
+
+    def _trusted_241_inputs(self) -> dict[str, object]:
+        r010 = self._run(self._graph_envelope("010", []), "v12-010")
+        r210 = self._run(r010["next_tasks"][0], "v12-210")
+        r220 = self._run(r210["next_tasks"][0], "v12-220")
+        adapter220, seed = self._adapter_220()
+        package220 = self._package("bridge-220", "structure_closure", "220", parent=seed)
+        receipt220 = adapter220.register_output(package220, task_id="real-220", runtime_id=self.graph["real_agents"]["220"]["runtime_id"])["receipt"]
+        bridge = FoundationGraphAdapterBridge(self.candidate, self.roots, self.installed)
+        registry = ArtifactRegistry(self.candidate, self.roots, "EAS-115", "bridge-run", 1)
+        snapshot = self._package("bridge-snapshot", "database_read_snapshot", "EAS-19")
+        context = self._package("bridge-context", "foundation_generation_context", "EAS-19")
+        registry.register(snapshot["envelope"], snapshot["payload"]); registry.register(context["envelope"], context["payload"])
+        gate = bridge.runtime_input_gate(issue_id="EAS-115", run_id="bridge-run", attempt=1, v12_claims=self.claims, component_receipt=self.component, snapshot_ref=artifact_ref(snapshot["envelope"]), generation_context_ref=artifact_ref(context["envelope"]))
+        return {"r220": r220, "bridge": bridge, "gate": gate, "receipt220": receipt220, "package220": package220}
 
     def test_bridge_derives_241_then_242_and_a_260_stub_from_real_receipts(self) -> None:
         r010 = self._run(self._graph_envelope("010", []), "v12-010")
         r210 = self._run(r010["next_tasks"][0], "v12-210")
         r220 = self._run(r210["next_tasks"][0], "v12-220")
-        package220 = self._package("bridge-220", "structure_closure", "220")
-        receipt220 = self._adapter_220().register_output(package220, task_id="real-220", runtime_id="220-runtime")["receipt"]
+        adapter220, seed = self._adapter_220()
+        package220 = self._package("bridge-220", "structure_closure", "220", parent=seed)
+        receipt220 = adapter220.register_output(package220, task_id="real-220", runtime_id=self.graph["real_agents"]["220"]["runtime_id"])["receipt"]
         bridge = FoundationGraphAdapterBridge(self.candidate, self.roots, self.installed)
         registry = ArtifactRegistry(self.candidate, self.roots, "EAS-115", "bridge-run", 1)
         snapshot = self._package("bridge-snapshot", "database_read_snapshot", "EAS-19")
@@ -135,13 +158,13 @@ class FoundationGraphAdapterBridgeTests(unittest.TestCase):
         adapter241 = bridge.adapter_for("241", task_id="bridge-241", v12_envelope=r220["next_tasks"][0], v12_claims=self.claims, v12_220_receipt=r220["receipt"], task_receipt=receipt220, input_gate=gate)
         assembly = FoundationRuntimeAssembly.from_runtime_adapter(adapter241, task_id="bridge-241", runtime_id="0e5e9dd9-5135-4937-bb03-92b77adb8395")
         self.assertEqual(assembly.invocation_service.target_agent_id, "241")
-        package241 = self._package("bridge-241", "bound_data", "241")
+        package241 = self._package("bridge-241", "bound_data", "241", parent=package220)
         registered241 = adapter241.register_output(package241, task_id="real-241", runtime_id="0e5e9dd9-5135-4937-bb03-92b77adb8395")
         r241 = self._run(r220["next_tasks"][0], "v12-241")
         adapter242 = bridge.adapter_for("242", task_id="bridge-242", v12_envelope=r241["next_tasks"][0], v12_claims=self.claims, v12_220_receipt=r220["receipt"], task_receipt=registered241["receipt"], input_gate=gate)
         verifier = FoundationRuntimeAssembly.from_runtime_adapter(adapter242, task_id="bridge-242", runtime_id="0e5e9dd9-5135-4937-bb03-92b77adb8395")
         self.assertEqual(verifier.invocation_service.target_agent_id, "242")
-        package242 = self._package("bridge-242", "verified_bound_data", "242")
+        package242 = self._package("bridge-242", "verified_bound_data", "242", parent=package241)
         registered242 = adapter242.register_output(package242, task_id="real-242", runtime_id="0e5e9dd9-5135-4937-bb03-92b77adb8395")
         stub = bridge.consume_260_stub(registered242["receipt"])
         self.assertEqual(stub["input_ref"], artifact_ref(package242["envelope"]))
@@ -157,6 +180,90 @@ class FoundationGraphAdapterBridgeTests(unittest.TestCase):
             bridge.adapter_for("241", task_id="reject", v12_envelope=event, v12_claims=self.claims, v12_220_receipt=r220["receipt"], task_receipt={}, input_gate={})
         with self.assertRaisesRegex(FoundationGraphAdapterBridgeError, "FOUNDATION_BRIDGE_INPUT_GATE_INVALID"):
             bridge.adapter_for("241", task_id="reject", v12_envelope=r220["next_tasks"][0], v12_claims=self.claims, v12_220_receipt=r220["receipt"], task_receipt={}, input_gate={})
+
+    def test_bridge_rejection_matrix_closes_lineage_issue_permission_and_replay_gaps(self) -> None:
+        trusted = self._trusted_241_inputs()
+        r220, bridge, gate, receipt220 = (trusted[key] for key in ("r220", "bridge", "gate", "receipt220"))
+        envelope = r220["next_tasks"][0]
+
+        def invoke(receipt: dict[str, object] = receipt220, graph_envelope: dict[str, object] = envelope, supplied_gate: dict[str, object] = gate) -> RuntimeAdapter:
+            return bridge.adapter_for("241", task_id="bridge-241", v12_envelope=graph_envelope, v12_claims=self.claims, v12_220_receipt=r220["receipt"], task_receipt=receipt, input_gate=supplied_gate)
+
+        registry = ArtifactRegistry(self.candidate, self.roots, "EAS-115", "bridge-run", 1)
+        parentless = self._package("bridge-parentless", "structure_closure", "220")
+        registry.register(parentless["envelope"], parentless["payload"])
+        parentless_receipt = self._rehash_receipt({**receipt220, "output_ref": artifact_ref(parentless["envelope"])})
+        with self.subTest("parent-input-hash-drift"), self.assertRaisesRegex(FoundationGraphAdapterBridgeError, "FOUNDATION_BRIDGE_ARTIFACT_LINEAGE_DRIFT"):
+            invoke(parentless_receipt)
+        with self.subTest("output-version-drift"):
+            ref = dict(receipt220["output_ref"]); ref["version"] = 2
+            changed = self._rehash_receipt({**receipt220, "output_ref": ref})
+            with self.assertRaisesRegex(FoundationGraphAdapterBridgeError, "FOUNDATION_BRIDGE_ARTIFACT_UNREGISTERED"):
+                invoke(changed)
+
+        for label, key, value, code in (
+            ("wrong-runtime", "runtime_id", "wrong-runtime", "FOUNDATION_BRIDGE_TASK_RECEIPT_INVALID"),
+            ("wrong-route", "route_target", "260", "FOUNDATION_BRIDGE_TASK_RECEIPT_INVALID"),
+            ("cross-run", "run_id", "other-run", "FOUNDATION_BRIDGE_TASK_RECEIPT_INVALID"),
+            ("nullable-qa-disguise", "qa_id", "unexpected-qa", "FOUNDATION_BRIDGE_ARTIFACT_LINEAGE_DRIFT"),
+        ):
+            with self.subTest(label):
+                changed = self._rehash_receipt({**receipt220, key: value})
+                with self.assertRaisesRegex(FoundationGraphAdapterBridgeError, code):
+                    invoke(changed)
+
+        with self.subTest("cross-issue-gate-receipt"):
+            changed = self._rehash_receipt({**receipt220, "issue_id": "EAS-OTHER"})
+            with self.assertRaisesRegex(FoundationGraphAdapterBridgeError, "FOUNDATION_BRIDGE_INPUT_GATE_INVALID"):
+                invoke(changed)
+        with self.subTest("wrong-v12-uuid"):
+            changed_envelope = {**envelope, "target_agent_uuid": "00000000-0000-0000-0000-000000000000"}
+            with self.assertRaisesRegex(FoundationGraphAdapterBridgeError, "FOUNDATION_BRIDGE_V12_TASK_INVALID"):
+                invoke(graph_envelope=changed_envelope)
+        with self.subTest("old-manifest"):
+            original = bridge.manifest_hash; bridge.manifest_hash = "0" * 64
+            try:
+                with self.assertRaisesRegex(FoundationGraphAdapterBridgeError, "FOUNDATION_BRIDGE_PREFLIGHT_REQUIRED"):
+                    invoke()
+            finally:
+                bridge.manifest_hash = original
+
+        invoke()  # First call creates the stable edge grant.
+        self.assertIsInstance(invoke(), RuntimeAdapter)  # Exact replay is idempotent.
+        task_drift = self._rehash_receipt({**receipt220, "task_id": "same-edge-different-task"})
+        with self.subTest("stable-idempotency-drift"):
+            with self.assertRaisesRegex(FoundationGraphAdapterBridgeError, "FOUNDATION_BRIDGE_GRANT_DRIFT"):
+                invoke(task_drift)
+
+        gate_path = bridge.ledger / "grants" / f"{gate['gate_id']}.json"
+        with self.subTest("grant-permission-drift"):
+            os.chmod(gate_path, 0o644)
+            try:
+                with self.assertRaisesRegex(FoundationGraphAdapterBridgeError, "FOUNDATION_BRIDGE_GRANT_UNSAFE"):
+                    invoke()
+            finally:
+                os.chmod(gate_path, 0o600)
+        with self.subTest("grant-symlink-drift"):
+            backup = gate_path.with_suffix(".saved")
+            os.replace(gate_path, backup); os.symlink(backup, gate_path)
+            try:
+                with self.assertRaisesRegex(FoundationGraphAdapterBridgeError, "FOUNDATION_BRIDGE_GRANT_UNSAFE"):
+                    invoke()
+            finally:
+                gate_path.unlink(); os.replace(backup, gate_path)
+        with self.subTest("runtime-root-permission-drift"):
+            os.chmod(self.runtime, 0o755)
+            try:
+                with self.assertRaisesRegex(FoundationGraphAdapterBridgeError, "FOUNDATION_BRIDGE_LEDGER_UNSAFE"):
+                    invoke()
+            finally:
+                os.chmod(self.runtime, 0o700)
+        with self.subTest("invalid-manifest-head"):
+            manifest_path = self.installed / "manifest.json"
+            manifest = json.loads(manifest_path.read_text()); manifest["source_candidate_head"] = "old-head"
+            write(manifest_path, manifest)
+            with self.assertRaisesRegex(FoundationGraphAdapterBridgeError, "FOUNDATION_BRIDGE_V12_MANIFEST_HEAD_INVALID"):
+                FoundationGraphAdapterBridge(self.candidate, self.roots, self.installed)
 
 
 if __name__ == "__main__":

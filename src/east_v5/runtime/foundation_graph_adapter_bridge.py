@@ -97,6 +97,9 @@ class FoundationGraphAdapterBridge:
         self.root_marker = marker["root_binding_id"]
         if (self.manifest.get("schema_version"), self.manifest.get("skill_name"), self.manifest.get("skill_version")) != ("workspace_skill_bundle_manifest/v12", "east-v5-runtime-bootstrap-v12", "v12"):
             _fail("FOUNDATION_BRIDGE_V12_MANIFEST_INVALID")
+        source_head = self.manifest.get("source_candidate_head")
+        if not isinstance(source_head, str) or len(source_head) != 40 or set(source_head) - _HEX:
+            _fail("FOUNDATION_BRIDGE_V12_MANIFEST_HEAD_INVALID")
         if self.graph.get("schema_version") != "east-v5-full-runtime-graph/v12" or not isinstance(self.graph.get("real_agents"), dict):
             _fail("FOUNDATION_BRIDGE_V12_GRAPH_INVALID")
         for target, uuid in _TARGETS.items():
@@ -129,6 +132,7 @@ class FoundationGraphAdapterBridge:
         return ledger
 
     def _key(self) -> bytes:
+        self._assert_ledger_permissions()
         path = self.ledger / _KEY
         try:
             value = path.read_bytes()
@@ -137,6 +141,14 @@ class FoundationGraphAdapterBridge:
             return value
         except OSError as exc:
             raise FoundationGraphAdapterBridgeError("FOUNDATION_BRIDGE_KEY_UNAVAILABLE") from exc
+
+    def _assert_ledger_permissions(self) -> None:
+        """Recheck the mutable local trust boundary on every ledger access."""
+        try:
+            if any(path.is_symlink() or stat.S_IMODE(path.stat().st_mode) != 0o700 for path in (self.runtime_root, self.ledger, self.ledger / _GRANTS)):
+                _fail("FOUNDATION_BRIDGE_LEDGER_UNSAFE")
+        except OSError as exc:
+            raise FoundationGraphAdapterBridgeError("FOUNDATION_BRIDGE_LEDGER_UNSAFE") from exc
 
     def _state(self) -> dict[str, Any]:
         state = _load(self.runtime_root / "east-v5-full-runtime-v12-state.json", "FOUNDATION_BRIDGE_V12_STATE_REQUIRED")
@@ -174,23 +186,45 @@ class FoundationGraphAdapterBridge:
 
     def _receipt_artifact(self, expected_agent: str, expected_route: str, receipt: dict[str, Any], *, run_id: str, attempt: int) -> tuple[dict[str, Any], dict[str, Any]]:
         bare = {key: value for key, value in receipt.items() if key != "content_hash"}
-        if set(receipt) != {"schema_version", "task_id", "issue_id", "agent_id", "runtime_id", "input_ref", "output_ref", "run_id", "trace_id", "qa_id", "attempt", "route_target", "content_hash"} or receipt.get("schema_version") != "task_execution_receipt/v1" or receipt.get("content_hash") != sha256(bare) or receipt.get("agent_id") != _TARGETS[expected_agent] or receipt.get("route_target") != expected_route or receipt.get("run_id") != run_id or receipt.get("attempt") != attempt:
+        if set(receipt) != {"schema_version", "task_id", "issue_id", "agent_id", "runtime_id", "input_ref", "output_ref", "run_id", "trace_id", "qa_id", "attempt", "route_target", "content_hash"} or receipt.get("schema_version") != "task_execution_receipt/v1" or receipt.get("content_hash") != sha256(bare) or receipt.get("agent_id") != _TARGETS[expected_agent] or receipt.get("runtime_id") != self.graph["real_agents"][expected_agent]["runtime_id"] or receipt.get("route_target") != expected_route or receipt.get("run_id") != run_id or receipt.get("attempt") != attempt:
             _fail("FOUNDATION_BRIDGE_TASK_RECEIPT_INVALID")
+        input_ref = _ref(receipt.get("input_ref"), "FOUNDATION_BRIDGE_ARTIFACT_REF_INVALID")
         output_ref = _ref(receipt.get("output_ref"), "FOUNDATION_BRIDGE_ARTIFACT_REF_INVALID")
         registry = ArtifactRegistry(self.checkout, self.roots, str(receipt["issue_id"]), run_id, attempt)
         try:
+            input_record = registry.resolve(input_ref)
             record = registry.resolve(output_ref)
+            validate_envelope(self.checkout, input_record["envelope"], input_record["payload"])
             validate_envelope(self.checkout, record["envelope"], record["payload"])
         except ContractError as exc:
             raise FoundationGraphAdapterBridgeError("FOUNDATION_BRIDGE_ARTIFACT_UNREGISTERED") from exc
-        if artifact_ref(record["envelope"]) != output_ref or record["envelope"].get("mode") != "foundation" or record["envelope"].get("producer_id") != expected_agent:
+        output = record["envelope"]
+        if artifact_ref(input_record["envelope"]) != input_ref or artifact_ref(output) != output_ref or output.get("mode") != "foundation" or input_record["envelope"].get("mode") != "foundation" or output.get("producer_id") != expected_agent:
+            _fail("FOUNDATION_BRIDGE_ARTIFACT_LINEAGE_DRIFT")
+        if output.get("parent_artifact_refs") != [input_ref] or output.get("input_hashes") != [input_ref["content_hash"]] or (output.get("run_id"), output.get("attempt_no"), output.get("trace_id"), output.get("qa_id")) != (receipt["run_id"], receipt["attempt"], receipt["trace_id"], receipt["qa_id"]):
             _fail("FOUNDATION_BRIDGE_ARTIFACT_LINEAGE_DRIFT")
         return output_ref, record
 
-    def _grant(self, body: dict[str, Any]) -> None:
-        grant_id = _hash(body)
-        signed = {**body, "grant_id": grant_id, "signature": hmac.new(self._key(), _canon(body), hashlib.sha256).hexdigest()}
+    @staticmethod
+    def _grant_key(body: dict[str, Any]) -> str:
+        """Stable idempotency identity; mutable evidence is checked as drift."""
+        fields = ("schema_version", "issue_id", "run_id", "attempt", "v12_manifest_sha256", "v12_root_binding_id", "v12_preflight_token", "target_agent_id", "target_agent_uuid", "runtime_id", "route_target")
+        return _hash({field: body.get(field) for field in fields})
+
+    def _grant_path(self, grant_id: str) -> Path:
+        self._assert_ledger_permissions()
         path = self.ledger / _GRANTS / f"{grant_id}.json"
+        try:
+            if path.exists() and (path.is_symlink() or stat.S_IMODE(path.stat().st_mode) != 0o600):
+                _fail("FOUNDATION_BRIDGE_GRANT_UNSAFE")
+        except OSError as exc:
+            raise FoundationGraphAdapterBridgeError("FOUNDATION_BRIDGE_GRANT_UNSAFE") from exc
+        return path
+
+    def _grant(self, body: dict[str, Any]) -> None:
+        grant_id = self._grant_key(body)
+        signed = {**body, "grant_id": grant_id, "signature": hmac.new(self._key(), _canon(body), hashlib.sha256).hexdigest()}
+        path = self._grant_path(grant_id)
         try:
             if path.exists():
                 if _load(path, "FOUNDATION_BRIDGE_GRANT_INVALID") != signed:
@@ -225,18 +259,18 @@ class FoundationGraphAdapterBridge:
             raise FoundationGraphAdapterBridgeError("FOUNDATION_BRIDGE_INPUT_GATE_ARTIFACT_UNREGISTERED") from exc
         if (records["snapshot_ref"]["envelope"].get("artifact_type"), records["snapshot_ref"]["envelope"].get("producer_id"), records["snapshot_ref"]["envelope"].get("mode")) != ("database_read_snapshot", "EAS-19", "foundation") or (records["generation_context_ref"]["envelope"].get("artifact_type"), records["generation_context_ref"]["envelope"].get("producer_id"), records["generation_context_ref"]["envelope"].get("mode")) != ("foundation_generation_context", "EAS-19", "foundation"):
             _fail("FOUNDATION_BRIDGE_INPUT_GATE_ARTIFACT_LINEAGE_DRIFT")
-        body = {"schema_version": "foundation_graph_adapter_input_gate/v1", "issue_id": issue_id, "run_id": run_id, "attempt": attempt, "v12_manifest_sha256": self.manifest_hash, "v12_root_binding_id": self.root_marker, "claims_sha256": _hash(v12_claims), "component_receipt_sha256": component_receipt["receipt_sha256"], **refs}
+        body = {"schema_version": "foundation_graph_adapter_input_gate/v1", "issue_id": issue_id, "run_id": run_id, "attempt": attempt, "v12_manifest_sha256": self.manifest_hash, "v12_root_binding_id": self.root_marker, "v12_preflight_token": next(token for token, entry in state["preflights"].items() if entry is accepted), "target_agent_id": "input-gate", "target_agent_uuid": "input-gate", "runtime_id": _FOUNDATION_RUNTIME, "route_target": "241", "claims_sha256": _hash(v12_claims), "component_receipt_sha256": component_receipt["receipt_sha256"], **refs}
         self._grant(body)
-        return {**body, "gate_id": _hash(body)}
+        return {**body, "gate_id": self._grant_key(body)}
 
-    def _validate_gate(self, gate: dict[str, Any], *, run_id: str, attempt: int) -> str:
+    def _validate_gate(self, gate: dict[str, Any], *, issue_id: Any, run_id: str, attempt: int) -> str:
         if not isinstance(gate, dict):
             _fail("FOUNDATION_BRIDGE_INPUT_GATE_REQUIRED")
         gate_id = gate.get("gate_id")
         body = {key: value for key, value in gate.items() if key != "gate_id"}
-        if not isinstance(gate_id, str) or gate_id != _hash(body) or body.get("schema_version") != "foundation_graph_adapter_input_gate/v1" or body.get("run_id") != run_id or body.get("attempt") != attempt:
+        if not isinstance(gate_id, str) or gate_id != self._grant_key(body) or body.get("schema_version") != "foundation_graph_adapter_input_gate/v1" or body.get("issue_id") != issue_id or body.get("run_id") != run_id or body.get("attempt") != attempt:
             _fail("FOUNDATION_BRIDGE_INPUT_GATE_INVALID")
-        saved = _load(self.ledger / _GRANTS / f"{gate_id}.json", "FOUNDATION_BRIDGE_INPUT_GATE_REQUIRED")
+        saved = _load(self._grant_path(gate_id), "FOUNDATION_BRIDGE_INPUT_GATE_REQUIRED")
         signature = saved.get("signature")
         if saved.get("grant_id") != gate_id or {key: value for key, value in saved.items() if key not in {"grant_id", "signature"}} != body or not isinstance(signature, str) or not hmac.compare_digest(signature, hmac.new(self._key(), _canon(body), hashlib.sha256).hexdigest()):
             _fail("FOUNDATION_BRIDGE_INPUT_GATE_INVALID")
@@ -263,13 +297,13 @@ class FoundationGraphAdapterBridge:
         if target not in _ROUTES or not isinstance(task_id, str) or not task_id:
             _fail("FOUNDATION_BRIDGE_ARGUMENT_INVALID")
         self._validate_v12(target, v12_envelope, v12_claims, v12_220_receipt)
-        gate_id = self._validate_gate(input_gate, run_id=v12_envelope["run_id"], attempt=v12_envelope["attempt"])
+        gate_id = self._validate_gate(input_gate, issue_id=task_receipt.get("issue_id") if isinstance(task_receipt, dict) else None, run_id=v12_envelope["run_id"], attempt=v12_envelope["attempt"])
         parent_agent, parent_route = ("220", "241") if target == "241" else ("241", "242")
         input_ref, _record = self._receipt_artifact(parent_agent, parent_route, task_receipt, run_id=v12_envelope["run_id"], attempt=v12_envelope["attempt"])
         route, artifact_type = _ROUTES[target]
         declaration, evidence = self._bootstrap(v12_envelope["root_binding_id"])
         envelope = {"schema_version": "task_input_envelope/v1", "adapter_version": "east-v5-runtime-adapter/v1", "issue_id": task_receipt["issue_id"], "run_id": v12_envelope["run_id"], "trace_id": task_receipt["trace_id"], "qa_id": None, "attempt": v12_envelope["attempt"], "target_agent_id": target, "target_agent_uuid": _TARGETS[target], "root_binding_id": evidence.root_binding_id, "input_ref": input_ref, "expected_output": {"artifact_type": artifact_type, "producer_id": target, "route_target": route}, "execution_bootstrap": declaration}
-        body = {"schema_version": "foundation_graph_adapter_bridge_grant/v1", "input_gate_id": gate_id, "v12_manifest_sha256": self.manifest_hash, "v12_root_binding_id": v12_envelope["root_binding_id"], "v12_preflight_token": v12_envelope["preflight_token"], "v12_envelope_sha256": _hash(v12_envelope), "v12_220_receipt_sha256": v12_220_receipt["content_hash"], "upstream_task_receipt_sha256": task_receipt["content_hash"], "upstream_artifact_ref": input_ref, "target_agent_id": target, "target_agent_uuid": _TARGETS[target], "runtime_id": _FOUNDATION_RUNTIME, "route_target": route, "v1_envelope_sha256": _hash(envelope)}
+        body = {"schema_version": "foundation_graph_adapter_bridge_grant/v1", "issue_id": task_receipt["issue_id"], "run_id": v12_envelope["run_id"], "attempt": v12_envelope["attempt"], "input_gate_id": gate_id, "v12_manifest_sha256": self.manifest_hash, "v12_root_binding_id": v12_envelope["root_binding_id"], "v12_preflight_token": v12_envelope["preflight_token"], "v12_envelope_sha256": _hash(v12_envelope), "v12_220_receipt_sha256": v12_220_receipt["content_hash"], "upstream_task_receipt_sha256": task_receipt["content_hash"], "upstream_artifact_ref": input_ref, "target_agent_id": target, "target_agent_uuid": _TARGETS[target], "runtime_id": _FOUNDATION_RUNTIME, "route_target": route, "v1_envelope_sha256": _hash(envelope)}
         self._grant(body)
         return RuntimeAdapter(self.checkout, self.roots, envelope, preflight=evidence)
 
