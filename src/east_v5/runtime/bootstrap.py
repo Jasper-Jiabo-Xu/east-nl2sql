@@ -420,6 +420,17 @@ class RuntimeBootstrap:
         body = {"schema_version": "foundation-parent-chain-materialization-receipt/v2", "root_binding_id": evidence.root_binding_id, "bootstrap": evidence.redacted(), "skill_manifest_sha256": self.declaration["skill_bundle"]["skill_manifest_sha256"], "config_sha256": config_hash, "attachments": config["attachments"], "eas111_evidence": config["eas111_evidence"], "assets": manifest["assets"], "runtime_manifest_sha256": manifest["runtime_manifest_sha256"], "runtime_manifest_local_sha256": manifest["runtime_manifest_local_sha256"], "hierarchy_mapping_sha256": manifest["hierarchy_mapping_sha256"], "container_sha256": manifest["container_sha256"]}
         body["receipt_sha256"] = sha256(body)
         body["attestation"] = hmac.new(self._materializer_key(root), canonical_bytes(body), hashlib.sha256).hexdigest()
+        receipt_path = root / "foundation-parent-chain-materialization-receipt-v2.json"
+        if receipt_path.exists() or receipt_path.is_symlink():
+            self._private(receipt_path, 0o600, "FOUNDATION_PARENT_MATERIALIZER_RECEIPT_UNSAFE")
+            try:
+                if json.loads(receipt_path.read_text(encoding="utf-8")) != body:
+                    _fail("FOUNDATION_PARENT_MATERIALIZER_RECEIPT_DRIFT")
+            except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+                raise RuntimeBootstrapError("FOUNDATION_PARENT_MATERIALIZER_RECEIPT_DRIFT") from exc
+        else:
+            self._atomic_json(receipt_path, body)
+            self._private(receipt_path, 0o600, "FOUNDATION_PARENT_MATERIALIZER_RECEIPT_UNSAFE")
         return body
 
     def build_adapter(self, roots: dict[str, Any]) -> Any:
@@ -446,3 +457,9 @@ class RuntimeBootstrap:
         self.preflight()
         from east_v5.runtime.foundation_repo_launcher import FoundationRepoLauncher
         return FoundationRepoLauncher(self)
+
+    def foundation_fixed_component_issuer(self) -> Any:
+        """Return the sole, parameterless production issuer for fixed 000."""
+        self.preflight()
+        from east_v5.runtime.foundation_fixed_component_000 import FoundationFixedComponent000Issuer
+        return FoundationFixedComponent000Issuer(self)

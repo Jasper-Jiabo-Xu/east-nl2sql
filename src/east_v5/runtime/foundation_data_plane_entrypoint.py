@@ -515,4 +515,13 @@ class FoundationDataPlaneEntrypoint:
             "rehydrated_from_accepted_projection": True,
         }
         receipt["receipt_sha256"] = sha256(receipt)
+        receipt_path = recovery_dir / "recovery-receipt.json"
+        if receipt_path.exists() or receipt_path.is_symlink():
+            self._assert_private(receipt_path, 0o600, "FOUNDATION_PARENT_CHAIN_RECOVERY_DRIFT")
+            existing_receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+            if existing_receipt != receipt:
+                _fail("FOUNDATION_PARENT_CHAIN_RECOVERY_DRIFT")
+        else:
+            self._atomic_json(receipt_path, receipt)
+            self._assert_private(receipt_path, 0o600, "FOUNDATION_PARENT_CHAIN_RECOVERY_DRIFT")
         return RecoveredParentChain(rehydrated, closure, _RECOVERED_EVIDENCE_BYTES, receipt)

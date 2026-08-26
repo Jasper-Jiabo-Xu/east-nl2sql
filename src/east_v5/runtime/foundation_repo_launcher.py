@@ -218,14 +218,18 @@ class FoundationRepoLauncher:
             claims["agents"][agent] = {"agent_uuid": item["uuid"], "runtime_id": item["runtime_id"], "instructions_sha256": manifest["instruction_hashes"][agent], "enabled_skill_ids": enabled}
         return claims, graph, manifest
 
-    def _identity(self, value: Any, evidence: BootstrapEvidence, graph: dict[str, Any], inputs: dict[str, Any]) -> dict[str, Any]:
+    def _identity(self, evidence: BootstrapEvidence, graph: dict[str, Any], inputs: dict[str, Any], *, agent_id: str) -> dict[str, Any]:
+        # The task-local identity is sealed inside the bootstrap envelope.
+        # launch() deliberately has no identity parameter.
+        value = self.bootstrap.envelope.get("runtime_task_identity")
         needed = {"workspace_id", "project_id", "issue_id", "task_id", "agent_uuid", "runtime_id", "run_id", "attempt"}
         if not isinstance(value, dict) or set(value) != needed:
             _fail("FOUNDATION_REPO_LAUNCHER_TASK_IDENTITY_INVALID")
         context = self.bootstrap.declaration["runtime_context"]
         if (not all(isinstance(value[key], str) and value[key] for key in needed - {"attempt"})
-                or value["issue_id"] != "EAS-114" or value["agent_uuid"] != graph["real_agents"]["241"]["uuid"]
-                or value["runtime_id"] != graph["real_agents"]["241"]["runtime_id"]
+                or agent_id not in {"241", "242", "260"} or value["issue_id"] != "EAS-114"
+                or value["agent_uuid"] != graph["real_agents"][agent_id]["uuid"]
+                or value["runtime_id"] != graph["real_agents"][agent_id]["runtime_id"]
                 or value["run_id"] != inputs["run_id"] or value["attempt"] != inputs["attempt"]):
             _fail("FOUNDATION_REPO_LAUNCHER_TASK_IDENTITY_INVALID")
         # Context identifiers are checked against the bootstrap declaration,
@@ -234,7 +238,7 @@ class FoundationRepoLauncher:
             _fail("FOUNDATION_REPO_LAUNCHER_TASK_IDENTITY_INVALID")
         return dict(value)
 
-    def launch(self, task_identity: dict[str, Any]) -> dict[str, Any]:
+    def launch(self) -> dict[str, Any]:
         """Prepare one idempotent 241 launch from sealed Foundation inputs."""
         try:
             evidence = self.bootstrap.preflight()
@@ -244,14 +248,14 @@ class FoundationRepoLauncher:
         inputs = self._sealed_inputs(root, evidence)
         bundle = self._install_bundle(root)
         claims, graph, manifest = self._claims(bundle)
-        identity = self._identity(task_identity, evidence, graph, inputs)
+        identity = self._identity(evidence, graph, inputs, agent_id="241")
         controller = self._controller(bundle)
-        component = {"schema_version": "east-v5-fixed-component-receipt/v1", "component_id": "000", "root_binding_id": evidence.root_binding_id, "config_sha256": claims["config_sha256"]}
-        component["receipt_sha256"] = sha256(component)
-        # 000 is minted only after all parent-chain/resolver/EAS-19 evidence
-        # has been authenticated.  Its domain signature is kept root-local.
-        component_proof = {"schema_version": "foundation-fixed-000-attestation/v1", "component_receipt": component, "inputs_sha256": inputs["inputs_sha256"]}
-        component_proof["attestation"] = hmac.new((root / _KEY).read_bytes(), canonical_bytes(component_proof), hashlib.sha256).hexdigest()
+        # 000 is issued during controlled bootstrap provisioning.  241 only
+        # read-backs its sealed production record; it has no receipt minting
+        # capability of its own.
+        issued = self.bootstrap.foundation_fixed_component_issuer().load()
+        component = issued["receipt"]
+        component_proof = issued
         preflight = controller.full_preflight(claims, component)
         envelope = {"schema_version": "runtime_graph_envelope/v12", "run_id": identity["run_id"], "mode": "foundation", "attempt": identity["attempt"], "target_agent_id": "241", "target_agent_uuid": identity["agent_uuid"], "root_binding_id": evidence.root_binding_id, "preflight_token": preflight["preflight_token"], "input_receipt_hashes": [inputs["structure_closure_ref"]["content_hash"]], "outcome": "success"}
         replay_key = sha256({"head": evidence.candidate_head_sha, "root_binding_id": evidence.root_binding_id, "task_id": identity["task_id"], "agent_uuid": identity["agent_uuid"], "runtime_id": identity["runtime_id"], "run_id": identity["run_id"], "attempt": identity["attempt"], "inputs_sha256": inputs["inputs_sha256"], "manifest": _V12_MANIFEST_SHA256})
@@ -268,22 +272,53 @@ class FoundationRepoLauncher:
             _private(path, 0o600, "FOUNDATION_REPO_LAUNCHER_REPLAY_UNSAFE")
         return receipt
 
-    def verify_downstream(self, receipt: dict[str, Any], *, target_agent_id: str, task_id: str, runtime_id: str) -> dict[str, Any]:
-        """Independently validate a 242/260 consumption before business work."""
-        if target_agent_id not in {"242", "260"} or not isinstance(task_id, str) or not task_id or not isinstance(runtime_id, str) or not runtime_id:
-            _fail("FOUNDATION_REPO_LAUNCHER_DOWNSTREAM_ARGUMENT_INVALID")
+    def verify_downstream(self, receipt: dict[str, Any]) -> dict[str, Any]:
+        """Consume exactly one upstream edge under the current task identity.
+
+        242 and 260 never nominate their own task/runtime in parameters.  They
+        re-open all root evidence and accept only 241 -> 242 -> 260 state.
+        """
         evidence = self.bootstrap.preflight(); root = self._root(evidence)
-        if not isinstance(receipt, dict) or receipt.get("schema_version") != "foundation-repo-launch-receipt/v1":
+        inputs = self._sealed_inputs(root, evidence)
+        bundle = self._install_bundle(root)
+        claims, graph, _manifest = self._claims(bundle)
+        value = self.bootstrap.envelope.get("runtime_task_identity")
+        if not isinstance(value, dict):
+            _fail("FOUNDATION_REPO_LAUNCHER_TASK_IDENTITY_INVALID")
+        target_agent_id = next((agent for agent in ("242", "260") if value.get("agent_uuid") == graph["real_agents"][agent]["uuid"]), None)
+        if target_agent_id is None:
+            _fail("FOUNDATION_REPO_LAUNCHER_TASK_IDENTITY_INVALID")
+        identity = self._identity(evidence, graph, inputs, agent_id=target_agent_id)
+        # Re-read all 000 inputs rather than trusting its outer launch HMAC.
+        component = self.bootstrap.foundation_fixed_component_issuer().load()
+        controller = self._controller(bundle)
+        controller.full_preflight(claims, component["receipt"])
+        if not isinstance(receipt, dict):
             _fail("FOUNDATION_REPO_LAUNCHER_RECEIPT_INVALID")
         body = {key: value for key, value in receipt.items() if key != "attestation"}
-        expected = hmac.new((root / _KEY).read_bytes(), canonical_bytes(body), hashlib.sha256).hexdigest()
-        if not isinstance(receipt.get("attestation"), str) or not hmac.compare_digest(receipt["attestation"], expected):
+        signature = hmac.new((root / _KEY).read_bytes(), canonical_bytes(body), hashlib.sha256).hexdigest()
+        if not isinstance(receipt.get("attestation"), str) or not hmac.compare_digest(receipt["attestation"], signature):
             _fail("FOUNDATION_REPO_LAUNCHER_RECEIPT_FORGED")
-        identity = receipt.get("task_identity")
-        route = receipt.get("route")
-        if (not isinstance(identity, dict) or identity.get("task_id") != task_id
-                or identity.get("runtime_id") != runtime_id or receipt.get("root_binding_id") != evidence.root_binding_id
-                or receipt.get("skill_manifest_sha256") != _V12_MANIFEST_SHA256
-                or not isinstance(route, dict) or target_agent_id not in route.values()):
+        expected_schema = "foundation-repo-launch-receipt/v1" if target_agent_id == "242" else "foundation-repo-downstream-receipt/v1"
+        expected_upstream = "241" if target_agent_id == "242" else "242"
+        if (receipt.get("schema_version") != expected_schema or receipt.get("root_binding_id") != evidence.root_binding_id
+                or receipt.get("inputs_sha256") != inputs["inputs_sha256"]):
             _fail("FOUNDATION_REPO_LAUNCHER_DOWNSTREAM_DRIFT")
-        return {"status": "accepted", "target_agent_id": target_agent_id, "replay_key": receipt["replay_key"], "inputs_sha256": receipt["inputs_sha256"]}
+        upstream_identity = receipt.get("task_identity")
+        if not isinstance(upstream_identity, dict) or upstream_identity.get("agent_uuid") != graph["real_agents"][expected_upstream]["uuid"]:
+            _fail("FOUNDATION_REPO_LAUNCHER_DOWNSTREAM_DRIFT")
+        if target_agent_id == "242" and receipt.get("route") != _ROUTES:
+            _fail("FOUNDATION_REPO_LAUNCHER_DOWNSTREAM_DRIFT")
+        upstream_hash = sha256(receipt)
+        accepted_body = {"schema_version": "foundation-repo-downstream-receipt/v1", "status": "accepted", "root_binding_id": evidence.root_binding_id, "task_identity": identity, "upstream_agent_id": expected_upstream, "upstream_receipt_sha256": upstream_hash, "inputs_sha256": inputs["inputs_sha256"], "component_production_record_sha256": sha256(component), "replay_key": sha256({"target": target_agent_id, "task": identity["task_id"], "upstream": upstream_hash})}
+        accepted = {**accepted_body, "attestation": hmac.new((root / _KEY).read_bytes(), canonical_bytes(accepted_body), hashlib.sha256).hexdigest()}
+        ledger = root / _LEDGER; ledger.mkdir(mode=0o700, exist_ok=True); _private(ledger, 0o700, "FOUNDATION_REPO_LAUNCHER_LEDGER_UNSAFE")
+        path = ledger / f"{accepted_body['replay_key']}.json"
+        if path.exists() or path.is_symlink():
+            _private(path, 0o600, "FOUNDATION_REPO_LAUNCHER_REPLAY_UNSAFE")
+            if _load(path, "FOUNDATION_REPO_LAUNCHER_REPLAY_UNSAFE") != accepted:
+                _fail("FOUNDATION_REPO_LAUNCHER_REPLAY_DRIFT")
+        else:
+            self._atomic_json(path, accepted, "FOUNDATION_REPO_LAUNCHER_WRITE_FAILED")
+            _private(path, 0o600, "FOUNDATION_REPO_LAUNCHER_REPLAY_UNSAFE")
+        return accepted
