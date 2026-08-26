@@ -1,0 +1,40 @@
+{
+  "manifest_id": "EAS-120-stage1b-s0-synthetic-dataset",
+  "s0_boundary": "qa_id_clear_question_public_schema",
+  "questions": [
+    {
+      "qa_id": "S0-FIXTURE-001",
+      "clear_question": "按机构汇总公开合成表中的贷款余额。",
+      "public_semantic_schema": {
+        "tables": [
+          {
+            "name": "public_s0_table",
+            "columns": [
+              "qa_id",
+              "org_id",
+              "synthetic_value",
+              "baseline_id"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "qa_id": "S0-FIXTURE-002",
+      "clear_question": "筛选公开合成表中指定期间的客户数量。",
+      "public_semantic_schema": {
+        "tables": [
+          {
+            "name": "public_s0_table",
+            "columns": [
+              "qa_id",
+              "period_id",
+              "synthetic_value",
+              "baseline_id"
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

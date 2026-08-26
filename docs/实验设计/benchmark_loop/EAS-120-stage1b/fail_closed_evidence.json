@@ -1,0 +1,57 @@
+{
+  "issue": "EAS-120",
+  "stage": "stage1b_s0_synthetic_smoke",
+  "evidence_type": "sanitized_fail_closed_matrix",
+  "cases": [
+    {
+      "case_id": "bad_input",
+      "expected_failure_code": "INVALID_JSON",
+      "covered_by": "east_v5.experiments.s0_harness.load_json"
+    },
+    {
+      "case_id": "leakage_field",
+      "expected_failure_code": "S0_LEAKAGE_FIELD",
+      "covered_by": "tests.experiments.test_s0_harness.test_leakage_field_fails_closed"
+    },
+    {
+      "case_id": "unknown_model_id",
+      "expected_failure_code": "UNKNOWN_MODEL_ID",
+      "covered_by": "tests.experiments.test_s0_harness.test_unknown_model_id_fails_closed"
+    },
+    {
+      "case_id": "missing_endpoint",
+      "expected_failure_code": "MISSING_ENDPOINT",
+      "covered_by": "tests.experiments.test_s0_harness.test_missing_endpoint_fails_closed"
+    },
+    {
+      "case_id": "budget_exceeded",
+      "expected_failure_code": "BUDGET_EXCEEDED",
+      "covered_by": "tests.experiments.test_s0_harness.test_budget_exceeded_is_stable_failure_code"
+    },
+    {
+      "case_id": "timeout",
+      "expected_failure_code": "TIMEOUT",
+      "covered_by": "tests.experiments.test_s0_harness.test_timeout_is_stable_failure_code"
+    },
+    {
+      "case_id": "illegal_sql_output",
+      "expected_failure_code": "ILLEGAL_SQL_OUTPUT",
+      "covered_by": "tests.experiments.test_s0_harness.test_illegal_sql_output_is_stable_failure_code"
+    },
+    {
+      "case_id": "duplicate_attempt",
+      "expected_failure_code": "DUPLICATE_ATTEMPT",
+      "covered_by": "tests.experiments.test_s0_harness.test_duplicate_attempt_is_rejected"
+    },
+    {
+      "case_id": "directory_cache_trace_mix",
+      "expected_failure_code": "CACHE_NAMESPACE_COLLISION",
+      "covered_by": "tests.experiments.test_s0_harness.test_cache_namespace_collision_fails_closed"
+    },
+    {
+      "case_id": "eas118_forbidden_mutation",
+      "expected_failure_code": "S0_LEAKAGE_FIELD",
+      "covered_by": "scripts/east_baseline_harness.py consume-s0 negative mutation preflight"
+    }
+  ]
+}

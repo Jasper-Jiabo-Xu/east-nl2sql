@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "EAST V5 S0 dataset manifest",
+  "type": "object",
+  "required": [
+    "manifest_id",
+    "s0_boundary",
+    "questions"
+  ],
+  "additionalProperties": true,
+  "properties": {
+    "manifest_id": {
+      "type": "string"
+    },
+    "s0_boundary": {
+      "const": "qa_id_clear_question_public_schema"
+    },
+    "questions": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "qa_id",
+          "clear_question",
+          "public_semantic_schema"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "qa_id": {
+            "type": "string"
+          },
+          "clear_question": {
+            "type": "string"
+          },
+          "public_semantic_schema": {
+            "type": "object"
+          }
+        }
+      }
+    }
+  }
+}

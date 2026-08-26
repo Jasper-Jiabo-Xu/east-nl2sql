@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "EAST V5 baseline run manifest",
+  "type": "object",
+  "required": [
+    "manifest_id",
+    "baselines"
+  ],
+  "additionalProperties": true,
+  "properties": {
+    "manifest_id": {
+      "type": "string"
+    },
+    "baselines": {
+      "type": "array",
+      "minItems": 6,
+      "maxItems": 6,
+      "items": {
+        "type": "object",
+        "required": [
+          "baseline_id",
+          "repo_url",
+          "commit",
+          "license",
+          "native_entrypoint",
+          "cache_namespace",
+          "model_contract",
+          "command",
+          "timeout_seconds"
+        ],
+        "properties": {
+          "baseline_id": {
+            "enum": [
+              "DeepEye-SQL",
+              "DataGallery-Text2SQL",
+              "JoyDataAgent-SQL",
+              "Databao Agent",
+              "ReFoRCE",
+              "AutoLink"
+            ]
+          },
+          "repo_url": {
+            "type": "string"
+          },
+          "commit": {
+            "type": "string"
+          },
+          "license": {
+            "type": "string"
+          },
+          "native_entrypoint": {
+            "type": "string"
+          },
+          "cache_namespace": {
+            "type": "string"
+          },
+          "model_contract": {
+            "type": "object",
+            "required": [
+              "model_id",
+              "base_url",
+              "temperature",
+              "max_tokens",
+              "timeout_seconds",
+              "retry_count"
+            ]
+          },
+          "command": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string"
+            }
+          },
+          "timeout_seconds": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      }
+    }
+  }
+}

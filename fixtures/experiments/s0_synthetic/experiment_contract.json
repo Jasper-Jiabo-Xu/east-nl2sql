@@ -1,0 +1,13 @@
+{
+  "contract_id": "EAS-120-stage1b-s0-synthetic",
+  "stage": "stage1b_s0_synthetic_smoke",
+  "s0_input_boundary": "qa_id + clear_question + public_semantic_schema",
+  "hard_rules_hash": "d00fa6028ff729f2776a7e779db2f530bcba8fba892765c8aa08c6e0aee6b463",
+  "concurrency": 6,
+  "retry_policy": {
+    "retryable_failure_codes": [
+      "TRANSPORT_ERROR"
+    ],
+    "max_attempts": 3
+  }
+}
