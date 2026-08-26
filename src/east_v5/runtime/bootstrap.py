@@ -30,7 +30,7 @@ _BOOTSTRAP_KEYS = {"bootstrap_version", "candidate_base_sha", "candidate_head_sh
 _CONTEXT_KEYS = {"resolver_version", "workspace_id", "project_id", "daemon_id"}
 _SKILL_BUNDLE_KEYS = {"skill_name", "skill_version", "skill_manifest_sha256"}
 _MATERIALIZER_CONFIG = "config/foundation-parent-chain-materializer-v1.json"
-_MATERIALIZER_CONFIG_SHA256 = "0a5eb66f040afa1e9b7630a2148c10b784f4c3ea7d165d14da15af4b6e2d44dc"
+_MATERIALIZER_CONFIG_SHA256 = "77317d48113c5ba81c6331fe0bd5a006a4e47c1cf8711c070a03e19683098847"
 _MATERIALIZER_CONTAINER = "foundation-parent-chain-container-v1"
 _MATERIALIZER_MANIFEST = "foundation-parent-chain-container-manifest.json"
 _MATERIALIZER_KEY = ".foundation-parent-chain-materializer-v1.key"
@@ -210,7 +210,11 @@ class RuntimeBootstrap:
         keys = {"id", "filename", "byte_sha256", "semantic_sha256"}
         asset_keys = {"asset_version", "artifact_id", "artifact_type", "content_hash", "role", "logical_path", "filename", "byte_sha256"}
         evidence = value.get("eas111_evidence")
-        if set(value) != required or value.get("schema_version") != "foundation-parent-chain-materializer-config/v2" or value.get("container_schema_version") != "foundation-parent-chain-container-manifest/v2" or value.get("runtime_manifest_identity_schema") != "constraint-assets-runtime-manifest-identity/v1" or value.get("runtime_manifest_identity_bytes_length") != 1231 or not _is_sha(value.get("runtime_manifest_template_byte_sha256"), 64) or not isinstance(attachments, list) or len(attachments) != 3 or any(not isinstance(item, dict) or set(item) != keys or not all(isinstance(item.get(key), str) and item[key] for key in keys) or not _is_sha(item["byte_sha256"], 64) or not _is_sha(item["semantic_sha256"], 64) for item in attachments) or len({item["id"] for item in attachments}) != 3 or len({item["filename"] for item in attachments}) != 3 or not isinstance(evidence, dict) or set(evidence) != {"id", "filename", "byte_sha256"} or not all(isinstance(evidence.get(key), str) and evidence[key] for key in evidence) or not _is_sha(evidence["byte_sha256"], 64) or not isinstance(assets, list) or len(assets) != 6 or any(not isinstance(item, dict) or set(item) != asset_keys or not all(isinstance(item.get(key), str) and item[key] for key in asset_keys) or not _is_sha(item["content_hash"], 64) or not _is_sha(item["byte_sha256"], 64) or Path(item["logical_path"]).is_absolute() or ".." in Path(item["logical_path"]).parts for item in assets) or len({item["filename"] for item in assets}) != len(assets) or not _is_sha(value.get("runtime_manifest_without_locators_sha256"), 64) or not _is_sha(value.get("hierarchy_mapping_sha256"), 64):
+        evidence_keys = {"id", "download_filename", "filename", "byte_sha256"}
+        safe_name = lambda item: isinstance(item, str) and item not in {".", ".."} and "/" not in item and "\\" not in item and Path(item).name == item
+        reserved_names = {"approved-assets", "constraint-assets-runtime-manifest.json", "foundation-hierarchy-endpoint-mapping.json", _MATERIALIZER_MANIFEST}
+        attachment_names = {item["filename"] for item in attachments if isinstance(item, dict) and isinstance(item.get("filename"), str)}
+        if set(value) != required or value.get("schema_version") != "foundation-parent-chain-materializer-config/v2" or value.get("container_schema_version") != "foundation-parent-chain-container-manifest/v2" or value.get("runtime_manifest_identity_schema") != "constraint-assets-runtime-manifest-identity/v1" or value.get("runtime_manifest_identity_bytes_length") != 1231 or not _is_sha(value.get("runtime_manifest_template_byte_sha256"), 64) or not isinstance(attachments, list) or len(attachments) != 3 or any(not isinstance(item, dict) or set(item) != keys or not all(isinstance(item.get(key), str) and item[key] for key in keys) or not safe_name(item["filename"]) or not _is_sha(item["byte_sha256"], 64) or not _is_sha(item["semantic_sha256"], 64) for item in attachments) or len({item["id"] for item in attachments}) != 3 or len(attachment_names) != 3 or not isinstance(evidence, dict) or set(evidence) != evidence_keys or not all(isinstance(evidence.get(key), str) and evidence[key] for key in evidence) or not safe_name(evidence["download_filename"]) or not safe_name(evidence["filename"]) or evidence["download_filename"] == evidence["filename"] or evidence["download_filename"] in attachment_names | reserved_names or evidence["filename"] in attachment_names | reserved_names or not _is_sha(evidence["byte_sha256"], 64) or not isinstance(assets, list) or len(assets) != 6 or any(not isinstance(item, dict) or set(item) != asset_keys or not all(isinstance(item.get(key), str) and item[key] for key in asset_keys) or not _is_sha(item["content_hash"], 64) or not _is_sha(item["byte_sha256"], 64) or Path(item["logical_path"]).is_absolute() or ".." in Path(item["logical_path"]).parts for item in assets) or len({item["filename"] for item in assets}) != len(assets) or not _is_sha(value.get("runtime_manifest_without_locators_sha256"), 64) or not _is_sha(value.get("hierarchy_mapping_sha256"), 64):
             _fail("FOUNDATION_PARENT_MATERIALIZER_CONFIG_INVALID")
         observed = hashlib.sha256(raw).hexdigest()
         if observed != _MATERIALIZER_CONFIG_SHA256:
@@ -372,9 +376,13 @@ class RuntimeBootstrap:
                 # fixed attachment id is never supplied by a business caller.
                 evidence_item = config["eas111_evidence"]
                 self.runner(["multica", "attachment", "download", evidence_item["id"], "--output-dir", str(staging)], check=True, capture_output=True, text=True)
+                downloaded_evidence = staging / evidence_item["download_filename"]
                 evidence_file = staging / evidence_item["filename"]
-                if evidence_file.is_symlink() or not evidence_file.is_file() or _file_sha(evidence_file) != evidence_item["byte_sha256"]:
+                if downloaded_evidence.is_symlink() or not downloaded_evidence.is_file() or _file_sha(downloaded_evidence) != evidence_item["byte_sha256"]:
                     _fail("FOUNDATION_PARENT_MATERIALIZER_EAS111_EVIDENCE_DRIFT")
+                if evidence_file.exists() or evidence_file.is_symlink():
+                    _fail("FOUNDATION_PARENT_MATERIALIZER_EAS111_EVIDENCE_DRIFT")
+                os.replace(downloaded_evidence, evidence_file)
                 evidence_file.chmod(0o600); self._private(evidence_file, 0o600, "FOUNDATION_PARENT_MATERIALIZER_ATTACHMENT_PERMISSION_DRIFT")
                 asset_dir = staging / "approved-assets"; asset_dir.mkdir(mode=0o700); self._private(asset_dir, 0o700, "FOUNDATION_PARENT_MATERIALIZER_STAGING_UNSAFE")
                 for asset in config["assets"]:

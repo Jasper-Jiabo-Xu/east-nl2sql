@@ -55,14 +55,14 @@ class RuntimeAdapterTests(unittest.TestCase):
             evidence_raw = b"sanitized-eas111-evidence"
             checkout = Path(tmp) / "checkout"; checkout.mkdir()
             source = checkout / "asset.bin"; source.write_bytes(b"sanitized-asset")
-            config = {"schema_version": "foundation-parent-chain-materializer-config/v2", "container_schema_version": "foundation-parent-chain-container-manifest/v2", "attachments": attachments, "eas111_evidence": {"id": "evidence", "filename": "eas111-evidence.json", "byte_sha256": hashlib.sha256(evidence_raw).hexdigest()}, "assets": [{"asset_version": "CA-V0.2.0", "artifact_id": "CA", "artifact_type": "constraint_asset_ref", "content_hash": "a" * 64, "role": "single_field", "logical_path": "asset.bin", "filename": "asset.bin", "byte_sha256": hashlib.sha256(source.read_bytes()).hexdigest()}], "runtime_manifest_without_locators_sha256": "c" * 64, "hierarchy_mapping_sha256": "d" * 64}
+            config = {"schema_version": "foundation-parent-chain-materializer-config/v2", "container_schema_version": "foundation-parent-chain-container-manifest/v2", "attachments": attachments, "eas111_evidence": {"id": "evidence", "download_filename": "evidence.json", "filename": "eas111-evidence.json", "byte_sha256": hashlib.sha256(evidence_raw).hexdigest()}, "assets": [{"asset_version": "CA-V0.2.0", "artifact_id": "CA", "artifact_type": "constraint_asset_ref", "content_hash": "a" * 64, "role": "single_field", "logical_path": "asset.bin", "filename": "asset.bin", "byte_sha256": hashlib.sha256(source.read_bytes()).hexdigest()}], "runtime_manifest_without_locators_sha256": "c" * 64, "hierarchy_mapping_sha256": "d" * 64}
             calls = []
             def runner(command, **_kwargs):
                 if command[:3] != ["multica", "attachment", "download"]:
                     raise AssertionError("materializer may only use the fixed Multica attachment command")
                 calls.append(command)
                 if command[3] == "evidence":
-                    (Path(command[-1]) / "eas111-evidence.json").write_bytes(evidence_raw)
+                    (Path(command[-1]) / "evidence.json").write_bytes(evidence_raw)
                 else:
                     item = next(item for item in attachments if item["id"] == command[3])
                     (Path(command[-1]) / item["filename"]).write_text(json.dumps(values[item["filename"]], sort_keys=True, separators=(",", ":")))
@@ -84,6 +84,76 @@ class RuntimeAdapterTests(unittest.TestCase):
             self.assertEqual(first, second)
             self.assertEqual(len(calls), 4)
             self.assertEqual(first["root_binding_id"], "g" * 64)
+            container = root / "foundation-parent-chain-container-v1"
+            self.assertTrue((container / "eas111-evidence.json").is_file())
+            self.assertFalse((container / "evidence.json").exists())
+
+    def test_eas111_filename_mapping_failures_leave_no_partial_container(self) -> None:
+        """A fixed platform filename may only become the canonical name atomically."""
+        for failure in ("missing", "symlink", "hash", "canonical_conflict"):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp) / "runtime"; root.mkdir(parents=True); root.chmod(0o700)
+                checkout = Path(tmp) / "checkout"; checkout.mkdir()
+                source = checkout / "asset.bin"; source.write_bytes(b"sanitized-asset")
+                values = {
+                    "foundation_intent_package.json": {"content_sha256": "a" * 64},
+                    "foundation_task_package_projection.json": {"projection": "sanitized"},
+                    "manifest.json": {"manifest": "sanitized"},
+                }
+                attachments = []
+                for index, (filename, value) in enumerate(values.items(), start=1):
+                    raw = json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
+                    semantic = value["content_sha256"] if filename == "foundation_intent_package.json" else bootstrap_mod.sha256(value)
+                    attachments.append({"id": f"attachment-{index}", "filename": filename, "byte_sha256": hashlib.sha256(raw).hexdigest(), "semantic_sha256": semantic})
+                evidence_raw = b"sanitized-eas111-evidence"
+                evidence = {"id": "evidence", "download_filename": "evidence.json", "filename": "eas111-evidence.json", "byte_sha256": hashlib.sha256(evidence_raw).hexdigest()}
+                config = {"schema_version": "foundation-parent-chain-materializer-config/v2", "container_schema_version": "foundation-parent-chain-container-manifest/v2", "attachments": attachments, "eas111_evidence": evidence, "assets": [{"asset_version": "CA-V0.2.0", "artifact_id": "CA", "artifact_type": "constraint_asset_ref", "content_hash": "a" * 64, "role": "single_field", "logical_path": "asset.bin", "filename": "asset.bin", "byte_sha256": hashlib.sha256(source.read_bytes()).hexdigest()}], "runtime_manifest_without_locators_sha256": bootstrap_mod.sha256({}), "hierarchy_mapping_sha256": "d" * 64}
+
+                def runner(command, **_kwargs):
+                    directory = Path(command[-1])
+                    if command[3] != "evidence":
+                        item = next(item for item in attachments if item["id"] == command[3])
+                        (directory / item["filename"]).write_text(json.dumps(values[item["filename"]], sort_keys=True, separators=(",", ":")))
+                    elif failure == "symlink":
+                        (directory / evidence["download_filename"]).symlink_to("outside")
+                    elif failure == "hash":
+                        (directory / evidence["download_filename"]).write_bytes(b"drift")
+                    elif failure == "canonical_conflict":
+                        (directory / evidence["download_filename"]).write_bytes(evidence_raw)
+                        (directory / evidence["filename"]).write_bytes(evidence_raw)
+                    elif failure != "missing":
+                        raise AssertionError(failure)
+                    return SimpleNamespace(stdout="")
+
+                bootstrap = RuntimeBootstrap.__new__(RuntimeBootstrap)
+                bootstrap.runner = runner; bootstrap.declaration = {"skill_bundle": {"skill_manifest_sha256": "b" * 64}}
+                bootstrap.checkout = checkout
+                bootstrap.preflight = lambda: BootstrapEvidence("c" * 40, "d" * 64, "e" * 64, "f" * 64, "g" * 64, "scripts/runtime_bootstrap.py")
+                bootstrap.resolve_runtime_root = lambda: root
+                bootstrap._runtime_manifest = lambda *_args: {"schema_version": "v5.constraint-assets-runtime-manifest/v1", "assets": []}
+                bootstrap._without_locators = lambda _manifest: {}
+                bootstrap._materializer_config = lambda: (config, bootstrap_mod.sha256(config))
+                bootstrap._verify_runtime_manifest = lambda *_args: None
+                bootstrap._hierarchy_mapping = lambda *_args: {"content_hash": "d" * 64}
+                with self.assertRaisesRegex(RuntimeBootstrapError, "FOUNDATION_PARENT_MATERIALIZER_EAS111_EVIDENCE_DRIFT"):
+                    bootstrap.materialize_foundation_parent_chain()
+                self.assertFalse((root / "foundation-parent-chain-container-v1").exists())
+                self.assertFalse(any(path.name.startswith(".foundation-parent-chain-staging-") for path in root.iterdir()))
+                self.assertFalse((root / ".foundation-parent-chain-materializer-v1.key").exists())
+
+    def test_materializer_config_rejects_unsafe_or_ambiguous_eas111_names(self) -> None:
+        original = json.loads((ROOT / "config" / "foundation-parent-chain-materializer-v1.json").read_text())
+        with tempfile.TemporaryDirectory() as tmp:
+            checkout = Path(tmp)
+            bootstrap = RuntimeBootstrap.__new__(RuntimeBootstrap); bootstrap.checkout = checkout
+            for download_name in ("../evidence.json", "eas111-evidence.json", "approved-assets"):
+                with self.subTest(download_name=download_name):
+                    value = json.loads(json.dumps(original))
+                    value["eas111_evidence"]["download_filename"] = download_name
+                    path = checkout / "config.json"; path.write_text(json.dumps(value))
+                    with patch.object(bootstrap_mod, "_MATERIALIZER_CONFIG", "config.json"), patch.object(bootstrap_mod, "_MATERIALIZER_CONFIG_SHA256", hashlib.sha256(path.read_bytes()).hexdigest()):
+                        with self.assertRaisesRegex(RuntimeBootstrapError, "FOUNDATION_PARENT_MATERIALIZER_CONFIG_INVALID"):
+                            bootstrap._materializer_config()
 
     def test_registers_then_reads_back_before_dispatch(self) -> None:
         payload = json.loads((ROOT / "fixtures" / "penalty" / "matched.json").read_text(encoding="utf-8"))
