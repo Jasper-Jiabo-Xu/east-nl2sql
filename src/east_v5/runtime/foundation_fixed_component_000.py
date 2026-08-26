@@ -20,6 +20,13 @@ _INPUTS = "foundation-launch-inputs-v1.json"
 _TASK_HASH = "899ac6cdea3a9e08fa01d77102850952f9b8c83db3bf94672fe5ae8a31982fbe"
 _CLOSURE_HASH = "168aab095660895c36eaece21e9f4de6ea3a8874939dd1d195950fc70a57dfce"
 _RESOLVER_HASH = "5dd7a81e22c68199f212e1e37aa1ad8dd989eb34de33098c14fe6da656fcaa26"
+_RECOVERY_SOURCE_ISSUE = "01a0386f-c03f-7be9-b2d6-45841f1a4a74"
+_RECOVERY_SOURCE_TASK = "01a03882-8b63-7480-9c58-acf2213573a6"
+_RECOVERY_SOURCE_RUNTIME = "0e5e9dd9-5135-4937-bb03-92b77adb8395"
+_RECOVERY_SOURCE_COMMENT = "01a0388e-729c-7289-9c99-b94d075e984e"
+_RECOVERY_CLOSURE_BYTES = "15f1e12e0fce75ac99fec764896dd7acadc055ee2c0771897affb67ab1990f8a"
+_RECOVERY_EVIDENCE_BYTES = "0bd3ea76bf7f11f6b127bc3e6f6c88fb477d185547d1c963a2bf3f6c248f90a7"
+_RECOVERY_ANCESTOR_000 = "664ccab637a68e01a6ac93ab7356f90f79c75b09b3a597fdab66d8db208c92f0"
 
 
 class FoundationFixedComponent000Error(ContractError):
@@ -88,6 +95,10 @@ class FoundationFixedComponent000Issuer:
         if (set(recovery) != required_recovery or recovery.get("schema_version") != "foundation_parent_chain_recovery_receipt/v1"
                 or recovery.get("receipt_sha256") != sha256(recovery_body) or recovery.get("root_binding_id") != evidence.root_binding_id
                 or recovery.get("foundation_task_hash") != _TASK_HASH or recovery.get("closure_hash") != _CLOSURE_HASH
+                or recovery.get("source_issue_id") != _RECOVERY_SOURCE_ISSUE or recovery.get("source_task_id") != _RECOVERY_SOURCE_TASK
+                or recovery.get("source_runtime_id") != _RECOVERY_SOURCE_RUNTIME or recovery.get("source_comment_id") != _RECOVERY_SOURCE_COMMENT
+                or recovery.get("closure_sha256") != _RECOVERY_CLOSURE_BYTES or recovery.get("evidence_sha256") != _RECOVERY_EVIDENCE_BYTES
+                or recovery.get("ancestor_000_hash") != _RECOVERY_ANCESTOR_000 or recovery.get("rehydrated_from_accepted_projection") is not True
                 or inputs.get("resolver_universe_hash") != _RESOLVER_HASH):
             _fail("FOUNDATION_000_RECOVERY_INVALID")
         closure_path, evidence_path = recovery_dir / "structure_closure.json", recovery_dir / "evidence.json"
@@ -132,7 +143,18 @@ class FoundationFixedComponent000Issuer:
         if sha256(self.bootstrap._without_locators(runtime_manifest)) != config["runtime_manifest_without_locators_sha256"]:
             _fail("FOUNDATION_000_MATERIALIZER_DRIFT")
         mapping = _load(mapping_path, "FOUNDATION_000_MATERIALIZER_DRIFT")
-        if mapping.get("content_hash") != config["hierarchy_mapping_sha256"]:
+        try:
+            expected_mapping = self.bootstrap._hierarchy_mapping(container / "foundation_intent_package.json", config)
+        except RuntimeBootstrapError as exc:
+            raise FoundationFixedComponent000Error(str(exc)) from exc
+        mapping_body = {key: value for key, value in mapping.items() if key != "content_hash"}
+        if (set(mapping) != {"schema_version", "intent_content_hash", "field_mapping", "content_hash"}
+                or mapping.get("schema_version") != "foundation-hierarchy-endpoint-mapping/v1"
+                or not isinstance(mapping.get("field_mapping"), dict) or not mapping["field_mapping"]
+                or mapping.get("intent_content_hash") != config["attachments"][0]["semantic_sha256"]
+                or mapping.get("content_hash") != sha256(mapping_body)
+                or mapping.get("content_hash") != config["hierarchy_mapping_sha256"]
+                or mapping != expected_mapping):
             _fail("FOUNDATION_000_MATERIALIZER_DRIFT")
         return manifest, recovery
 
