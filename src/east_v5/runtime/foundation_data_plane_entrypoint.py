@@ -78,6 +78,7 @@ _RECOVERED_CLOSURE_BYTES = "15f1e12e0fce75ac99fec764896dd7acadc055ee2c0771897aff
 _RECOVERED_EVIDENCE_BYTES = "0bd3ea76bf7f11f6b127bc3e6f6c88fb477d185547d1c963a2bf3f6c248f90a7"
 _RECOVERED_TASK_HASH = "899ac6cdea3a9e08fa01d77102850952f9b8c83db3bf94672fe5ae8a31982fbe"
 _RECOVERED_000_ANCESTOR_HASH = "664ccab637a68e01a6ac93ab7356f90f79c75b09b3a597fdab66d8db208c92f0"
+_RECOVERED_RESOLVER_UNIVERSE_HASH = "5dd7a81e22c68199f212e1e37aa1ad8dd989eb34de33098c14fe6da656fcaa26"
 
 
 def _platform_data_home(platform: str, home: Path) -> Path:
@@ -264,9 +265,9 @@ class FoundationDataPlaneEntrypoint:
         """Accept only the RuntimeBootstrap domain-separated container receipt."""
         if not isinstance(receipt, dict):
             _fail("FOUNDATION_PARENT_CHAIN_MATERIALIZATION_RECEIPT_REQUIRED")
-        required = {"schema_version", "root_binding_id", "bootstrap", "skill_manifest_sha256", "config_sha256", "attachments", "container_sha256", "receipt_sha256", "attestation"}
+        required = {"schema_version", "root_binding_id", "bootstrap", "skill_manifest_sha256", "config_sha256", "attachments", "eas111_evidence", "assets", "runtime_manifest_sha256", "runtime_manifest_local_sha256", "hierarchy_mapping_sha256", "container_sha256", "receipt_sha256", "attestation"}
         body = {key: value for key, value in receipt.items() if key not in {"receipt_sha256", "attestation"}}
-        if set(receipt) != required or receipt.get("schema_version") != "foundation-parent-chain-materialization-receipt/v1" or receipt.get("root_binding_id") != runtime.root_binding_id or receipt.get("receipt_sha256") != sha256(body):
+        if set(receipt) != required or receipt.get("schema_version") != "foundation-parent-chain-materialization-receipt/v2" or receipt.get("root_binding_id") != runtime.root_binding_id or receipt.get("receipt_sha256") != sha256(body):
             _fail("FOUNDATION_PARENT_CHAIN_MATERIALIZATION_RECEIPT_INVALID")
         key_path = runtime.runtime_root / _MATERIALIZER_KEY
         try:
@@ -284,8 +285,84 @@ class FoundationDataPlaneEntrypoint:
             manifest = json.loads((container / _CONTAINER_MANIFEST).read_text(encoding="utf-8"))
         except (OSError, UnicodeError, json.JSONDecodeError) as exc:
             raise FoundationDataPlaneError("FOUNDATION_PARENT_CHAIN_MATERIALIZATION_CONTAINER_INVALID") from exc
-        if container.is_symlink() or manifest.get("root_binding_id") != runtime.root_binding_id or manifest.get("config_sha256") != receipt["config_sha256"] or manifest.get("attachments") != receipt["attachments"] or manifest.get("container_sha256") != receipt["container_sha256"]:
+        if container.is_symlink() or manifest.get("root_binding_id") != runtime.root_binding_id or manifest.get("config_sha256") != receipt["config_sha256"] or manifest.get("attachments") != receipt["attachments"] or manifest.get("eas111_evidence") != receipt["eas111_evidence"] or manifest.get("assets") != receipt["assets"] or manifest.get("runtime_manifest_sha256") != receipt["runtime_manifest_sha256"] or manifest.get("runtime_manifest_local_sha256") != receipt["runtime_manifest_local_sha256"] or manifest.get("hierarchy_mapping_sha256") != receipt["hierarchy_mapping_sha256"] or manifest.get("container_sha256") != receipt["container_sha256"]:
             _fail("FOUNDATION_PARENT_CHAIN_MATERIALIZATION_CONTAINER_INVALID")
+
+    def foundation_resolver_handle(self, runtime: ProvisionedRuntime, materialization_receipt: dict[str, Any]) -> tuple[Any, dict[str, Any]]:
+        """Return the only v2-materialized resolver and hierarchy mapping.
+
+        Neither a business caller nor EAS-19 may supply a manifest path, asset
+        package, mapping, or locator.  The returned resolver is read-only and
+        all physical paths remain inside the runtime root.
+        """
+        self._verify_materialization(runtime, materialization_receipt)
+        container = runtime.runtime_root / _CONTAINER_DIR
+        manifest_path = container / "constraint-assets-runtime-manifest.json"
+        mapping_path = container / "foundation-hierarchy-endpoint-mapping.json"
+        try:
+            if any(path.is_symlink() or not path.is_file() for path in (manifest_path, mapping_path)):
+                _fail("FOUNDATION_PARENT_CHAIN_RESOLVER_HANDLE_INVALID")
+            self._assert_private(manifest_path, 0o600, "FOUNDATION_PARENT_CHAIN_RESOLVER_HANDLE_INVALID")
+            self._assert_private(mapping_path, 0o600, "FOUNDATION_PARENT_CHAIN_RESOLVER_HANDLE_INVALID")
+            mapping = json.loads(mapping_path.read_text(encoding="utf-8"))
+            if mapping.get("schema_version") != "foundation-hierarchy-endpoint-mapping/v1" or mapping.get("content_hash") != materialization_receipt["hierarchy_mapping_sha256"]:
+                _fail("FOUNDATION_PARENT_CHAIN_HIERARCHY_MAPPING_DRIFT")
+            roots = {"repo_root": str(Path(__file__).resolve().parents[3]), "runtime_root": str(runtime.runtime_root), "reference_root": str(self.reference_root), "reference_read_only": True}
+            resolver = importlib.import_module("east_v5.agents.242.resolver").build_constraint_asset_resolver(Path(__file__).resolve().parents[3], roots, manifest_path)
+        except FoundationDataPlaneError:
+            raise
+        except Exception as exc:
+            raise FoundationDataPlaneError("FOUNDATION_PARENT_CHAIN_RESOLVER_HANDLE_INVALID") from exc
+        return resolver, {"schema_version": mapping["schema_version"], "content_hash": mapping["content_hash"]}
+
+    def build_foundation_eas19_inputs(
+        self, runtime: ProvisionedRuntime, materialization_receipt: dict[str, Any], baseline: FormalBaseline,
+    ) -> Any:
+        """Run the only production EAS-19 Foundation assembly route.
+
+        There are intentionally no caller parameters for paths, task/closure
+        packages, hierarchy mappings, resolver output, SQL, or tuples.  They
+        are recovered or materialized under the same bound runtime root.
+        """
+        if (not isinstance(baseline, FormalBaseline) or baseline.path.is_symlink()
+                or self.reference_root not in baseline.path.resolve().parents
+                or _sha_file(baseline.path) != baseline.sha256
+                or baseline.path.stat().st_size != baseline.size_bytes):
+            _fail("EAS19_FOUNDATION_SELECTOR_BASELINE_DRIFT")
+        recovered = self.recover_parent_chain(runtime, materialization_receipt)
+        resolver, _ = self.foundation_resolver_handle(runtime, materialization_receipt)
+        universe = resolver.enumerate(recovered.closure)
+        if universe.get("content_sha256") != _RECOVERED_RESOLVER_UNIVERSE_HASH:
+            _fail("EAS19_FOUNDATION_SELECTOR_RESOLVER_UNIVERSE_DRIFT")
+        container = runtime.runtime_root / _CONTAINER_DIR
+        try:
+            mapping = json.loads((container / "foundation-hierarchy-endpoint-mapping.json").read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            raise FoundationDataPlaneError("EAS19_FOUNDATION_SELECTOR_HIERARCHY_MAPPING_DRIFT") from exc
+        try:
+            selector = importlib.import_module("east_v5.runtime.eas19_foundation_selector").Eas19FoundationParentSnapshotSelector
+            selection = selector(baseline.path, baseline.sha256, baseline.size_bytes).select(
+                recovered.task, recovered.closure, hierarchy_mapping=mapping, resolver_universe=universe,
+            )
+            validate_context = importlib.import_module("east_v5.agents.foundation_contract").validate_context
+            validate_context(selection.generation_context, recovered.task, recovered.closure, selection.database_snapshot)
+            ArtifactRegistry = importlib.import_module("east_v5.artifacts").ArtifactRegistry
+            repo_root = Path(__file__).resolve().parents[3]
+            registry = ArtifactRegistry(repo_root, {
+                "repo_root": str(repo_root), "runtime_root": str(runtime.runtime_root),
+                "reference_root": str(self.reference_root), "reference_read_only": True,
+            }, "EAS-114", recovered.task["envelope"]["run_id"], recovered.task["envelope"]["attempt_no"])
+            # Register in lineage order; replay is idempotent, while any
+            # content drift is rejected by the immutable local registry.
+            for package in (recovered.task, recovered.closure, selection.database_snapshot, selection.generation_context):
+                registered = registry.register(package["envelope"], package["payload"])
+                if registry.resolve({key: registered[key] for key in ("artifact_id", "version", "content_hash")}) != package:
+                    _fail("EAS19_FOUNDATION_SELECTOR_REGISTRY_READBACK_DRIFT")
+            return selection
+        except FoundationDataPlaneError:
+            raise
+        except ContractError as exc:
+            raise FoundationDataPlaneError(str(exc)) from exc
 
     def recover_parent_chain(self, runtime: ProvisionedRuntime, materialization_receipt: dict[str, Any]) -> RecoveredParentChain:
         """Recover the accepted EAS-113 output with one fixed, fail-closed route.
@@ -331,7 +408,7 @@ class FoundationDataPlaneEntrypoint:
         if not isinstance(evidence, dict) or evidence.get("asset_000", {}).get("ref", {}).get("content_hash") != _RECOVERED_000_ANCESTOR_HASH or evidence.get("closure_220", {}).get("ref", {}).get("content_hash") != _RECOVERED_CLOSURE_HASH or evidence.get("closure_self_validation", {}).get("closure_envelope_hash_identical") is not True or not isinstance(evidence.get("forbidden_module_calls"), dict) or any(value != 0 for value in evidence["forbidden_module_calls"].values()):
             _fail("FOUNDATION_PARENT_CHAIN_EVIDENCE_DRIFT")
         container = runtime.runtime_root / _CONTAINER_DIR
-        required_container = set(_PARENT_CONTAINER_BYTES) | {_CONTAINER_MANIFEST}
+        required_container = set(_PARENT_CONTAINER_BYTES) | {_CONTAINER_MANIFEST, "approved-assets", "constraint-assets-runtime-manifest.json", "foundation-hierarchy-endpoint-mapping.json", "eas111-evidence.json"}
         try:
             if container.is_symlink() or not container.is_dir() or set(path.name for path in container.iterdir()) != required_container:
                 _fail("FOUNDATION_PARENT_CHAIN_CONTAINER_INVALID")

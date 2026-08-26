@@ -94,6 +94,10 @@ class FoundationDataPlaneEntrypointTests(unittest.TestCase):
         (container / "foundation_intent_package.json").write_text(json.dumps({"content_sha256": "b" * 64}))
         projection_hash = entrypoint_module.sha256(task_payload)
         (container / "manifest.json").write_text(json.dumps({"intent_content_sha256": "b" * 64, "task_projection_content_sha256": projection_hash}))
+        (container / "approved-assets").mkdir()
+        (container / "constraint-assets-runtime-manifest.json").write_text("{}")
+        (container / "foundation-hierarchy-endpoint-mapping.json").write_text("{}")
+        (container / "eas111-evidence.json").write_text("{}")
         expected_task = self.entrypoint._rehydrate_task(task_payload, {"run_id": "fixture", "trace_id": "fixture", "created_at": "2026-08-25T00:00:00+00:00"})
         task_ref = {key: expected_task["envelope"][key] for key in ("artifact_id", "version", "content_hash")}
         tables = ["FIXTURE", *[f"T{index}" for index in range(70)]]
@@ -107,15 +111,17 @@ class FoundationDataPlaneEntrypointTests(unittest.TestCase):
         (output / "structure_closure.json").write_text(json.dumps(closure))
         (output / "evidence.json").write_text(json.dumps({"asset_000": {"ref": {"content_hash": "d" * 64}}, "closure_220": {"ref": {"content_hash": closure["envelope"]["content_hash"]}}, "closure_self_validation": {"closure_envelope_hash_identical": True}, "forbidden_module_calls": {"230": 0, "251": 0, "252": 0}}))
         record = {"runs": [{"id": "accepted-task", "status": "completed", "runtime_id": "accepted-runtime", "delivered_comment_ids": ["accepted-comment"], "work_dir": str(source)}]}
-        bytes_by_name = {path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in container.iterdir()}
+        bytes_by_name = {path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in container.iterdir() if path.name in entrypoint_module._PARENT_CONTAINER_BYTES}
         config = self.base / "materializer-config.json"; config.write_text("{}")
         config_hash = hashlib.sha256(config.read_bytes()).hexdigest()
         attachments = [{"filename": name, "byte_sha256": digest} for name, digest in sorted(bytes_by_name.items())]
-        container_manifest = {"root_binding_id": runtime.root_binding_id, "config_sha256": config_hash, "attachments": attachments}
+        evidence = {"id": "evidence", "filename": "eas111-evidence.json", "byte_sha256": "e" * 64}
+        assets = []
+        container_manifest = {"root_binding_id": runtime.root_binding_id, "config_sha256": config_hash, "attachments": attachments, "eas111_evidence": evidence, "assets": assets, "runtime_manifest_sha256": "r".replace("r", "a") * 64, "runtime_manifest_local_sha256": "c" * 64, "hierarchy_mapping_sha256": "m".replace("m", "b") * 64}
         container_manifest["container_sha256"] = entrypoint_module.sha256(container_manifest)
         (container / "foundation-parent-chain-container-manifest.json").write_text(json.dumps(container_manifest))
         key = runtime.runtime_root / ".foundation-parent-chain-materializer-v1.key"; key.write_bytes(b"k" * 32); key.chmod(0o600)
-        body = {"schema_version": "foundation-parent-chain-materialization-receipt/v1", "root_binding_id": runtime.root_binding_id, "bootstrap": {}, "skill_manifest_sha256": "a" * 64, "config_sha256": config_hash, "attachments": attachments, "container_sha256": container_manifest["container_sha256"]}
+        body = {"schema_version": "foundation-parent-chain-materialization-receipt/v2", "root_binding_id": runtime.root_binding_id, "bootstrap": {}, "skill_manifest_sha256": "a" * 64, "config_sha256": config_hash, "attachments": attachments, "eas111_evidence": evidence, "assets": assets, "runtime_manifest_sha256": "a" * 64, "runtime_manifest_local_sha256": "c" * 64, "hierarchy_mapping_sha256": "b" * 64, "container_sha256": container_manifest["container_sha256"]}
         receipt = {**body, "receipt_sha256": entrypoint_module.sha256(body)}
         receipt["attestation"] = hmac.new(key.read_bytes(), entrypoint_module.canonical_bytes(receipt), hashlib.sha256).hexdigest()
         with patch.object(self.entrypoint, "_platform_run_record", return_value=record), patch.object(entrypoint_module, "_MATERIALIZER_CONFIG", str(config)), patch.object(entrypoint_module, "_PARENT_CONTAINER_BYTES", bytes_by_name), patch.object(entrypoint_module, "_INTENT_HASH", "b" * 64), patch.object(entrypoint_module, "_PROJECTION_HASH", projection_hash), patch.object(entrypoint_module, "_RECOVERED_CLOSURE_HASH", closure["envelope"]["content_hash"]), patch.object(entrypoint_module, "_RECOVERY_SOURCE_TASK", "accepted-task"), patch.object(entrypoint_module, "_RECOVERY_SOURCE_RUNTIME", "accepted-runtime"), patch.object(entrypoint_module, "_RECOVERY_SOURCE_COMMENT", "accepted-comment"), patch.object(entrypoint_module, "_RECOVERED_CLOSURE_BYTES", hashlib.sha256((output / "structure_closure.json").read_bytes()).hexdigest()), patch.object(entrypoint_module, "_RECOVERED_EVIDENCE_BYTES", hashlib.sha256((output / "evidence.json").read_bytes()).hexdigest()), patch.object(entrypoint_module, "_RECOVERED_TASK_HASH", expected_task["envelope"]["content_hash"]), patch.object(entrypoint_module, "_RECOVERED_000_ANCESTOR_HASH", "d" * 64):

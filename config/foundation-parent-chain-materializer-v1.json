@@ -1,6 +1,6 @@
 {
-  "schema_version": "foundation-parent-chain-materializer-config/v1",
-  "container_schema_version": "foundation-parent-chain-container-manifest/v1",
+  "schema_version": "foundation-parent-chain-materializer-config/v2",
+  "container_schema_version": "foundation-parent-chain-container-manifest/v2",
   "attachments": [
     {
       "id": "01a037f5-4f16-791c-98fb-5a5483124c75",
@@ -20,5 +20,23 @@
       "byte_sha256": "8329b2cb0e8277d2af8c735c44852234cf3c2e8d3acd544d2575f2ff074eff8b",
       "semantic_sha256": "2cf401e32fafaf665b3ae1edd3d20fd29de61e3e7bdbcad13c4ba0309e389c3e"
     }
-  ]
+  ],
+  "eas111_evidence": {
+    "id": "01a03858-b24f-7e48-b099-44dc4bb0e48e",
+    "filename": "eas111-evidence.json",
+    "byte_sha256": "6779988c7ca5310839acb68c6706a6d754e02d27d02f19f218361cc2283aabcb"
+  },
+  "assets": [
+    {"asset_version": "CA-V0.2.0", "artifact_id": "CA-FOUNDATION-20260805-002", "artifact_type": "constraint_asset_ref", "content_hash": "6cb0f385adae4e3e9e24558dc432132b43c437e8c2db5ce329c46bf68e8c4188", "role": "single_field", "logical_path": "05_新版本交付层/约束资产/CA-V0.2.0-foundation/single_field_final.sqlite", "filename": "single_field_final.sqlite", "byte_sha256": "f137be03a3814428b76507373d2032705dcacb1ff804adbddd96e397da5c1d6f"},
+    {"asset_version": "CA-V0.3.0", "artifact_id": "CA-MULTIFIELD-20260812-003", "artifact_type": "constraint_asset_ref", "content_hash": "cbcbd79e318f91522393403241b50919a656aa77d71c7f950f43725286b64d3d", "role": "sqlite", "logical_path": "05_新版本交付层/约束资产/CA-V0.3.0-multifield/multifield_constraints.sqlite", "filename": "multifield_constraints.sqlite", "byte_sha256": "5e2753235bf1e47c9d015a05d28c45a20d17a26789d1c88498f80b6ec43577bb"},
+    {"asset_version": "TRG-V1.0.0", "artifact_id": "EAS-TYPED-GRAPH-20260812-001", "artifact_type": "typed_reference_graph_ref", "content_hash": "a3480f669bd9e97db78a8fec96fac7e317b43b9ed6f222d5c920bc227eaf3b6a", "role": "nodes", "logical_path": "05_新版本交付层/带类型引用图/TRG-V1.0.0/typed_reference_graph_nodes.jsonl", "filename": "typed_reference_graph_nodes.jsonl", "byte_sha256": "9d2247759f5071da6b8d22b57aa6b1515d17203d7ef02505895e202da84a6f4b"},
+    {"asset_version": "TRG-V1.0.0", "artifact_id": "EAS-TYPED-GRAPH-20260812-001", "artifact_type": "typed_reference_graph_ref", "content_hash": "a3480f669bd9e97db78a8fec96fac7e317b43b9ed6f222d5c920bc227eaf3b6a", "role": "edges", "logical_path": "05_新版本交付层/带类型引用图/TRG-V1.0.0/typed_reference_graph_edges.jsonl", "filename": "typed_reference_graph_edges.jsonl", "byte_sha256": "51a4b2a64f95ece7e1239a06a10c6a1cd6d79e4baf7699107f042ff0e707a45c"},
+    {"asset_version": "TRG-V1.0.0", "artifact_id": "EAS-TYPED-GRAPH-20260812-001", "artifact_type": "typed_reference_graph_ref", "content_hash": "a3480f669bd9e97db78a8fec96fac7e317b43b9ed6f222d5c920bc227eaf3b6a", "role": "projections", "logical_path": "05_新版本交付层/带类型引用图/TRG-V1.0.0/typed_reference_graph_projections.jsonl", "filename": "typed_reference_graph_projections.jsonl", "byte_sha256": "ddd202ba610d4e63600c2d242e8ac32bc5502ab7cbeb085183ab0951f65c5c30"},
+    {"asset_version": "TRG-V1.0.0", "artifact_id": "EAS-TYPED-GRAPH-20260812-001", "artifact_type": "typed_reference_graph_ref", "content_hash": "a3480f669bd9e97db78a8fec96fac7e317b43b9ed6f222d5c920bc227eaf3b6a", "role": "closures", "logical_path": "05_新版本交付层/带类型引用图/TRG-V1.0.0/typed_reference_graph_closures.jsonl", "filename": "typed_reference_graph_closures.jsonl", "byte_sha256": "84b40c1055296dd5be27dbb2ef6c0b1f48aace4d505fc1783feca62e67f34c7a"}
+  ],
+  "runtime_manifest_template_byte_sha256": "c33b46cbaf349adee82d7f68ebaaea4de8a463538662815bd6115be71899eddd",
+  "runtime_manifest_identity_schema": "constraint-assets-runtime-manifest-identity/v1",
+  "runtime_manifest_identity_bytes_length": 1231,
+  "runtime_manifest_without_locators_sha256": "0ac067babbfd944e58cc5828ad6e4950cde7c358727050aa84054c8b78ccdf89",
+  "hierarchy_mapping_sha256": "72677a770efa584297e2c49b51225576eb61a4bd934e235779e3dc85528ebe84"
 }
