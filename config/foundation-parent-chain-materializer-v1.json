@@ -23,6 +23,7 @@
   ],
   "eas111_evidence": {
     "id": "01a03858-b24f-7e48-b099-44dc4bb0e48e",
+    "download_filename": "evidence.json",
     "filename": "eas111-evidence.json",
     "byte_sha256": "6779988c7ca5310839acb68c6706a6d754e02d27d02f19f218361cc2283aabcb"
   },
