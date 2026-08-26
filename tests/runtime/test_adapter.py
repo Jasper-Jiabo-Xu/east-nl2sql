@@ -38,6 +38,40 @@ def _evidence(envelope: dict[str, object]) -> BootstrapEvidence:
 
 
 class RuntimeAdapterTests(unittest.TestCase):
+    def test_bootstrap_is_the_only_fixed_parent_container_materializer(self) -> None:
+        """The approved public seam has no caller attachment or path arguments."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "runtime"; root.mkdir(parents=True); root.chmod(0o700)
+            values = {
+                "foundation_intent_package.json": {"content_sha256": "a" * 64},
+                "foundation_task_package_projection.json": {"projection": "sanitized"},
+                "manifest.json": {"manifest": "sanitized"},
+            }
+            attachments = []
+            for index, (filename, value) in enumerate(values.items(), start=1):
+                raw = json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
+                semantic = value["content_sha256"] if filename == "foundation_intent_package.json" else bootstrap_mod.sha256(value)
+                attachments.append({"id": f"attachment-{index}", "filename": filename, "byte_sha256": hashlib.sha256(raw).hexdigest(), "semantic_sha256": semantic})
+            config = {"schema_version": "foundation-parent-chain-materializer-config/v1", "container_schema_version": "foundation-parent-chain-container-manifest/v1", "attachments": attachments}
+            calls = []
+            def runner(command, **_kwargs):
+                if command[:3] != ["multica", "attachment", "download"]:
+                    raise AssertionError("materializer may only use the fixed Multica attachment command")
+                calls.append(command)
+                item = next(item for item in attachments if item["id"] == command[3])
+                (Path(command[-1]) / item["filename"]).write_text(json.dumps(values[item["filename"]], sort_keys=True, separators=(",", ":")))
+                return SimpleNamespace(stdout="")
+            bootstrap = RuntimeBootstrap.__new__(RuntimeBootstrap)
+            bootstrap.runner = runner; bootstrap.declaration = {"skill_bundle": {"skill_manifest_sha256": "b" * 64}}
+            bootstrap.preflight = lambda: BootstrapEvidence("c" * 40, "d" * 64, "e" * 64, "f" * 64, "g" * 64, "scripts/runtime_bootstrap.py")
+            bootstrap.resolve_runtime_root = lambda: root
+            bootstrap._materializer_config = lambda: (config, bootstrap_mod.sha256(config))
+            first = bootstrap.materialize_foundation_parent_chain()
+            second = bootstrap.materialize_foundation_parent_chain()
+            self.assertEqual(first, second)
+            self.assertEqual(len(calls), 3)
+            self.assertEqual(first["root_binding_id"], "g" * 64)
+
     def test_registers_then_reads_back_before_dispatch(self) -> None:
         payload = json.loads((ROOT / "fixtures" / "penalty" / "matched.json").read_text(encoding="utf-8"))
         package = FormalReleaseCommitter(ROOT).build_penalty_source_package(payload, run_id="probe-run", trace_id="probe-trace", created_at="2026-08-18T00:00:00+00:00", attempt_no=2)

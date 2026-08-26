@@ -1,0 +1,24 @@
+{
+  "schema_version": "foundation-parent-chain-materializer-config/v1",
+  "container_schema_version": "foundation-parent-chain-container-manifest/v1",
+  "attachments": [
+    {
+      "id": "01a037f5-4f16-791c-98fb-5a5483124c75",
+      "filename": "foundation_intent_package.json",
+      "byte_sha256": "09b94bcb79d279d1e13620aa3c406db047fbc2b6b941443b7aeb865de0899038",
+      "semantic_sha256": "f354921c06e3f1d1c8abdcc4cd6e1dd40c82c263e776c3571eb3db5893b27b20"
+    },
+    {
+      "id": "01a037f5-5023-790d-a00b-3c211d2116f9",
+      "filename": "foundation_task_package_projection.json",
+      "byte_sha256": "5b4d582f20cb87ec30eb657a3f61edaf65d721d0293a701af3d9ae10def5580d",
+      "semantic_sha256": "1947f7f8942ed8bd9aaf8e9856d3c042706dc3b4200704f64bae651f45703192"
+    },
+    {
+      "id": "01a037f5-5119-7147-9ef1-41088c7f8d5e",
+      "filename": "manifest.json",
+      "byte_sha256": "8329b2cb0e8277d2af8c735c44852234cf3c2e8d3acd544d2575f2ff074eff8b",
+      "semantic_sha256": "2cf401e32fafaf665b3ae1edd3d20fd29de61e3e7bdbcad13c4ba0309e389c3e"
+    }
+  ]
+}
