@@ -9,11 +9,13 @@ import shutil
 import subprocess
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from east_v5.governance import canonical_bytes, sha256
 from east_v5.runtime.bootstrap import RuntimeBootstrap, root_binding_id
 from east_v5.runtime.foundation_repo_launcher import FoundationRepoLauncher, FoundationRepoLauncherError
+from east_v5.runtime import foundation_fixed_component_000 as issuer_module
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -183,6 +185,61 @@ class FoundationRepoLauncherTests(unittest.TestCase):
         self.parent_chain.stop()
         with self.assertRaisesRegex(Exception, "FOUNDATION_000_RECOVERY_INVALID"):
             self.bootstrap.foundation_fixed_component_issuer().issue()
+
+    def test_unmocked_parent_chain_success_and_tamper_rejections(self) -> None:
+        """Exercise the issuer's real parent-chain verifier on a sealed fixture."""
+        self.parent_chain.stop()
+        container = self.root / "foundation-parent-chain-container-v1"
+        recovery_dir = self.root / "foundation-parent-chain-recovery-v1"
+        closure = {"envelope": {"content_hash": "c" * 64}, "payload": {"foundation_task_ref": {"content_hash": "t" * 64}}}
+        evidence = {"sanitized": True}
+        (recovery_dir / "structure_closure.json").write_text(json.dumps(closure)); (recovery_dir / "structure_closure.json").chmod(0o600)
+        (recovery_dir / "evidence.json").write_text(json.dumps(evidence)); (recovery_dir / "evidence.json").chmod(0o600)
+        mapping = {"schema_version": "foundation-hierarchy-endpoint-mapping/v1", "intent_content_hash": "i" * 64, "field_mapping": {"child": "parent"}}
+        mapping["content_hash"] = sha256(mapping)
+        attachment = {"filename": "foundation_intent_package.json", "byte_sha256": hashlib.sha256(b"fixture-intent").hexdigest(), "semantic_sha256": "i" * 64}
+        config = {"attachments": [attachment], "assets": [], "runtime_manifest_without_locators_sha256": sha256({}), "hierarchy_mapping_sha256": mapping["content_hash"]}
+        config_hash = sha256(config)
+        manifest = {"root_binding_id": self.envelope["root_binding_id"], "config_sha256": config_hash, "attachments": [attachment], "assets": [], "runtime_manifest_sha256": config["runtime_manifest_without_locators_sha256"], "hierarchy_mapping_sha256": mapping["content_hash"]}
+        manifest["container_sha256"] = sha256(manifest)
+        (container / "foundation-parent-chain-container-manifest.json").write_text(json.dumps(manifest)); (container / "foundation-parent-chain-container-manifest.json").chmod(0o600)
+        (container / attachment["filename"]).write_bytes(b"fixture-intent"); (container / attachment["filename"]).chmod(0o600)
+        (container / "constraint-assets-runtime-manifest.json").write_text(json.dumps({"schema_version": "fixture", "assets": []})); (container / "constraint-assets-runtime-manifest.json").chmod(0o600)
+        (container / "foundation-hierarchy-endpoint-mapping.json").write_text(json.dumps(mapping)); (container / "foundation-hierarchy-endpoint-mapping.json").chmod(0o600)
+        receipt = {"schema_version": "foundation_parent_chain_recovery_receipt/v1", "source_issue_id": "issue", "source_task_id": "task", "source_runtime_id": "runtime", "source_comment_id": "comment", "closure_sha256": hashlib.sha256((recovery_dir / "structure_closure.json").read_bytes()).hexdigest(), "evidence_sha256": hashlib.sha256((recovery_dir / "evidence.json").read_bytes()).hexdigest(), "foundation_task_hash": "t" * 64, "closure_hash": "c" * 64, "ancestor_000_hash": "a" * 64, "root_binding_id": self.envelope["root_binding_id"], "registry_task_ref": {"content_hash": "t" * 64}, "rehydrated_from_accepted_projection": True}
+        receipt["receipt_sha256"] = sha256(receipt)
+        (recovery_dir / "recovery-receipt.json").write_text(json.dumps(receipt)); (recovery_dir / "recovery-receipt.json").chmod(0o600)
+        materialization = {"schema_version": "foundation-parent-chain-materialization-receipt/v2", "root_binding_id": self.envelope["root_binding_id"], "assets": [], "container_sha256": manifest["container_sha256"], "runtime_manifest_sha256": manifest["runtime_manifest_sha256"], "hierarchy_mapping_sha256": mapping["content_hash"]}
+        materialization["receipt_sha256"] = sha256(materialization)
+        materialization["attestation"] = hmac.new(b"k" * 32, canonical_bytes(materialization), hashlib.sha256).hexdigest()
+        path = self.root / "foundation-parent-chain-materialization-receipt-v2.json"; path.write_text(json.dumps(materialization)); path.chmod(0o600)
+        constants = {"_TASK_HASH": "t" * 64, "_CLOSURE_HASH": "c" * 64, "_RESOLVER_HASH": "b" * 64, "_RECOVERY_SOURCE_ISSUE": "issue", "_RECOVERY_SOURCE_TASK": "task", "_RECOVERY_SOURCE_RUNTIME": "runtime", "_RECOVERY_SOURCE_COMMENT": "comment", "_RECOVERY_CLOSURE_BYTES": receipt["closure_sha256"], "_RECOVERY_EVIDENCE_BYTES": receipt["evidence_sha256"], "_RECOVERY_ANCESTOR_000": "a" * 64}
+        def clear_issuer_state() -> None:
+            key, registry = self.root / ".foundation-fixed-component-000-v1.key", self.root / "foundation-fixed-component-000-v1"
+            if key.exists():
+                key.unlink()
+            if registry.exists():
+                shutil.rmtree(registry)
+
+        with patch.multiple(issuer_module, **constants), patch.object(self.bootstrap, "_materializer_config", return_value=(config, config_hash)), patch.object(self.bootstrap, "_semantic_attachment", return_value=None), patch.object(self.bootstrap, "_without_locators", return_value={}), patch.object(self.bootstrap, "_hierarchy_mapping", return_value=mapping), patch.object(issuer_module.importlib, "import_module", return_value=SimpleNamespace(validate_structure_closure_package=lambda _value: None)):
+            issuer = self.bootstrap.foundation_fixed_component_issuer()
+            first = issuer.issue()
+            self.assertEqual(first, issuer.issue())
+            self.assertEqual(first, issuer.load())
+            clear_issuer_state()
+            broken_mapping = dict(mapping); broken_mapping["field_mapping"] = {"child": "attacker"}
+            (container / "foundation-hierarchy-endpoint-mapping.json").write_text(json.dumps(broken_mapping)); (container / "foundation-hierarchy-endpoint-mapping.json").chmod(0o600)
+            with self.assertRaisesRegex(Exception, "FOUNDATION_000_MATERIALIZER_DRIFT"):
+                issuer.issue()
+            self.assertFalse((self.root / ".foundation-fixed-component-000-v1.key").exists())
+            self.assertFalse((self.root / "foundation-fixed-component-000-v1").exists())
+            (container / "foundation-hierarchy-endpoint-mapping.json").write_text(json.dumps(mapping)); (container / "foundation-hierarchy-endpoint-mapping.json").chmod(0o600)
+            receipt["source_task_id"] = "attacker"; receipt["receipt_sha256"] = sha256({key: value for key, value in receipt.items() if key != "receipt_sha256"})
+            (recovery_dir / "recovery-receipt.json").write_text(json.dumps(receipt)); (recovery_dir / "recovery-receipt.json").chmod(0o600)
+            with self.assertRaisesRegex(Exception, "FOUNDATION_000_RECOVERY_INVALID"):
+                issuer.issue()
+            self.assertFalse((self.root / ".foundation-fixed-component-000-v1.key").exists())
+            self.assertFalse((self.root / "foundation-fixed-component-000-v1").exists())
 
 
 if __name__ == "__main__":
