@@ -38,6 +38,53 @@ def _evidence(envelope: dict[str, object]) -> BootstrapEvidence:
 
 
 class RuntimeAdapterTests(unittest.TestCase):
+    def test_bootstrap_is_the_only_fixed_parent_container_materializer(self) -> None:
+        """The approved public seam has no caller attachment or path arguments."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "runtime"; root.mkdir(parents=True); root.chmod(0o700)
+            values = {
+                "foundation_intent_package.json": {"content_sha256": "a" * 64},
+                "foundation_task_package_projection.json": {"projection": "sanitized"},
+                "manifest.json": {"manifest": "sanitized"},
+            }
+            attachments = []
+            for index, (filename, value) in enumerate(values.items(), start=1):
+                raw = json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
+                semantic = value["content_sha256"] if filename == "foundation_intent_package.json" else bootstrap_mod.sha256(value)
+                attachments.append({"id": f"attachment-{index}", "filename": filename, "byte_sha256": hashlib.sha256(raw).hexdigest(), "semantic_sha256": semantic})
+            evidence_raw = b"sanitized-eas111-evidence"
+            checkout = Path(tmp) / "checkout"; checkout.mkdir()
+            source = checkout / "asset.bin"; source.write_bytes(b"sanitized-asset")
+            config = {"schema_version": "foundation-parent-chain-materializer-config/v2", "container_schema_version": "foundation-parent-chain-container-manifest/v2", "attachments": attachments, "eas111_evidence": {"id": "evidence", "filename": "eas111-evidence.json", "byte_sha256": hashlib.sha256(evidence_raw).hexdigest()}, "assets": [{"asset_version": "CA-V0.2.0", "artifact_id": "CA", "artifact_type": "constraint_asset_ref", "content_hash": "a" * 64, "role": "single_field", "logical_path": "asset.bin", "filename": "asset.bin", "byte_sha256": hashlib.sha256(source.read_bytes()).hexdigest()}], "runtime_manifest_without_locators_sha256": "c" * 64, "hierarchy_mapping_sha256": "d" * 64}
+            calls = []
+            def runner(command, **_kwargs):
+                if command[:3] != ["multica", "attachment", "download"]:
+                    raise AssertionError("materializer may only use the fixed Multica attachment command")
+                calls.append(command)
+                if command[3] == "evidence":
+                    (Path(command[-1]) / "eas111-evidence.json").write_bytes(evidence_raw)
+                else:
+                    item = next(item for item in attachments if item["id"] == command[3])
+                    (Path(command[-1]) / item["filename"]).write_text(json.dumps(values[item["filename"]], sort_keys=True, separators=(",", ":")))
+                return SimpleNamespace(stdout="")
+            bootstrap = RuntimeBootstrap.__new__(RuntimeBootstrap)
+            bootstrap.runner = runner; bootstrap.declaration = {"skill_bundle": {"skill_manifest_sha256": "b" * 64}}
+            bootstrap.checkout = checkout
+            bootstrap.preflight = lambda: BootstrapEvidence("c" * 40, "d" * 64, "e" * 64, "f" * 64, "g" * 64, "scripts/runtime_bootstrap.py")
+            bootstrap.resolve_runtime_root = lambda: root
+            runtime_manifest = {"schema_version": "v5.constraint-assets-runtime-manifest/v1", "assets": [{"artifact_id": "CA", "artifact_type": "constraint_asset_ref", "asset_version": "CA-V0.2.0", "content_hash": "a" * 64, "payload": {"single_field": {"locator": str(root / "asset.bin"), "sha256": config["assets"][0]["byte_sha256"]}}}]}
+            bootstrap._runtime_manifest = lambda *_args: runtime_manifest
+            bootstrap._without_locators = lambda _manifest: {}
+            config["runtime_manifest_without_locators_sha256"] = bootstrap_mod.sha256({})
+            bootstrap._materializer_config = lambda: (config, bootstrap_mod.sha256(config))
+            bootstrap._verify_runtime_manifest = lambda *_args: None
+            bootstrap._hierarchy_mapping = lambda *_args: {"content_hash": "d" * 64}
+            first = bootstrap.materialize_foundation_parent_chain()
+            second = bootstrap.materialize_foundation_parent_chain()
+            self.assertEqual(first, second)
+            self.assertEqual(len(calls), 4)
+            self.assertEqual(first["root_binding_id"], "g" * 64)
+
     def test_registers_then_reads_back_before_dispatch(self) -> None:
         payload = json.loads((ROOT / "fixtures" / "penalty" / "matched.json").read_text(encoding="utf-8"))
         package = FormalReleaseCommitter(ROOT).build_penalty_source_package(payload, run_id="probe-run", trace_id="probe-trace", created_at="2026-08-18T00:00:00+00:00", attempt_no=2)
