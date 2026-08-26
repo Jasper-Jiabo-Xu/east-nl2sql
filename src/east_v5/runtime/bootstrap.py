@@ -30,7 +30,7 @@ _BOOTSTRAP_KEYS = {"bootstrap_version", "candidate_base_sha", "candidate_head_sh
 _CONTEXT_KEYS = {"resolver_version", "workspace_id", "project_id", "daemon_id"}
 _SKILL_BUNDLE_KEYS = {"skill_name", "skill_version", "skill_manifest_sha256"}
 _MATERIALIZER_CONFIG = "config/foundation-parent-chain-materializer-v1.json"
-_MATERIALIZER_CONFIG_SHA256 = "77317d48113c5ba81c6331fe0bd5a006a4e47c1cf8711c070a03e19683098847"
+_MATERIALIZER_CONFIG_SHA256 = "40edbcda48ac087cb2a755bc0cfb50d1aae8b0162e0f1cbad92798f999771f6a"
 _MATERIALIZER_CONTAINER = "foundation-parent-chain-container-v1"
 _MATERIALIZER_MANIFEST = "foundation-parent-chain-container-manifest.json"
 _MATERIALIZER_KEY = ".foundation-parent-chain-materializer-v1.key"
@@ -298,10 +298,15 @@ class RuntimeBootstrap:
         """Project only the approved intent's existing org-tree field mapping."""
         try:
             source = json.loads(intent_path.read_text(encoding="utf-8"))
+            if not isinstance(source, dict):
+                _fail("FOUNDATION_PARENT_MATERIALIZER_HIERARCHY_MAPPING_INVALID")
             content_hash = source.get("content_sha256")
-            payload = source.get("payload", source)
-            refs = payload["hierarchy_asset_refs"]
-            org_tree = next(item["org_tree"] for item in refs if isinstance(item, dict) and isinstance(item.get("org_tree"), dict))
+            refs = source["hierarchy_asset_refs"]
+            if not isinstance(refs, dict):
+                _fail("FOUNDATION_PARENT_MATERIALIZER_HIERARCHY_MAPPING_INVALID")
+            org_tree = refs["org_tree"]
+            if not isinstance(org_tree, dict):
+                _fail("FOUNDATION_PARENT_MATERIALIZER_HIERARCHY_MAPPING_INVALID")
             mapping = org_tree["field_mapping"]
         except (OSError, UnicodeError, json.JSONDecodeError, KeyError, StopIteration, TypeError) as exc:
             raise RuntimeBootstrapError("FOUNDATION_PARENT_MATERIALIZER_HIERARCHY_MAPPING_INVALID") from exc

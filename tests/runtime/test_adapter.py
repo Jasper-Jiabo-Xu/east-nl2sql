@@ -42,8 +42,18 @@ class RuntimeAdapterTests(unittest.TestCase):
         """The approved public seam has no caller attachment or path arguments."""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "runtime"; root.mkdir(parents=True); root.chmod(0o700)
+            field_mapping = {"CHILD_ORG_ID": "PARENT_ORG_ID"}
             values = {
-                "foundation_intent_package.json": {"content_sha256": "a" * 64},
+                "foundation_intent_package.json": {
+                    "content_sha256": "a" * 64,
+                    "hierarchy_asset_refs": {
+                        "org_tree": {
+                            "field_mapping": field_mapping,
+                            "asset": "ignored", "locator_key": "ignored", "note": "ignored",
+                        },
+                        "other_hierarchy_sibling": "ignored",
+                    },
+                },
                 "foundation_task_package_projection.json": {"projection": "sanitized"},
                 "manifest.json": {"manifest": "sanitized"},
             }
@@ -76,9 +86,13 @@ class RuntimeAdapterTests(unittest.TestCase):
             bootstrap._runtime_manifest = lambda *_args: runtime_manifest
             bootstrap._without_locators = lambda _manifest: {}
             config["runtime_manifest_without_locators_sha256"] = bootstrap_mod.sha256({})
+            config["hierarchy_mapping_sha256"] = bootstrap_mod.sha256({
+                "schema_version": "foundation-hierarchy-endpoint-mapping/v1",
+                "intent_content_hash": "a" * 64,
+                "field_mapping": field_mapping,
+            })
             bootstrap._materializer_config = lambda: (config, bootstrap_mod.sha256(config))
             bootstrap._verify_runtime_manifest = lambda *_args: None
-            bootstrap._hierarchy_mapping = lambda *_args: {"content_hash": "d" * 64}
             first = bootstrap.materialize_foundation_parent_chain()
             second = bootstrap.materialize_foundation_parent_chain()
             self.assertEqual(first, second)
@@ -87,6 +101,13 @@ class RuntimeAdapterTests(unittest.TestCase):
             container = root / "foundation-parent-chain-container-v1"
             self.assertTrue((container / "eas111-evidence.json").is_file())
             self.assertFalse((container / "evidence.json").exists())
+            mapping = json.loads((container / "foundation-hierarchy-endpoint-mapping.json").read_text())
+            self.assertEqual(mapping, {
+                "schema_version": "foundation-hierarchy-endpoint-mapping/v1",
+                "intent_content_hash": "a" * 64,
+                "field_mapping": field_mapping,
+                "content_hash": config["hierarchy_mapping_sha256"],
+            })
 
     def test_eas111_filename_mapping_failures_leave_no_partial_container(self) -> None:
         """A fixed platform filename may only become the canonical name atomically."""
@@ -154,6 +175,56 @@ class RuntimeAdapterTests(unittest.TestCase):
                     with patch.object(bootstrap_mod, "_MATERIALIZER_CONFIG", "config.json"), patch.object(bootstrap_mod, "_MATERIALIZER_CONFIG_SHA256", hashlib.sha256(path.read_bytes()).hexdigest()):
                         with self.assertRaisesRegex(RuntimeBootstrapError, "FOUNDATION_PARENT_MATERIALIZER_CONFIG_INVALID"):
                             bootstrap._materializer_config()
+
+    def test_hierarchy_mapping_accepts_only_the_frozen_object_projection(self) -> None:
+        """No list/locator/sibling compatibility path may enter the mapping."""
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "foundation_intent_package.json"
+            bootstrap = RuntimeBootstrap.__new__(RuntimeBootstrap)
+            field_mapping = {"CHILD_ORG_ID": "PARENT_ORG_ID"}
+            bare = {
+                "schema_version": "foundation-hierarchy-endpoint-mapping/v1",
+                "intent_content_hash": "a" * 64,
+                "field_mapping": field_mapping,
+            }
+            config = {"attachments": [{"semantic_sha256": "a" * 64}], "hierarchy_mapping_sha256": bootstrap_mod.sha256(bare)}
+            source = {
+                "content_sha256": "a" * 64,
+                "hierarchy_asset_refs": {
+                    "org_tree": {
+                        "field_mapping": field_mapping,
+                        "asset": "ignored", "locator_key": "ignored", "note": "ignored",
+                    },
+                    "other_hierarchy_sibling": "ignored",
+                },
+            }
+            path.write_text(json.dumps(source))
+            self.assertEqual(bootstrap._hierarchy_mapping(path, config), {**bare, "content_hash": bootstrap_mod.sha256(bare)})
+
+            bad_sources = {
+                "old_list": {**source, "hierarchy_asset_refs": [{"org_tree": {"field_mapping": field_mapping}}]},
+                "missing_org_tree": {**source, "hierarchy_asset_refs": {}},
+                "empty_mapping": {**source, "hierarchy_asset_refs": {"org_tree": {"field_mapping": {}}}},
+                "wrong_intent_hash": {**source, "content_sha256": "b" * 64},
+            }
+            for name, bad in bad_sources.items():
+                with self.subTest(name=name):
+                    path.write_text(json.dumps(bad))
+                    with self.assertRaisesRegex(RuntimeBootstrapError, "FOUNDATION_PARENT_MATERIALIZER_HIERARCHY_MAPPING_INVALID"):
+                        bootstrap._hierarchy_mapping(path, config)
+            for name, bad_config in {
+                "mapping_drift": {**config, "hierarchy_mapping_sha256": "0" * 64},
+                "old_frozen_hash": {**config, "hierarchy_mapping_sha256": "72677a770efa584297e2c49b51225576eb61a4bd934e235779e3dc85528ebe84"},
+            }.items():
+                with self.subTest(name=name):
+                    path.write_text(json.dumps(source))
+                    with self.assertRaisesRegex(RuntimeBootstrapError, "FOUNDATION_PARENT_MATERIALIZER_HIERARCHY_MAPPING_DRIFT"):
+                        bootstrap._hierarchy_mapping(path, bad_config)
+            tampered = {**source, "hierarchy_asset_refs": {"org_tree": {"field_mapping": {"CHILD_ORG_ID": "ATTACKER_PARENT"}}}}
+            path.write_text(json.dumps(tampered))
+            with self.assertRaisesRegex(RuntimeBootstrapError, "FOUNDATION_PARENT_MATERIALIZER_HIERARCHY_MAPPING_DRIFT"):
+                bootstrap._hierarchy_mapping(path, config)
+            self.assertEqual(set(item.name for item in Path(tmp).iterdir()), {path.name})
 
     def test_registers_then_reads_back_before_dispatch(self) -> None:
         payload = json.loads((ROOT / "fixtures" / "penalty" / "matched.json").read_text(encoding="utf-8"))

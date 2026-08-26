@@ -39,5 +39,5 @@
   "runtime_manifest_identity_schema": "constraint-assets-runtime-manifest-identity/v1",
   "runtime_manifest_identity_bytes_length": 1231,
   "runtime_manifest_without_locators_sha256": "0ac067babbfd944e58cc5828ad6e4950cde7c358727050aa84054c8b78ccdf89",
-  "hierarchy_mapping_sha256": "72677a770efa584297e2c49b51225576eb61a4bd934e235779e3dc85528ebe84"
+  "hierarchy_mapping_sha256": "fe094937077c2d1ac72a940c105f9f6551165a6323d2fcb5bb588f060662bdd9"
 }
