@@ -110,9 +110,9 @@ class FoundationDataPlaneEntrypointTests(unittest.TestCase):
             return SimpleNamespace(stdout=json.dumps([valid]))
 
         with patch.object(entrypoint_module.subprocess, "run", side_effect=runner):
-            result = FoundationDataPlaneEntrypoint._platform_run_record("fixed-issue")
+            result = FoundationDataPlaneEntrypoint._platform_run_record()
         self.assertEqual(calls, [(
-            ["multica", "issue", "runs", "fixed-issue", "--output", "json"],
+            ["multica", "issue", "runs", entrypoint_module._RECOVERY_SOURCE_ISSUE, "--output", "json"],
             {"check": True, "capture_output": True, "text": True},
         )])
         self.assertEqual(result, [{
@@ -127,12 +127,18 @@ class FoundationDataPlaneEntrypointTests(unittest.TestCase):
             "wrong_trigger": [{**valid, "trigger_comment_id": 1}],
             "duplicate_id": [valid, {**valid, "work_dir": "/controlled/other"}],
         }
+        for field in ("id", "status", "runtime_id", "work_dir"):
+            invalid[f"missing_{field}"] = [
+                {key: value for key, value in valid.items() if key != field}
+            ]
+            invalid[f"empty_{field}"] = [{**valid, field: ""}]
+            invalid[f"wrong_type_{field}"] = [{**valid, field: 1}]
         for name, value in invalid.items():
             with self.subTest(name=name), patch.object(
                 entrypoint_module.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, stdout=json.dumps(value)),
             ):
                 with self.assertRaisesRegex(FoundationDataPlaneError, "FOUNDATION_PARENT_CHAIN_RUN_RECORD_INVALID"):
-                    FoundationDataPlaneEntrypoint._platform_run_record("fixed-issue")
+                    FoundationDataPlaneEntrypoint._platform_run_record()
 
     def test_recovery_rejects_source_run_lineage_before_writes(self) -> None:
         runtime = self.entrypoint.provision(self.context)
@@ -155,7 +161,7 @@ class FoundationDataPlaneEntrypointTests(unittest.TestCase):
                 self.entrypoint, "_platform_run_record", return_value=record,
             ), patch.object(entrypoint_module, "_RECOVERY_SOURCE_TASK", "source-task"), patch.object(
                 entrypoint_module, "_RECOVERY_SOURCE_RUNTIME", "source-runtime",
-            ), patch.object(entrypoint_module, "_RECOVERY_SOURCE_COMMENT", "source-trigger"):
+            ), patch.object(entrypoint_module, "_RECOVERY_SOURCE_TRIGGER_COMMENT", "source-trigger"):
                 with self.assertRaisesRegex(FoundationDataPlaneError, code):
                     self.entrypoint.recover_parent_chain(runtime, {})
             self.assertFalse((runtime.runtime_root / "foundation-parent-chain-recovery-v1").exists())
@@ -209,7 +215,7 @@ class FoundationDataPlaneEntrypointTests(unittest.TestCase):
         body = {"schema_version": "foundation-parent-chain-materialization-receipt/v2", "root_binding_id": runtime.root_binding_id, "bootstrap": {}, "skill_manifest_sha256": "a" * 64, "config_sha256": config_hash, "attachments": attachments, "eas111_evidence": evidence, "assets": assets, "runtime_manifest_sha256": "a" * 64, "runtime_manifest_local_sha256": "c" * 64, "hierarchy_mapping_sha256": "b" * 64, "container_sha256": container_manifest["container_sha256"]}
         receipt = {**body, "receipt_sha256": entrypoint_module.sha256(body)}
         receipt["attestation"] = hmac.new(key.read_bytes(), entrypoint_module.canonical_bytes(receipt), hashlib.sha256).hexdigest()
-        with patch.object(self.entrypoint, "_platform_run_record", return_value=record), patch.object(entrypoint_module, "_MATERIALIZER_CONFIG", str(config)), patch.object(entrypoint_module, "_PARENT_CONTAINER_BYTES", bytes_by_name), patch.object(entrypoint_module, "_INTENT_HASH", "b" * 64), patch.object(entrypoint_module, "_PROJECTION_HASH", projection_hash), patch.object(entrypoint_module, "_RECOVERED_CLOSURE_HASH", closure["envelope"]["content_hash"]), patch.object(entrypoint_module, "_RECOVERY_SOURCE_TASK", "accepted-task"), patch.object(entrypoint_module, "_RECOVERY_SOURCE_RUNTIME", "accepted-runtime"), patch.object(entrypoint_module, "_RECOVERY_SOURCE_COMMENT", "accepted-comment"), patch.object(entrypoint_module, "_RECOVERED_CLOSURE_BYTES", hashlib.sha256((output / "structure_closure.json").read_bytes()).hexdigest()), patch.object(entrypoint_module, "_RECOVERED_EVIDENCE_BYTES", hashlib.sha256((output / "evidence.json").read_bytes()).hexdigest()), patch.object(entrypoint_module, "_RECOVERED_TASK_HASH", expected_task["envelope"]["content_hash"]), patch.object(entrypoint_module, "_RECOVERED_000_ANCESTOR_HASH", "d" * 64):
+        with patch.object(self.entrypoint, "_platform_run_record", return_value=record), patch.object(entrypoint_module, "_MATERIALIZER_CONFIG", str(config)), patch.object(entrypoint_module, "_PARENT_CONTAINER_BYTES", bytes_by_name), patch.object(entrypoint_module, "_INTENT_HASH", "b" * 64), patch.object(entrypoint_module, "_PROJECTION_HASH", projection_hash), patch.object(entrypoint_module, "_RECOVERED_CLOSURE_HASH", closure["envelope"]["content_hash"]), patch.object(entrypoint_module, "_RECOVERY_SOURCE_TASK", "accepted-task"), patch.object(entrypoint_module, "_RECOVERY_SOURCE_RUNTIME", "accepted-runtime"), patch.object(entrypoint_module, "_RECOVERY_SOURCE_TRIGGER_COMMENT", "accepted-comment"), patch.object(entrypoint_module, "_RECOVERY_SOURCE_COMMENT", "accepted-result-comment"), patch.object(entrypoint_module, "_RECOVERED_CLOSURE_BYTES", hashlib.sha256((output / "structure_closure.json").read_bytes()).hexdigest()), patch.object(entrypoint_module, "_RECOVERED_EVIDENCE_BYTES", hashlib.sha256((output / "evidence.json").read_bytes()).hexdigest()), patch.object(entrypoint_module, "_RECOVERED_TASK_HASH", expected_task["envelope"]["content_hash"]), patch.object(entrypoint_module, "_RECOVERED_000_ANCESTOR_HASH", "d" * 64):
             recovered = self.entrypoint.recover_parent_chain(runtime, receipt)
         self.assertEqual(recovered.task["envelope"]["content_hash"], expected_task["envelope"]["content_hash"])
         self.assertEqual(recovered.closure["envelope"]["content_hash"], closure["envelope"]["content_hash"])

@@ -74,7 +74,8 @@ _RECOVERED_CLOSURE_HASH = "168aab095660895c36eaece21e9f4de6ea3a8874939dd1d195950
 _RECOVERY_SOURCE_ISSUE = "01a0386f-c03f-7be9-b2d6-45841f1a4a74"
 _RECOVERY_SOURCE_TASK = "01a03882-8b63-7480-9c58-acf2213573a6"
 _RECOVERY_SOURCE_RUNTIME = "0e5e9dd9-5135-4937-bb03-92b77adb8395"
-_RECOVERY_SOURCE_COMMENT = "01a03882-8b49-7777-8e22-e6221a70917e"
+_RECOVERY_SOURCE_TRIGGER_COMMENT = "01a03882-8b49-7777-8e22-e6221a70917e"
+_RECOVERY_SOURCE_COMMENT = "01a0388e-729c-7289-9c99-b94d075e984e"
 _RECOVERED_CLOSURE_BYTES = "15f1e12e0fce75ac99fec764896dd7acadc055ee2c0771897affb67ab1990f8a"
 _RECOVERED_EVIDENCE_BYTES = "0bd3ea76bf7f11f6b127bc3e6f6c88fb477d185547d1c963a2bf3f6c248f90a7"
 _RECOVERED_TASK_HASH = "899ac6cdea3a9e08fa01d77102850952f9b8c83db3bf94672fe5ae8a31982fbe"
@@ -207,11 +208,11 @@ class FoundationDataPlaneEntrypoint:
         return FormalBaseline(candidate, observed, expected_size)
 
     @staticmethod
-    def _platform_run_record(issue_id: str) -> list[dict[str, Any]]:
+    def _platform_run_record() -> list[dict[str, Any]]:
         """Read a source task from Multica; no caller-provided source path exists."""
         try:
             completed = subprocess.run(
-                ["multica", "issue", "runs", issue_id, "--output", "json"],
+                ["multica", "issue", "runs", _RECOVERY_SOURCE_ISSUE, "--output", "json"],
                 check=True, capture_output=True, text=True,
             )
             value = json.loads(completed.stdout)
@@ -459,14 +460,14 @@ class FoundationDataPlaneEntrypoint:
         if runtime.runtime_root.is_symlink() or not runtime.runtime_root.is_dir():
             _fail("FOUNDATION_PARENT_CHAIN_ROOT_INVALID")
         self._verify_materialization(runtime, materialization_receipt)
-        record = self._platform_run_record(_RECOVERY_SOURCE_ISSUE)
+        record = self._platform_run_record()
         matches = [item for item in record if item["id"] == _RECOVERY_SOURCE_TASK]
         if len(matches) != 1:
             _fail("FOUNDATION_PARENT_CHAIN_SOURCE_TASK_INVALID")
         source = matches[0]
         if (source.get("status") != "completed" or source.get("runtime_id") != _RECOVERY_SOURCE_RUNTIME
-                or source.get("trigger_comment_id") != _RECOVERY_SOURCE_COMMENT
-                or source.get("delivered_comment_ids") != [_RECOVERY_SOURCE_COMMENT]):
+                or source.get("trigger_comment_id") != _RECOVERY_SOURCE_TRIGGER_COMMENT
+                or source.get("delivered_comment_ids") != [_RECOVERY_SOURCE_TRIGGER_COMMENT]):
             _fail("FOUNDATION_PARENT_CHAIN_SOURCE_LINEAGE_DRIFT")
         raw_work_dir = source.get("work_dir")
         if not isinstance(raw_work_dir, str) or not Path(raw_work_dir).is_absolute():
