@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import importlib
 import json
 import os
 import shutil
@@ -24,6 +25,8 @@ from east_v5.runtime import (
     root_binding_id,
 )
 from east_v5.runtime.bootstrap import BootstrapEvidence
+
+bridge_mod = importlib.import_module("east_v5.runtime.foundation_graph_adapter_bridge")
 
 
 SKILL = ROOT / "skills/east-v5-runtime-bootstrap-v12"
@@ -68,6 +71,12 @@ class FoundationGraphAdapterBridgeTests(unittest.TestCase):
         write(self.runtime / "daemon-root-binding-v12.json", marker); os.chmod(self.runtime / "daemon-root-binding-v12.json", 0o600)
         self.roots = {"repo_root": str(self.candidate / "repo"), "runtime_root": str(self.runtime), "reference_root": str(self.base / "reference"), "reference_read_only": True}
         self.manifest = json.loads((self.installed / "manifest.json").read_text())
+        # The production bridge has the EAS-115 anchors compiled in.  The
+        # self-contained test bundle is necessarily a throwaway committed
+        # bundle, so only this isolated test harness substitutes its anchors.
+        self._frozen_anchor = (bridge_mod._FROZEN_V12_MANIFEST_SHA256, bridge_mod._FROZEN_V12_SOURCE_HEAD)
+        bridge_mod._FROZEN_V12_MANIFEST_SHA256 = hashlib.sha256((self.installed / "manifest.json").read_bytes()).hexdigest()
+        bridge_mod._FROZEN_V12_SOURCE_HEAD = self.manifest["source_candidate_head"]
         self.graph = json.loads((self.installed / "config/full-runtime-graph.json").read_text())
         authority = json.loads((self.installed / "config/authority-matrix-v2.json").read_text())
         resolver = json.loads((self.installed / "config/skill-identity-resolver-v1.json").read_text())
@@ -75,6 +84,7 @@ class FoundationGraphAdapterBridgeTests(unittest.TestCase):
         self._preflight()
 
     def tearDown(self) -> None:
+        bridge_mod._FROZEN_V12_MANIFEST_SHA256, bridge_mod._FROZEN_V12_SOURCE_HEAD = self._frozen_anchor
         self.raw.cleanup()
 
     def _claim(self, target: str) -> dict[str, object]:
@@ -251,6 +261,15 @@ class FoundationGraphAdapterBridgeTests(unittest.TestCase):
                     invoke()
             finally:
                 gate_path.unlink(); os.replace(backup, gate_path)
+        with self.subTest("grant-broken-symlink-drift"):
+            backup = gate_path.with_suffix(".dangling")
+            original = gate_path.read_bytes()
+            os.replace(gate_path, backup); os.symlink(backup, gate_path); backup.unlink()
+            try:
+                with self.assertRaisesRegex(FoundationGraphAdapterBridgeError, "FOUNDATION_BRIDGE_GRANT_UNSAFE"):
+                    invoke()
+            finally:
+                gate_path.unlink(); gate_path.write_bytes(original); os.chmod(gate_path, 0o600)
         with self.subTest("runtime-root-permission-drift"):
             os.chmod(self.runtime, 0o755)
             try:
@@ -262,8 +281,24 @@ class FoundationGraphAdapterBridgeTests(unittest.TestCase):
             manifest_path = self.installed / "manifest.json"
             manifest = json.loads(manifest_path.read_text()); manifest["source_candidate_head"] = "old-head"
             write(manifest_path, manifest)
-            with self.assertRaisesRegex(FoundationGraphAdapterBridgeError, "FOUNDATION_BRIDGE_V12_MANIFEST_HEAD_INVALID"):
+            with self.assertRaisesRegex(FoundationGraphAdapterBridgeError, "FOUNDATION_BRIDGE_V12_TRUST_ANCHOR_DRIFT"):
                 FoundationGraphAdapterBridge(self.candidate, self.roots, self.installed)
+
+    def test_frozen_anchor_rejects_legal_but_self_consistent_old_bundle(self) -> None:
+        self.assertEqual(self._frozen_anchor, (
+            "0de0623e2a3922e22dfe25703eb76e4ccd38bb96b6b010a78fcc6c15da59746f",
+            "9bd88e5fc8587695ae65d37fffae69b39c7f4c31",
+        ))
+        bridge_mod._FROZEN_V12_MANIFEST_SHA256, bridge_mod._FROZEN_V12_SOURCE_HEAD = self._frozen_anchor
+        try:
+            # ``setUp`` already created this bundle's matching claims and
+            # accepted preflight state.  Only the immutable EAS-115 anchor
+            # makes it ineligible as a substitute for the frozen v12 input.
+            with self.assertRaisesRegex(FoundationGraphAdapterBridgeError, "FOUNDATION_BRIDGE_V12_TRUST_ANCHOR_DRIFT"):
+                FoundationGraphAdapterBridge(self.candidate, self.roots, self.installed)
+        finally:
+            bridge_mod._FROZEN_V12_MANIFEST_SHA256 = hashlib.sha256((self.installed / "manifest.json").read_bytes()).hexdigest()
+            bridge_mod._FROZEN_V12_SOURCE_HEAD = self.manifest["source_candidate_head"]
 
 
 if __name__ == "__main__":

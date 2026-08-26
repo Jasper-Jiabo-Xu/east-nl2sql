@@ -33,6 +33,10 @@ _TARGETS = {
     "242": "4e801c18-7048-4227-a5c7-515f51a5e5ba",
 }
 _FOUNDATION_RUNTIME = "0e5e9dd9-5135-4937-bb03-92b77adb8395"
+# EAS-115 freezes these two values.  They are deliberately code constants:
+# task inputs and runtime state can prove use of this anchor, never replace it.
+_FROZEN_V12_MANIFEST_SHA256 = "0de0623e2a3922e22dfe25703eb76e4ccd38bb96b6b010a78fcc6c15da59746f"
+_FROZEN_V12_SOURCE_HEAD = "9bd88e5fc8587695ae65d37fffae69b39c7f4c31"
 
 
 class FoundationGraphAdapterBridgeError(ContractError):
@@ -98,8 +102,8 @@ class FoundationGraphAdapterBridge:
         if (self.manifest.get("schema_version"), self.manifest.get("skill_name"), self.manifest.get("skill_version")) != ("workspace_skill_bundle_manifest/v12", "east-v5-runtime-bootstrap-v12", "v12"):
             _fail("FOUNDATION_BRIDGE_V12_MANIFEST_INVALID")
         source_head = self.manifest.get("source_candidate_head")
-        if not isinstance(source_head, str) or len(source_head) != 40 or set(source_head) - _HEX:
-            _fail("FOUNDATION_BRIDGE_V12_MANIFEST_HEAD_INVALID")
+        if self.manifest_hash != _FROZEN_V12_MANIFEST_SHA256 or source_head != _FROZEN_V12_SOURCE_HEAD:
+            _fail("FOUNDATION_BRIDGE_V12_TRUST_ANCHOR_DRIFT")
         if self.graph.get("schema_version") != "east-v5-full-runtime-graph/v12" or not isinstance(self.graph.get("real_agents"), dict):
             _fail("FOUNDATION_BRIDGE_V12_GRAPH_INVALID")
         for target, uuid in _TARGETS.items():
@@ -215,7 +219,10 @@ class FoundationGraphAdapterBridge:
         self._assert_ledger_permissions()
         path = self.ledger / _GRANTS / f"{grant_id}.json"
         try:
-            if path.exists() and (path.is_symlink() or stat.S_IMODE(path.stat().st_mode) != 0o600):
+            # ``exists`` is false for a dangling symlink, but such a path is
+            # still an attacker-controlled collision and must never reach the
+            # create/retry branch below.
+            if path.is_symlink() or (path.exists() and stat.S_IMODE(path.stat().st_mode) != 0o600):
                 _fail("FOUNDATION_BRIDGE_GRANT_UNSAFE")
         except OSError as exc:
             raise FoundationGraphAdapterBridgeError("FOUNDATION_BRIDGE_GRANT_UNSAFE") from exc
@@ -234,7 +241,15 @@ class FoundationGraphAdapterBridge:
                 with os.fdopen(descriptor, "wb") as output:
                     output.write(_canon(signed))
         except FileExistsError:
-            self._grant(body)
+            # A concurrent writer is safe only when it committed this exact
+            # authenticated grant.  Never recurse: a dangling symlink or an
+            # untrusted collision has a deterministic fail-closed outcome.
+            checked = self._grant_path(grant_id)
+            try:
+                if not checked.exists() or _load(checked, "FOUNDATION_BRIDGE_GRANT_INVALID") != signed:
+                    _fail("FOUNDATION_BRIDGE_GRANT_DRIFT")
+            except OSError as exc:
+                raise FoundationGraphAdapterBridgeError("FOUNDATION_BRIDGE_GRANT_UNAVAILABLE") from exc
         except OSError as exc:
             raise FoundationGraphAdapterBridgeError("FOUNDATION_BRIDGE_GRANT_UNAVAILABLE") from exc
 
