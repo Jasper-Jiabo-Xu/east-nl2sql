@@ -39,6 +39,7 @@ _MATERIALIZER_RECEIPT = "foundation-parent-chain-materialization-receipt-v2.json
 _MATERIALIZER_REFRESH_LOCK = ".foundation-parent-chain-materialization-refresh-v1.lock"
 _MATERIALIZER_REFRESH_DIR = "foundation-parent-chain-materialization-refresh-v1"
 _MATERIALIZER_REFRESH_BUNDLE = "migration-bundle.json"
+_MATERIALIZER_REFRESH_BUNDLE_TMP = ".migration-bundle-"
 _MATERIALIZER_REFRESH_STAGING = ".foundation-parent-chain-materialization-refresh-staging-"
 _MATERIALIZER_REFRESH_SOURCE = "af3041b5d14b967f52499e25b1d6c876bce7064b8b6548ae4bc44d42d7fe84cd"
 _MATERIALIZER_RECEIPT_KEYS = {
@@ -642,11 +643,16 @@ class RuntimeBootstrap:
         bundle["attestation"] = hmac.new(self._materializer_key(root, create=False), canonical_bytes(bundle), hashlib.sha256).hexdigest()
         return bundle
 
-    def _write_refresh_bundle(self, path: Path, bundle: dict[str, Any]) -> None:
+    def _write_refresh_bundle(self, directory: Path, bundle: dict[str, Any]) -> None:
+        """Publish only a fully fsynced bundle under its final staging name."""
+        temporary = directory / f"{_MATERIALIZER_REFRESH_BUNDLE_TMP}{secrets.token_hex(16)}"
+        final = directory / _MATERIALIZER_REFRESH_BUNDLE
         try:
-            descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
+            descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
             with os.fdopen(descriptor, "wb") as output:
                 output.write(canonical_bytes(bundle)); output.flush(); os.fsync(output.fileno())
+            os.replace(temporary, final)
+            self._fsync_directory(directory)
         except OSError as exc:
             raise RuntimeBootstrapError("FOUNDATION_PARENT_MATERIALIZER_REFRESH_WRITE_FAILED") from exc
 
@@ -696,16 +702,22 @@ class RuntimeBootstrap:
         staging = candidates[0]
         if staging.is_symlink() or not staging.is_dir():
             _fail("FOUNDATION_PARENT_MATERIALIZER_REFRESH_TRANSITION_DRIFT")
+        self._private(staging, 0o700, "FOUNDATION_PARENT_MATERIALIZER_REFRESH_TRANSITION_DRIFT")
         try:
             names = {path.name for path in staging.iterdir()}
         except OSError as exc:
             raise RuntimeBootstrapError("FOUNDATION_PARENT_MATERIALIZER_REFRESH_TRANSITION_DRIFT") from exc
-        if names != {_MATERIALIZER_REFRESH_BUNDLE}:
+        incomplete = not names or (len(names) == 1 and next(iter(names)).startswith(_MATERIALIZER_REFRESH_BUNDLE_TMP))
+        if incomplete:
             # This is an interrupted private staging write, not a published
             # record.  Remove it deterministically so retry can rebuild it.
+            for name in names:
+                self._private(staging / name, 0o600, "FOUNDATION_PARENT_MATERIALIZER_REFRESH_TRANSITION_DRIFT")
             shutil.rmtree(staging, ignore_errors=True)
             self._fsync_directory(root)
             return
+        if names != {_MATERIALIZER_REFRESH_BUNDLE}:
+            _fail("FOUNDATION_PARENT_MATERIALIZER_REFRESH_TRANSITION_DRIFT")
         try:
             self._validate_refresh_bundle(staging, source, target, evidence, manifest, config_hash, root)
         except RuntimeBootstrapError:
@@ -754,8 +766,7 @@ class RuntimeBootstrap:
                 staging = Path(tempfile.mkdtemp(prefix=_MATERIALIZER_REFRESH_STAGING, dir=root))
                 staging.chmod(0o700); self._private(staging, 0o700, "FOUNDATION_PARENT_MATERIALIZER_REFRESH_TRANSITION_DRIFT")
                 try:
-                    self._write_refresh_bundle(staging / _MATERIALIZER_REFRESH_BUNDLE, self._refresh_bundle(source, target, evidence, manifest, config_hash, root))
-                    self._fsync_directory(staging)
+                    self._write_refresh_bundle(staging, self._refresh_bundle(source, target, evidence, manifest, config_hash, root))
                     os.replace(staging, final); self._fsync_directory(root)
                 except Exception:
                     if staging.exists() and not staging.is_symlink():

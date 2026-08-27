@@ -134,6 +134,46 @@ class RuntimeAdapterTests(unittest.TestCase):
                     self.assertIn(receipt, (old, current))
                     self.assertEqual(bootstrap.refresh_foundation_parent_chain_materialization_receipt(), current)
 
+    def test_materializer_receipt_refresh_recovers_hard_crash_temp_and_resumes_complete_stage(self) -> None:
+        bootstrap, root, _config = self._refresh_fixture()
+        current, old = self._old_refresh_receipt(bootstrap, root)
+        staging = root / ".foundation-parent-chain-materialization-refresh-staging-hard-crash"
+        staging.mkdir(); staging.chmod(0o700)
+        temporary = staging / ".migration-bundle-interrupted"; temporary.write_bytes(b'{"truncated"'); temporary.chmod(0o600)
+        with patch.object(bootstrap_mod, "_MATERIALIZER_REFRESH_SOURCE", old["receipt_sha256"]):
+            self.assertEqual(bootstrap.refresh_foundation_parent_chain_materialization_receipt(), current)
+            self.assertFalse(staging.exists())
+            self.assertEqual(bootstrap.refresh_foundation_parent_chain_materialization_receipt(), current)
+
+        # A process which died after the final staging name was atomically
+        # published is resumed, rather than rebuilt or accepted unchecked.
+        bootstrap, root, _config = self._refresh_fixture()
+        current, old = self._old_refresh_receipt(bootstrap, root)
+        staging = root / ".foundation-parent-chain-materialization-refresh-staging-complete"
+        staging.mkdir(); staging.chmod(0o700)
+        evidence = bootstrap.preflight(); config, config_hash = bootstrap._materializer_config()
+        manifest = bootstrap._verify_refresh_container(root, evidence, config, config_hash)
+        target = bootstrap._receipt_for_container(evidence, config, config_hash, manifest, root, create_key=False)
+        with patch.object(bootstrap_mod, "_MATERIALIZER_REFRESH_SOURCE", old["receipt_sha256"]):
+            bootstrap._write_refresh_bundle(staging, bootstrap._refresh_bundle(old, target, evidence, manifest, config_hash, root))
+            self.assertEqual(bootstrap.refresh_foundation_parent_chain_materialization_receipt(), current)
+            self.assertFalse(staging.exists())
+
+    def test_materializer_receipt_refresh_rejects_complete_tampered_staging_bundle(self) -> None:
+        bootstrap, root, _config = self._refresh_fixture()
+        _current, old = self._old_refresh_receipt(bootstrap, root)
+        staging = root / ".foundation-parent-chain-materialization-refresh-staging-tampered"
+        staging.mkdir(); staging.chmod(0o700)
+        evidence = bootstrap.preflight(); config, config_hash = bootstrap._materializer_config()
+        manifest = bootstrap._verify_refresh_container(root, evidence, config, config_hash)
+        target = bootstrap._receipt_for_container(evidence, config, config_hash, manifest, root, create_key=False)
+        with patch.object(bootstrap_mod, "_MATERIALIZER_REFRESH_SOURCE", old["receipt_sha256"]):
+            bootstrap._write_refresh_bundle(staging, bootstrap._refresh_bundle(old, target, evidence, manifest, config_hash, root))
+            path = staging / "migration-bundle.json"; path.write_bytes(b"tampered"); path.chmod(0o600)
+            with self.assertRaisesRegex(RuntimeBootstrapError, "FOUNDATION_PARENT_MATERIALIZER_REFRESH_TRANSITION_DRIFT"):
+                bootstrap.refresh_foundation_parent_chain_materialization_receipt()
+            self.assertTrue(staging.exists())
+
     def test_materializer_receipt_refresh_serializes_two_callers_and_rejects_bundle_symlink(self) -> None:
         bootstrap, root, _config = self._refresh_fixture()
         current, old = self._old_refresh_receipt(bootstrap, root)
