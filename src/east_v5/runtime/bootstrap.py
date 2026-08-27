@@ -38,6 +38,8 @@ _MATERIALIZER_KEY = ".foundation-parent-chain-materializer-v1.key"
 _MATERIALIZER_RECEIPT = "foundation-parent-chain-materialization-receipt-v2.json"
 _MATERIALIZER_REFRESH_LOCK = ".foundation-parent-chain-materialization-refresh-v1.lock"
 _MATERIALIZER_REFRESH_DIR = "foundation-parent-chain-materialization-refresh-v1"
+_MATERIALIZER_REFRESH_BUNDLE = "migration-bundle.json"
+_MATERIALIZER_REFRESH_STAGING = ".foundation-parent-chain-materialization-refresh-staging-"
 _MATERIALIZER_REFRESH_SOURCE = "af3041b5d14b967f52499e25b1d6c876bce7064b8b6548ae4bc44d42d7fe84cd"
 _MATERIALIZER_RECEIPT_KEYS = {
     "schema_version", "root_binding_id", "bootstrap", "skill_manifest_sha256",
@@ -616,129 +618,164 @@ class RuntimeBootstrap:
             self._private(receipt_path, 0o600, "FOUNDATION_PARENT_MATERIALIZER_RECEIPT_UNSAFE")
         return body
 
-    def refresh_foundation_parent_chain_materialization_receipt(self) -> dict[str, Any]:
-        """Explicit, parameterless CAS refresh for one audited old provenance.
+    def _refresh_transition(self, source: dict[str, Any], target: dict[str, Any], evidence: BootstrapEvidence, manifest: dict[str, Any], config_hash: str, root: Path) -> dict[str, Any]:
+        stable = {key: source[key] for key in sorted(_MATERIALIZER_STABLE_RECEIPT_KEYS)}
+        record = {
+            "schema_version": "foundation-parent-chain-materialization-refresh-transition/v1",
+            "root_binding_id": evidence.root_binding_id,
+            "source_receipt_sha256": source["receipt_sha256"], "target_receipt_sha256": target["receipt_sha256"],
+            "source_bootstrap": source["bootstrap"], "target_bootstrap": target["bootstrap"],
+            "stable_projection_sha256": sha256(stable), "container_sha256": manifest["container_sha256"],
+            "config_sha256": config_hash,
+        }
+        record["transition_sha256"] = sha256(record)
+        record["attestation"] = hmac.new(self._materializer_key(root, create=False), canonical_bytes(record), hashlib.sha256).hexdigest()
+        return record
 
-        Normal materialization remains strict: it never accepts receipt drift.
-        This seam exists solely for the allowlisted receipt emitted before the
-        PR-66 bootstrap provenance changed, and validates the complete stable
-        container before replacing its receipt.
-        """
+    def _refresh_bundle(self, source: dict[str, Any], target: dict[str, Any], evidence: BootstrapEvidence, manifest: dict[str, Any], config_hash: str, root: Path) -> dict[str, Any]:
+        bundle = {
+            "schema_version": "foundation-parent-chain-materialization-refresh-bundle/v1",
+            "source_receipt": source,
+            "transition": self._refresh_transition(source, target, evidence, manifest, config_hash, root),
+        }
+        bundle["bundle_sha256"] = sha256(bundle)
+        bundle["attestation"] = hmac.new(self._materializer_key(root, create=False), canonical_bytes(bundle), hashlib.sha256).hexdigest()
+        return bundle
+
+    def _write_refresh_bundle(self, path: Path, bundle: dict[str, Any]) -> None:
+        try:
+            descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
+            with os.fdopen(descriptor, "wb") as output:
+                output.write(canonical_bytes(bundle)); output.flush(); os.fsync(output.fileno())
+        except OSError as exc:
+            raise RuntimeBootstrapError("FOUNDATION_PARENT_MATERIALIZER_REFRESH_WRITE_FAILED") from exc
+
+    def _validate_refresh_bundle(self, directory: Path, source: dict[str, Any], target: dict[str, Any], evidence: BootstrapEvidence, manifest: dict[str, Any], config_hash: str, root: Path) -> None:
+        self._private(directory, 0o700, "FOUNDATION_PARENT_MATERIALIZER_REFRESH_TRANSITION_DRIFT")
+        try:
+            if {path.name for path in directory.iterdir()} != {_MATERIALIZER_REFRESH_BUNDLE}:
+                _fail("FOUNDATION_PARENT_MATERIALIZER_REFRESH_TRANSITION_DRIFT")
+        except OSError as exc:
+            raise RuntimeBootstrapError("FOUNDATION_PARENT_MATERIALIZER_REFRESH_TRANSITION_DRIFT") from exc
+        path = directory / _MATERIALIZER_REFRESH_BUNDLE
+        self._private(path, 0o600, "FOUNDATION_PARENT_MATERIALIZER_REFRESH_TRANSITION_DRIFT")
+        try:
+            bundle = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            raise RuntimeBootstrapError("FOUNDATION_PARENT_MATERIALIZER_REFRESH_TRANSITION_DRIFT") from exc
+        expected = self._refresh_bundle(source, target, evidence, manifest, config_hash, root)
+        if bundle != expected:
+            _fail("FOUNDATION_PARENT_MATERIALIZER_REFRESH_TRANSITION_DRIFT")
+        self._validate_materializer_receipt(bundle["source_receipt"], root, "FOUNDATION_PARENT_MATERIALIZER_REFRESH_TRANSITION_DRIFT")
+        if bundle["source_receipt"]["receipt_sha256"] != _MATERIALIZER_REFRESH_SOURCE:
+            _fail("FOUNDATION_PARENT_MATERIALIZER_REFRESH_TRANSITION_DRIFT")
+
+    def _refresh_bundle_source(self, directory: Path, root: Path) -> dict[str, Any]:
+        """Read the archived source using the same private-file gate as CAS."""
+        self._private(directory, 0o700, "FOUNDATION_PARENT_MATERIALIZER_REFRESH_TRANSITION_DRIFT")
+        path = directory / _MATERIALIZER_REFRESH_BUNDLE
+        self._private(path, 0o600, "FOUNDATION_PARENT_MATERIALIZER_REFRESH_TRANSITION_DRIFT")
+        try:
+            bundle = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            raise RuntimeBootstrapError("FOUNDATION_PARENT_MATERIALIZER_REFRESH_TRANSITION_DRIFT") from exc
+        if not isinstance(bundle, dict) or set(bundle) != {"schema_version", "source_receipt", "transition", "bundle_sha256", "attestation"}:
+            _fail("FOUNDATION_PARENT_MATERIALIZER_REFRESH_TRANSITION_DRIFT")
+        return self._validate_materializer_receipt(bundle["source_receipt"], root, "FOUNDATION_PARENT_MATERIALIZER_REFRESH_TRANSITION_DRIFT")
+
+    def _recover_refresh_staging(self, root: Path, final: Path, source: dict[str, Any], target: dict[str, Any], evidence: BootstrapEvidence, manifest: dict[str, Any], config_hash: str) -> None:
+        """Publish an intact crash-staged bundle, or clean an incomplete private stage."""
+        try:
+            candidates = [path for path in root.iterdir() if path.name.startswith(_MATERIALIZER_REFRESH_STAGING)]
+        except OSError as exc:
+            raise RuntimeBootstrapError("FOUNDATION_PARENT_MATERIALIZER_REFRESH_WRITE_FAILED") from exc
+        if len(candidates) > 1:
+            _fail("FOUNDATION_PARENT_MATERIALIZER_REFRESH_TRANSITION_DRIFT")
+        if not candidates:
+            return
+        staging = candidates[0]
+        if staging.is_symlink() or not staging.is_dir():
+            _fail("FOUNDATION_PARENT_MATERIALIZER_REFRESH_TRANSITION_DRIFT")
+        try:
+            names = {path.name for path in staging.iterdir()}
+        except OSError as exc:
+            raise RuntimeBootstrapError("FOUNDATION_PARENT_MATERIALIZER_REFRESH_TRANSITION_DRIFT") from exc
+        if names != {_MATERIALIZER_REFRESH_BUNDLE}:
+            # This is an interrupted private staging write, not a published
+            # record.  Remove it deterministically so retry can rebuild it.
+            shutil.rmtree(staging, ignore_errors=True)
+            self._fsync_directory(root)
+            return
+        try:
+            self._validate_refresh_bundle(staging, source, target, evidence, manifest, config_hash, root)
+        except RuntimeBootstrapError:
+            # A complete but invalid staging bundle is tampering/conflict, not
+            # a recoverable crash residue.
+            raise
+        if final.exists() or final.is_symlink():
+            self._validate_refresh_bundle(final, source, target, evidence, manifest, config_hash, root)
+            shutil.rmtree(staging, ignore_errors=True); self._fsync_directory(root)
+            return
+        os.replace(staging, final); self._fsync_directory(root)
+
+    def refresh_foundation_parent_chain_materialization_receipt(self) -> dict[str, Any]:
+        """Explicit parameterless, lock-serialized CAS refresh for one source."""
         evidence = self.preflight()
-        root = self.resolve_runtime_root()
-        self._private(root, 0o700, "FOUNDATION_PARENT_MATERIALIZER_ROOT_UNSAFE")
+        root = self.resolve_runtime_root(); self._private(root, 0o700, "FOUNDATION_PARENT_MATERIALIZER_ROOT_UNSAFE")
         config, config_hash = self._materializer_config()
         manifest = self._verify_refresh_container(root, evidence, config, config_hash)
         target = self._receipt_for_container(evidence, config, config_hash, manifest, root, create_key=False)
         receipt_path = root / _MATERIALIZER_RECEIPT
-
-        def stable(receipt: dict[str, Any]) -> dict[str, Any]:
-            return {key: receipt[key] for key in sorted(_MATERIALIZER_STABLE_RECEIPT_KEYS)}
-
-        def transition_for(source: dict[str, Any]) -> dict[str, Any]:
-            projection = stable(source)
-            record = {
-                "schema_version": "foundation-parent-chain-materialization-refresh-transition/v1",
-                "root_binding_id": evidence.root_binding_id,
-                "source_receipt_sha256": source["receipt_sha256"],
-                "target_receipt_sha256": target["receipt_sha256"],
-                "source_bootstrap": source["bootstrap"], "target_bootstrap": target["bootstrap"],
-                "stable_projection_sha256": sha256(projection),
-                "container_sha256": manifest["container_sha256"], "config_sha256": config_hash,
-            }
-            record["transition_sha256"] = sha256(record)
-            record["attestation"] = hmac.new(self._materializer_key(root, create=False), canonical_bytes(record), hashlib.sha256).hexdigest()
-            return record
-
-        def verify_transition(path: Path, source: dict[str, Any]) -> None:
-            self._private(path, 0o600, "FOUNDATION_PARENT_MATERIALIZER_REFRESH_TRANSITION_DRIFT")
-            try:
-                observed = json.loads(path.read_text(encoding="utf-8"))
-            except (OSError, UnicodeError, json.JSONDecodeError) as exc:
-                raise RuntimeBootstrapError("FOUNDATION_PARENT_MATERIALIZER_REFRESH_TRANSITION_DRIFT") from exc
-            expected = transition_for(source)
-            if observed != expected:
-                _fail("FOUNDATION_PARENT_MATERIALIZER_REFRESH_TRANSITION_DRIFT")
-
-        def state() -> tuple[dict[str, Any], Path, Path]:
-            source = self._read_materializer_receipt(root)
-            if source["root_binding_id"] != evidence.root_binding_id:
-                _fail("FOUNDATION_PARENT_MATERIALIZER_RECEIPT_DRIFT")
-            archive_dir = root / _MATERIALIZER_REFRESH_DIR
-            archive = archive_dir / f"{_MATERIALIZER_REFRESH_SOURCE}.json"
-            transition = archive_dir / f"{_MATERIALIZER_REFRESH_SOURCE}-{target['receipt_sha256']}.json"
-            return source, archive, transition
-
-        source, archive, transition = state()
-        if source == target:
-            if not archive.exists() or not transition.exists():
-                _fail("FOUNDATION_PARENT_MATERIALIZER_REFRESH_SOURCE_REJECTED")
-            self._private(archive.parent, 0o700, "FOUNDATION_PARENT_MATERIALIZER_REFRESH_TRANSITION_DRIFT")
-            self._private(archive, 0o600, "FOUNDATION_PARENT_MATERIALIZER_REFRESH_TRANSITION_DRIFT")
-            try:
-                archived = self._validate_materializer_receipt(json.loads(archive.read_text(encoding="utf-8")), root, "FOUNDATION_PARENT_MATERIALIZER_REFRESH_TRANSITION_DRIFT")
-                if archived["receipt_sha256"] != _MATERIALIZER_REFRESH_SOURCE:
-                    _fail("FOUNDATION_PARENT_MATERIALIZER_REFRESH_TRANSITION_DRIFT")
-            except (OSError, UnicodeError, json.JSONDecodeError) as exc:
-                raise RuntimeBootstrapError("FOUNDATION_PARENT_MATERIALIZER_REFRESH_TRANSITION_DRIFT") from exc
-            verify_transition(transition, archived)
-            return target
-        if source["receipt_sha256"] != _MATERIALIZER_REFRESH_SOURCE:
-            _fail("FOUNDATION_PARENT_MATERIALIZER_REFRESH_SOURCE_REJECTED")
-        if stable(source) != stable(target):
-            _fail("FOUNDATION_PARENT_MATERIALIZER_REFRESH_STABLE_DRIFT")
-
+        final = root / _MATERIALIZER_REFRESH_DIR
         lock = root / _MATERIALIZER_REFRESH_LOCK
         try:
             descriptor = os.open(lock, os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0), 0o600)
-        except OSError as exc:
-            raise RuntimeBootstrapError("FOUNDATION_PARENT_MATERIALIZER_REFRESH_LOCK_UNAVAILABLE") from exc
-        try:
             self._private(lock, 0o600, "FOUNDATION_PARENT_MATERIALIZER_REFRESH_LOCK_UNSAFE")
             fcntl.flock(descriptor, fcntl.LOCK_EX)
-            source, archive, transition = state()
+            source = self._read_materializer_receipt(root)
+            if source["root_binding_id"] != evidence.root_binding_id:
+                _fail("FOUNDATION_PARENT_MATERIALIZER_RECEIPT_DRIFT")
             if source == target:
-                if not archive.exists() or not transition.exists():
-                    _fail("FOUNDATION_PARENT_MATERIALIZER_REFRESH_TRANSITION_DRIFT")
-                verify_transition(transition, json.loads(archive.read_text(encoding="utf-8")))
+                # An idempotent return remains a fully verified, durable CAS.
+                if not final.exists() or final.is_symlink():
+                    _fail("FOUNDATION_PARENT_MATERIALIZER_REFRESH_SOURCE_REJECTED")
+                self._validate_refresh_bundle(final, self._refresh_bundle_source(final, root), target, evidence, manifest, config_hash, root)
+                self._fsync_directory(root)
                 return target
-            if source["receipt_sha256"] != _MATERIALIZER_REFRESH_SOURCE or stable(source) != stable(target):
+            if source["receipt_sha256"] != _MATERIALIZER_REFRESH_SOURCE:
                 _fail("FOUNDATION_PARENT_MATERIALIZER_REFRESH_SOURCE_REJECTED")
-            archive_dir = archive.parent
-            if archive_dir.exists() or archive_dir.is_symlink():
-                self._private(archive_dir, 0o700, "FOUNDATION_PARENT_MATERIALIZER_REFRESH_TRANSITION_DRIFT")
-                if not archive.exists() or not transition.exists():
-                    _fail("FOUNDATION_PARENT_MATERIALIZER_REFRESH_TRANSITION_DRIFT")
-                try:
-                    archived = self._validate_materializer_receipt(json.loads(archive.read_text(encoding="utf-8")), root, "FOUNDATION_PARENT_MATERIALIZER_REFRESH_TRANSITION_DRIFT")
-                except (OSError, UnicodeError, json.JSONDecodeError) as exc:
-                    raise RuntimeBootstrapError("FOUNDATION_PARENT_MATERIALIZER_REFRESH_TRANSITION_DRIFT") from exc
-                if archived != source:
-                    _fail("FOUNDATION_PARENT_MATERIALIZER_REFRESH_TRANSITION_DRIFT")
-                verify_transition(transition, source)
+            stable = {key: source[key] for key in _MATERIALIZER_STABLE_RECEIPT_KEYS}
+            if stable != {key: target[key] for key in _MATERIALIZER_STABLE_RECEIPT_KEYS}:
+                _fail("FOUNDATION_PARENT_MATERIALIZER_REFRESH_STABLE_DRIFT")
+            self._recover_refresh_staging(root, final, source, target, evidence, manifest, config_hash)
+            if final.exists() or final.is_symlink():
+                self._validate_refresh_bundle(final, source, target, evidence, manifest, config_hash, root)
             else:
+                staging = Path(tempfile.mkdtemp(prefix=_MATERIALIZER_REFRESH_STAGING, dir=root))
+                staging.chmod(0o700); self._private(staging, 0o700, "FOUNDATION_PARENT_MATERIALIZER_REFRESH_TRANSITION_DRIFT")
                 try:
-                    archive_dir.mkdir(mode=0o700)
-                    self._private(archive_dir, 0o700, "FOUNDATION_PARENT_MATERIALIZER_REFRESH_TRANSITION_DRIFT")
-                    for path, value in ((archive, source), (transition, transition_for(source))):
-                        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
-                        with os.fdopen(fd, "wb") as output:
-                            output.write(canonical_bytes(value)); output.flush(); os.fsync(output.fileno())
-                    self._fsync_directory(archive_dir)
-                except OSError as exc:
-                    raise RuntimeBootstrapError("FOUNDATION_PARENT_MATERIALIZER_REFRESH_WRITE_FAILED") from exc
+                    self._write_refresh_bundle(staging / _MATERIALIZER_REFRESH_BUNDLE, self._refresh_bundle(source, target, evidence, manifest, config_hash, root))
+                    self._fsync_directory(staging)
+                    os.replace(staging, final); self._fsync_directory(root)
+                except Exception:
+                    if staging.exists() and not staging.is_symlink():
+                        shutil.rmtree(staging, ignore_errors=True)
+                    raise
             self._atomic_json(receipt_path, target)
             self._fsync_directory(root)
-            refreshed = self._read_materializer_receipt(root)
-            if refreshed != target:
+            if self._read_materializer_receipt(root) != target:
                 _fail("FOUNDATION_PARENT_MATERIALIZER_REFRESH_WRITE_FAILED")
+            self._validate_refresh_bundle(final, source, target, evidence, manifest, config_hash, root)
             self._verify_refresh_container(root, evidence, config, config_hash)
             return target
+        except OSError as exc:
+            raise RuntimeBootstrapError("FOUNDATION_PARENT_MATERIALIZER_REFRESH_LOCK_UNAVAILABLE") from exc
         finally:
-            try:
-                fcntl.flock(descriptor, fcntl.LOCK_UN)
-            finally:
-                os.close(descriptor)
+            if "descriptor" in locals():
+                try:
+                    fcntl.flock(descriptor, fcntl.LOCK_UN)
+                finally:
+                    os.close(descriptor)
 
     def build_adapter(self, roots: dict[str, Any]) -> Any:
         """Return an adapter only after the task-start gate has passed.

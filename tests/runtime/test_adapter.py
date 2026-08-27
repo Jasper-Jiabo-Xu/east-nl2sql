@@ -5,6 +5,7 @@ import hmac
 import json
 import importlib
 import stat
+import threading
 import sys
 import tempfile
 import unittest
@@ -82,21 +83,77 @@ class RuntimeAdapterTests(unittest.TestCase):
         bootstrap._verify_runtime_manifest = lambda *_args: None
         return bootstrap, root, config
 
-    def test_explicit_materializer_receipt_refresh_is_allowlisted_and_idempotent(self) -> None:
-        bootstrap, root, _config = self._refresh_fixture()
+    def _old_refresh_receipt(self, bootstrap: RuntimeBootstrap, root: Path) -> tuple[dict[str, object], dict[str, object]]:
         current = bootstrap.materialize_foundation_parent_chain()
         old = {**current, "bootstrap": {**current["bootstrap"], "bootstrap_sha256": "0" * 64}}
         old.pop("receipt_sha256"); old.pop("attestation")
         old["receipt_sha256"] = bootstrap_mod.sha256(old)
         old["attestation"] = hmac.new((root / ".foundation-parent-chain-materializer-v1.key").read_bytes(), bootstrap_mod.canonical_bytes(old), hashlib.sha256).hexdigest()
         RuntimeBootstrap._atomic_json(root / "foundation-parent-chain-materialization-receipt-v2.json", old)
+        return current, old
+
+    def test_explicit_materializer_receipt_refresh_is_allowlisted_and_idempotent(self) -> None:
+        bootstrap, root, _config = self._refresh_fixture()
+        current, old = self._old_refresh_receipt(bootstrap, root)
         with patch.object(bootstrap_mod, "_MATERIALIZER_REFRESH_SOURCE", old["receipt_sha256"]):
             refreshed = bootstrap.refresh_foundation_parent_chain_materialization_receipt()
             self.assertEqual(refreshed, bootstrap.refresh_foundation_parent_chain_materialization_receipt())
         self.assertEqual(refreshed["bootstrap"], current["bootstrap"])
-        archive = root / "foundation-parent-chain-materialization-refresh-v1" / f"{old['receipt_sha256']}.json"
-        self.assertEqual(json.loads(archive.read_text()), old)
-        self.assertEqual(stat.S_IMODE(archive.stat().st_mode), 0o600)
+        bundle = root / "foundation-parent-chain-materialization-refresh-v1" / "migration-bundle.json"
+        self.assertEqual(json.loads(bundle.read_text())["source_receipt"], old)
+        self.assertEqual(stat.S_IMODE(bundle.stat().st_mode), 0o600)
+
+    def test_materializer_receipt_refresh_recovers_bundle_write_and_replace_failures(self) -> None:
+        for fault in ("bundle", "bundle_fsync", "publish_fsync", "replace", "receipt_fsync"):
+            with self.subTest(fault=fault):
+                bootstrap, root, _config = self._refresh_fixture()
+                current, old = self._old_refresh_receipt(bootstrap, root)
+                with patch.object(bootstrap_mod, "_MATERIALIZER_REFRESH_SOURCE", old["receipt_sha256"]):
+                    if fault == "bundle":
+                        with patch.object(bootstrap, "_write_refresh_bundle", side_effect=RuntimeBootstrapError("injected")):
+                            with self.assertRaisesRegex(RuntimeBootstrapError, "injected"):
+                                bootstrap.refresh_foundation_parent_chain_materialization_receipt()
+                    elif fault == "replace":
+                        with patch.object(bootstrap, "_atomic_json", side_effect=RuntimeBootstrapError("injected")):
+                            with self.assertRaisesRegex(RuntimeBootstrapError, "injected"):
+                                bootstrap.refresh_foundation_parent_chain_materialization_receipt()
+                    else:
+                        original = bootstrap._fsync_directory
+                        calls = 0
+                        fault_call = {"bundle_fsync": 1, "publish_fsync": 2, "receipt_fsync": 3}[fault]
+                        def fail_root(path: Path) -> None:
+                            nonlocal calls
+                            calls += 1
+                            if calls == fault_call:
+                                raise RuntimeBootstrapError("injected")
+                            original(path)
+                        with patch.object(bootstrap, "_fsync_directory", side_effect=fail_root):
+                            with self.assertRaisesRegex(RuntimeBootstrapError, "injected"):
+                                bootstrap.refresh_foundation_parent_chain_materialization_receipt()
+                    receipt = json.loads((root / "foundation-parent-chain-materialization-receipt-v2.json").read_text())
+                    self.assertIn(receipt, (old, current))
+                    self.assertEqual(bootstrap.refresh_foundation_parent_chain_materialization_receipt(), current)
+
+    def test_materializer_receipt_refresh_serializes_two_callers_and_rejects_bundle_symlink(self) -> None:
+        bootstrap, root, _config = self._refresh_fixture()
+        current, old = self._old_refresh_receipt(bootstrap, root)
+        results: list[dict[str, object]] = []; failures: list[BaseException] = []
+        barrier = threading.Barrier(2)
+        def invoke() -> None:
+            try:
+                barrier.wait(); results.append(bootstrap.refresh_foundation_parent_chain_materialization_receipt())
+            except BaseException as exc:
+                failures.append(exc)
+        with patch.object(bootstrap_mod, "_MATERIALIZER_REFRESH_SOURCE", old["receipt_sha256"]):
+            first = threading.Thread(target=invoke); second = threading.Thread(target=invoke)
+            first.start(); second.start(); first.join(); second.join()
+            self.assertEqual(failures, [])
+            self.assertEqual(results, [current, current])
+            final = root / "foundation-parent-chain-materialization-refresh-v1"
+            self.assertEqual({path.name for path in final.iterdir()}, {"migration-bundle.json"})
+            bundle = final / "migration-bundle.json"; bundle.unlink(); bundle.symlink_to("outside")
+            with self.assertRaisesRegex(RuntimeBootstrapError, "FOUNDATION_PARENT_MATERIALIZER_REFRESH_TRANSITION_DRIFT"):
+                bootstrap.refresh_foundation_parent_chain_materialization_receipt()
 
     def test_materializer_receipt_refresh_rejects_nonallowlisted_or_stable_drift(self) -> None:
         bootstrap, root, _config = self._refresh_fixture()
