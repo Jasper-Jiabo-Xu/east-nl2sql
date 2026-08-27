@@ -1,0 +1,277 @@
+{
+  "schema": "east-v5-review-workbook-manifest-v1",
+  "workbook": "review_workbook_template.xlsx",
+  "workbook_sha256": "2eb2ffe194863075913e2e914cd869dd737cae4c403e83a81a54152d79280a92",
+  "total_checks": 53,
+  "passed": 53,
+  "failed": 0,
+  "result": "PASS",
+  "checks": [
+    {
+      "name": "工作表存在与顺序",
+      "pass": true,
+      "detail": "got=['审阅总览', '30候选明细', 'Q1', 'Q2', 'Q3', 'Q4', 'Q5', '运行与校验证据']"
+    },
+    {
+      "name": "30候选明细 列头精确匹配",
+      "pass": true,
+      "detail": "got=['题序', 'qa_id', '完整问题', 'baseline', '原始SQL', '规范化SQL', '状态', '失败码', 'SQL哈希', '模型版本', 'adapter版本', 'upstream版本', 'attempt', 'call', 'token', 'latency', 'trace引用', '人工结论', '备注']"
+    },
+    {
+      "name": "30候选明细 数据行数=30",
+      "pass": true,
+      "detail": "data_rows=30"
+    },
+    {
+      "name": "30 槽位 qa_id×baseline 唯一",
+      "pass": true,
+      "detail": "unique_pairs=30/30"
+    },
+    {
+      "name": "六路 baseline 精确匹配",
+      "pass": true,
+      "detail": "got=['AutoLink', 'DataGallery-Text2SQL', 'Databao Agent', 'DeepEye-SQL', 'JoyDataAgent-SQL', 'ReFoRCE']"
+    },
+    {
+      "name": "5 个唯一 qa_id",
+      "pass": true,
+      "detail": "qa_ids=['SYNTH_QA_001', 'SYNTH_QA_002', 'SYNTH_QA_003', 'SYNTH_QA_004', 'SYNTH_QA_005']"
+    },
+    {
+      "name": "30候选明细 问题/SQL 纯文本",
+      "pass": true,
+      "detail": "violations=0 []"
+    },
+    {
+      "name": "30候选明细 无公式单元格",
+      "pass": true,
+      "detail": "formulas=[]"
+    },
+    {
+      "name": "状态↔失败码一致性",
+      "pass": true,
+      "detail": "inconsistent=[]"
+    },
+    {
+      "name": "SQL 哈希一致性（成功槽位）",
+      "pass": true,
+      "detail": "bad=[]"
+    },
+    {
+      "name": "30候选明细 冻结窗格",
+      "pass": true,
+      "detail": "freeze='C2'"
+    },
+    {
+      "name": "30候选明细 自动筛选",
+      "pass": true,
+      "detail": "ref='A1:S31'"
+    },
+    {
+      "name": "30候选明细 自动换行",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "人工结论受限下拉（R 列）",
+      "pass": true,
+      "detail": "expected=['通过', '不通过', '需复核', '待审阅']"
+    },
+    {
+      "name": "状态受限下拉（G 列）",
+      "pass": true,
+      "detail": "expected=['成功', '失败', '跳过', '待定']"
+    },
+    {
+      "name": "Q1 qa_id 存在",
+      "pass": true,
+      "detail": "qa_id='SYNTH_QA_001'"
+    },
+    {
+      "name": "Q1 六路 baseline 完整",
+      "pass": true,
+      "detail": "got=['DeepEye-SQL', 'DataGallery-Text2SQL', 'JoyDataAgent-SQL', 'Databao Agent', 'ReFoRCE', 'AutoLink']"
+    },
+    {
+      "name": "Q1 SQL 纯文本",
+      "pass": true,
+      "detail": "violations=0 []"
+    },
+    {
+      "name": "Q1 冻结窗格",
+      "pass": true,
+      "detail": "freeze='A6'"
+    },
+    {
+      "name": "Q1 自动筛选",
+      "pass": true,
+      "detail": "ref='A5:F11'"
+    },
+    {
+      "name": "Q1 自动换行",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "Q1 状态下拉",
+      "pass": true,
+      "detail": "expected=['成功', '失败', '跳过', '待定']"
+    },
+    {
+      "name": "Q2 qa_id 存在",
+      "pass": true,
+      "detail": "qa_id='SYNTH_QA_002'"
+    },
+    {
+      "name": "Q2 六路 baseline 完整",
+      "pass": true,
+      "detail": "got=['DeepEye-SQL', 'DataGallery-Text2SQL', 'JoyDataAgent-SQL', 'Databao Agent', 'ReFoRCE', 'AutoLink']"
+    },
+    {
+      "name": "Q2 SQL 纯文本",
+      "pass": true,
+      "detail": "violations=0 []"
+    },
+    {
+      "name": "Q2 冻结窗格",
+      "pass": true,
+      "detail": "freeze='A6'"
+    },
+    {
+      "name": "Q2 自动筛选",
+      "pass": true,
+      "detail": "ref='A5:F11'"
+    },
+    {
+      "name": "Q2 自动换行",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "Q2 状态下拉",
+      "pass": true,
+      "detail": "expected=['成功', '失败', '跳过', '待定']"
+    },
+    {
+      "name": "Q3 qa_id 存在",
+      "pass": true,
+      "detail": "qa_id='SYNTH_QA_003'"
+    },
+    {
+      "name": "Q3 六路 baseline 完整",
+      "pass": true,
+      "detail": "got=['DeepEye-SQL', 'DataGallery-Text2SQL', 'JoyDataAgent-SQL', 'Databao Agent', 'ReFoRCE', 'AutoLink']"
+    },
+    {
+      "name": "Q3 SQL 纯文本",
+      "pass": true,
+      "detail": "violations=0 []"
+    },
+    {
+      "name": "Q3 冻结窗格",
+      "pass": true,
+      "detail": "freeze='A6'"
+    },
+    {
+      "name": "Q3 自动筛选",
+      "pass": true,
+      "detail": "ref='A5:F11'"
+    },
+    {
+      "name": "Q3 自动换行",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "Q3 状态下拉",
+      "pass": true,
+      "detail": "expected=['成功', '失败', '跳过', '待定']"
+    },
+    {
+      "name": "Q4 qa_id 存在",
+      "pass": true,
+      "detail": "qa_id='SYNTH_QA_004'"
+    },
+    {
+      "name": "Q4 六路 baseline 完整",
+      "pass": true,
+      "detail": "got=['DeepEye-SQL', 'DataGallery-Text2SQL', 'JoyDataAgent-SQL', 'Databao Agent', 'ReFoRCE', 'AutoLink']"
+    },
+    {
+      "name": "Q4 SQL 纯文本",
+      "pass": true,
+      "detail": "violations=0 []"
+    },
+    {
+      "name": "Q4 冻结窗格",
+      "pass": true,
+      "detail": "freeze='A6'"
+    },
+    {
+      "name": "Q4 自动筛选",
+      "pass": true,
+      "detail": "ref='A5:F11'"
+    },
+    {
+      "name": "Q4 自动换行",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "Q4 状态下拉",
+      "pass": true,
+      "detail": "expected=['成功', '失败', '跳过', '待定']"
+    },
+    {
+      "name": "Q5 qa_id 存在",
+      "pass": true,
+      "detail": "qa_id='SYNTH_QA_005'"
+    },
+    {
+      "name": "Q5 六路 baseline 完整",
+      "pass": true,
+      "detail": "got=['DeepEye-SQL', 'DataGallery-Text2SQL', 'JoyDataAgent-SQL', 'Databao Agent', 'ReFoRCE', 'AutoLink']"
+    },
+    {
+      "name": "Q5 SQL 纯文本",
+      "pass": true,
+      "detail": "violations=0 []"
+    },
+    {
+      "name": "Q5 冻结窗格",
+      "pass": true,
+      "detail": "freeze='A6'"
+    },
+    {
+      "name": "Q5 自动筛选",
+      "pass": true,
+      "detail": "ref='A5:F11'"
+    },
+    {
+      "name": "Q5 自动换行",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "Q5 状态下拉",
+      "pass": true,
+      "detail": "expected=['成功', '失败', '跳过', '待定']"
+    },
+    {
+      "name": "明细 qa_id 与 Q1..Q5 一致",
+      "pass": true,
+      "detail": "detail=['SYNTH_QA_001', 'SYNTH_QA_002', 'SYNTH_QA_003', 'SYNTH_QA_004', 'SYNTH_QA_005'] q=['SYNTH_QA_001', 'SYNTH_QA_002', 'SYNTH_QA_003', 'SYNTH_QA_004', 'SYNTH_QA_005']"
+    },
+    {
+      "name": "密钥/凭据泄漏扫描（0 命中）",
+      "pass": true,
+      "detail": "hits=[]"
+    },
+    {
+      "name": "synthetic 标记核验（所有完整问题带 [合成示例]）",
+      "pass": true,
+      "detail": "missing=[]"
+    }
+  ],
+  "leak_scan_hits": []
+}
