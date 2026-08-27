@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["launcher_id", "baseline_id", "repo_url", "commit", "entrypoint", "native_api", "native_output", "native_executor", "provider", "input_mapping", "output_mapping", "prohibitions", "runtime"],
+  "properties": {
+    "launcher_id": {"const": "databao_native_launcher_v1"},
+    "baseline_id": {"const": "Databao Agent"},
+    "repo_url": {"const": "https://github.com/JetBrains/databao-agent.git"},
+    "commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "entrypoint": {"$ref": "#/$defs/evidence"},
+    "native_api": {"$ref": "#/$defs/evidence"},
+    "native_output": {"$ref": "#/$defs/evidence"},
+    "native_executor": {"$ref": "#/$defs/evidence"},
+    "provider": {"type": "object", "additionalProperties": false, "required": ["model", "base_url", "api_key_env", "endpoint", "temperature", "max_tokens", "timeout_seconds", "retry_count", "config_path", "config_sha256"], "properties": {"model": {"const": "deepseek-v4-flash"}, "base_url": {"const": "https://api.deepseek.com"}, "api_key_env": {"const": "DEEPSEEK_API_KEY"}, "endpoint": {"const": "openai_chat_completions"}, "temperature": {"const": 0}, "max_tokens": {"type": "integer", "minimum": 1}, "timeout_seconds": {"type": "integer", "minimum": 1}, "retry_count": {"const": 3}, "config_path": {"type": "string", "minLength": 1}, "config_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}},
+    "input_mapping": {"type": "object", "additionalProperties": false, "required": ["qa_id", "question", "public_schema", "read_only_db"], "properties": {"qa_id": {"type": "string"}, "question": {"type": "string"}, "public_schema": {"type": "string"}, "read_only_db": {"type": "string"}}},
+    "output_mapping": {"type": "object", "additionalProperties": false, "required": ["sql", "result", "prediction"], "properties": {"sql": {"const": "thread.code()"}, "result": {"const": "thread.df()"}, "prediction": {"type": "string"}}},
+    "prohibitions": {"type": "array", "items": {"enum": ["gold_sql", "answer_contract", "business_events", "east_private_kb", "write_database"]}, "minItems": 5, "maxItems": 5, "uniqueItems": true},
+    "runtime": {"type": "object", "additionalProperties": false, "required": ["python_major_minor", "requirements_lock_sha256"], "properties": {"python_major_minor": {"const": "3.11"}, "requirements_lock_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}}
+  },
+  "$defs": {"evidence": {"type": "object", "additionalProperties": false, "required": ["path", "symbol", "sha256"], "properties": {"path": {"type": "string", "minLength": 1}, "symbol": {"type": "string", "minLength": 1}, "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}}}
+}

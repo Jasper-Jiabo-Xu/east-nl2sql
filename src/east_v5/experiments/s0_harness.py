@@ -6,7 +6,6 @@ import json
 import os
 import re
 import subprocess
-import sys
 import tempfile
 import time
 from dataclasses import dataclass
@@ -33,6 +32,9 @@ FORBIDDEN_KEYS = {
 }
 FORBIDDEN_VALUE_RE = re.compile(r"\b(gold\s+sql|answer\s+contract|sql\s+explanation|business\s+events|east\s+private\s+kb)\b", re.I)
 READ_ONLY_SQL_RE = re.compile(r"^\s*(select|with)\b", re.I)
+ROUTE_MATRIX_PATH = ROOT / "contracts" / "experiments" / "route_compatibility_matrix.json"
+ROUTE_MATRIX_KEYS = {"matrix_id", "s0_boundary", "routes"}
+ROUTE_KEYS = {"baseline_id", "provider_compatibility", "s0_method_compatibility", "overall_runnable", "reason"}
 
 
 class HarnessError(ValueError):
@@ -112,6 +114,27 @@ def validate_experiment_contract(contract: dict[str, Any]) -> None:
     _scan_for_leakage(contract)
 
 
+def load_route_compatibility_matrix(path: Path = ROUTE_MATRIX_PATH) -> dict[str, Any]:
+    matrix = load_json(path)
+    if set(matrix) != ROUTE_MATRIX_KEYS or matrix.get("matrix_id") != "EAS-125-six-route-dual-axis-v1" or matrix.get("s0_boundary") != "question_public_schema_read_only_db":
+        raise HarnessError("ROUTE_MATRIX_CONTRACT_DRIFT")
+    routes = matrix.get("routes")
+    if not isinstance(routes, list) or [route.get("baseline_id") for route in routes if isinstance(route, dict)] != list(BASELINE_IDS):
+        raise HarnessError("ROUTE_MATRIX_ROUTE_SET_DRIFT")
+    for route in routes:
+        expected_keys = ROUTE_KEYS | ({"launcher_contract"} if route.get("baseline_id") == "Databao Agent" else set())
+        if not isinstance(route, dict) or set(route) != expected_keys:
+            raise HarnessError("ROUTE_MATRIX_CONTRACT_DRIFT")
+        if route["provider_compatibility"] not in {"SUPPORTED_NATIVE_CONFIG", "SUPPORTED_VIA_HASHED_PROVIDER_OVERLAY"}:
+            raise HarnessError("ROUTE_MATRIX_PROVIDER_DRIFT")
+        if route["s0_method_compatibility"] not in {"SUPPORTED_NATIVE_METHOD", "S0_METHOD_INCOMPATIBLE"} or not isinstance(route["overall_runnable"], bool) or not isinstance(route["reason"], str) or not route["reason"]:
+            raise HarnessError("ROUTE_MATRIX_CONTRACT_DRIFT")
+        should_run = route["baseline_id"] == "Databao Agent"
+        if route["overall_runnable"] != should_run or (should_run and route["s0_method_compatibility"] != "SUPPORTED_NATIVE_METHOD") or (not should_run and route["s0_method_compatibility"] != "S0_METHOD_INCOMPATIBLE"):
+            raise HarnessError("ROUTE_MATRIX_RUNNABILITY_DRIFT")
+    return matrix
+
+
 def validate_run_manifest(manifest: dict[str, Any]) -> None:
     baselines = manifest.get("baselines")
     if not isinstance(baselines, list) or [item.get("baseline_id") for item in baselines if isinstance(item, dict)] != list(BASELINE_IDS):
@@ -174,10 +197,6 @@ def validate_run_manifest(manifest: dict[str, Any]) -> None:
     _scan_for_leakage(manifest)
 
 
-def _sha_file(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
-
-
 def consume_s0_manifest(dataset_manifest_path: Path, evidence_receipt_path: Path | None = None) -> dict[str, Any]:
     payload_bytes = dataset_manifest_path.read_bytes()
     manifest = json.loads(payload_bytes)
@@ -224,21 +243,6 @@ def _paths(output_dir: Path, baseline_id: str, attempt: int) -> RunPaths:
     return RunPaths(output_dir, baseline_dir, baseline_dir / "raw_predictions.jsonl", baseline_dir / "predictions.jsonl", baseline_dir / "trace.json")
 
 
-def _fixture_worktrees(manifest: dict[str, Any], output_dir: Path) -> Path:
-    """Materialize six non-network pinned-worktree shapes for contract tests only."""
-    root = output_dir / ".fixture-native-worktrees"; root.mkdir(parents=True, exist_ok=True)
-    for baseline in manifest["baselines"]:
-        evidence = baseline["upstream_evidence"]; tree = root / evidence["worktree_id"]; tree.mkdir(exist_ok=True)
-        files = {"license": tree / evidence["license_path"], "entrypoint": tree / evidence["entrypoint_path"], "provider_config": tree / evidence["provider_config_path"]}
-        for path in files.values(): path.parent.mkdir(parents=True, exist_ok=True)
-        files["license"].write_text(baseline["license"] + "\n", encoding="utf-8")
-        files["provider_config"].write_text(json.dumps(baseline["model_contract"], sort_keys=True), encoding="utf-8")
-        files["entrypoint"].write_text("import sys\nfrom east_v5.experiments.pinned_native_stub import main\nsys.argv += ['--adapter-id', '" + baseline["native_adapter_id"] + "']\nraise SystemExit(main())\n", encoding="utf-8")
-        evidence["source_hashes"] = {name: _sha_file(path) for name, path in files.items()}
-        (tree / "east-upstream-lock.json").write_text(json.dumps({"repo_url": baseline["repo_url"], "commit": baseline["commit"]}, sort_keys=True), encoding="utf-8")
-    return root
-
-
 def _atomic_write_json(path: Path, value: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=path.parent, delete=False) as handle:
@@ -257,21 +261,9 @@ def _atomic_write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
     os.replace(temp_name, path)
 
 
-def _read_jsonl(path: Path) -> list[dict[str, Any]]:
-    rows: list[dict[str, Any]] = []
-    for line in path.read_text(encoding="utf-8").splitlines():
-        if not line.strip():
-            continue
-        value = json.loads(line)
-        if not isinstance(value, dict):
-            raise HarnessError("INVALID_BASELINE_OUTPUT")
-        rows.append(value)
-    return rows
-
-
-def _prediction_failure(baseline: dict[str, Any], attempt: int, code: str, trace_ref: str) -> dict[str, Any]:
+def _prediction_failure(baseline: dict[str, Any], attempt: int, code: str, trace_ref: str, qa_id: str = "__run__") -> dict[str, Any]:
     return {
-        "qa_id": "__run__",
+        "qa_id": qa_id,
         "baseline_id": baseline["baseline_id"],
         "baseline_commit": baseline["commit"],
         "backbone_model_id": baseline["model_contract"]["model_id"],
@@ -299,121 +291,117 @@ def _redacted_digest(value: str | bytes | None) -> dict[str, Any]:
     return {"sha256": hashlib.sha256(value.encode("utf-8")).hexdigest(), "bytes": len(value.encode("utf-8")), "redacted": True}
 
 
-def _failure_from_process(returncode: int, stderr: str) -> str:
-    if "NATIVE_MODEL_UNAVAILABLE" in stderr:
+def _stable_incompatible_rows(baseline: dict[str, Any], dataset: dict[str, Any], output_dir: Path) -> list[dict[str, Any]]:
+    """Fail before credentials, worktree, database, or provider access."""
+    paths = _paths(output_dir, baseline["baseline_id"], 1)
+    if paths.baseline_dir.exists():
+        raise HarnessError("DUPLICATE_ATTEMPT", str(paths.baseline_dir))
+    paths.baseline_dir.mkdir(parents=True, exist_ok=False)
+    _atomic_write_json(paths.trace_json, {
+        "failure_code": "S0_METHOD_INCOMPATIBLE",
+        "adapter_id": baseline["native_adapter_id"],
+        "cache_namespace": baseline["cache_namespace"],
+        "preflight_only": True,
+    })
+    ref = str(paths.trace_json.relative_to(output_dir))
+    return [_prediction_failure(baseline, 1, "S0_METHOD_INCOMPATIBLE", ref, question["qa_id"]) for question in dataset["questions"]]
+
+
+def _databao_failure_code(stdout: str) -> str:
+    if "DATABAO_MODEL_UNAVAILABLE" in stdout:
         return "MODEL_UNAVAILABLE"
-    if "NATIVE_TRANSPORT_ERROR" in stderr or returncode:
+    if "DATABAO_NATIVE_OUTPUT_INVALID" in stdout:
+        return "INVALID_BASELINE_OUTPUT"
+    if "DATABAO_AUTH_MISSING" in stdout:
+        return "DEEPSEEK_AUTH_MISSING"
+    if "DATABAO_TRANSPORT_ERROR" in stdout:
         return "TRANSPORT_ERROR"
     return "INVALID_BASELINE_OUTPUT"
 
 
-def _run_one(baseline: dict[str, Any], dataset_path: Path, dataset: dict[str, Any], output_dir: Path, max_attempts: int, native_worktree_root: Path | None) -> list[dict[str, Any]]:
-    baseline_id = baseline["baseline_id"]
-    adapter = NativeAdapter.from_manifest(baseline)
-    adapter.require_credentials(baseline["model_contract"])
-    worktree = adapter.resolve_worktree(native_worktree_root)
-    last_failure = "TRANSPORT_ERROR"
-    for attempt in range(1, max_attempts + 1):
-        paths = _paths(output_dir, baseline_id, attempt)
-        if paths.predictions_jsonl.exists() or paths.raw_jsonl.exists():
+def _run_databao_native(baseline: dict[str, Any], dataset: dict[str, Any], output_dir: Path, max_attempts: int) -> list[dict[str, Any]]:
+    runtime = os.environ.get("EAST_DATABAO_RUNTIME_PYTHON")
+    db_path = os.environ.get("EAST_DATABAO_READ_ONLY_DB_PATH")
+    if not runtime or not db_path:
+        paths = _paths(output_dir, baseline["baseline_id"], 1)
+        if paths.baseline_dir.exists():
             raise HarnessError("DUPLICATE_ATTEMPT", str(paths.baseline_dir))
         paths.baseline_dir.mkdir(parents=True, exist_ok=False)
-        provider_config = paths.baseline_dir / "deepseek-provider.json"
-        _atomic_write_json(provider_config, baseline["model_contract"])
-        command = [
-            token.format(
-                python=sys.executable,
-                dataset=str(dataset_path),
-                output_jsonl=str(paths.raw_jsonl),
-                baseline_id=baseline_id,
-                upstream_worktree=str(worktree),
-                provider_config=str(provider_config),
-            )
-            for token in adapter.command
-        ]
-        started = time.time()
-        try:
+        _atomic_write_json(paths.trace_json, {"failure_code": "DATABAO_RUNTIME_OR_DB_UNAVAILABLE", "adapter_id": baseline["native_adapter_id"], "cache_namespace": baseline["cache_namespace"], "preflight_only": True})
+        ref = str(paths.trace_json.relative_to(output_dir))
+        return [_prediction_failure(baseline, 1, "DATABAO_RUNTIME_OR_DB_UNAVAILABLE", ref, question["qa_id"]) for question in dataset["questions"]]
+    outputs: list[dict[str, Any]] = []
+    for question in dataset["questions"]:
+        last_code = "TRANSPORT_ERROR"
+        for attempt in range(1, max_attempts + 1):
+            paths = _paths(output_dir, baseline["baseline_id"], attempt)
+            if paths.baseline_dir.exists():
+                raise HarnessError("DUPLICATE_ATTEMPT", str(paths.baseline_dir))
+            paths.baseline_dir.mkdir(parents=True, exist_ok=False)
+            request_path = paths.baseline_dir / "databao-request.json"
+            result_path = paths.baseline_dir / "databao-result.json"
+            _atomic_write_json(request_path, {"qa_id": question["qa_id"], "question": question["clear_question"], "public_schema": question["public_semantic_schema"], "read_only_db_path": db_path})
             env = os.environ.copy()
-            env["PYTHONPATH"] = str(SRC) if not env.get("PYTHONPATH") else str(SRC) + os.pathsep + env["PYTHONPATH"]
-            completed = subprocess.run(command, cwd=ROOT, env=env, text=True, capture_output=True, timeout=int(baseline.get("timeout_seconds", 20)), check=False)
-        except subprocess.TimeoutExpired as exc:
-            _atomic_write_json(paths.trace_json, {"failure_code": "TIMEOUT", "cache_namespace": baseline.get("cache_namespace"), "adapter_id": adapter.adapter_id, "stdout": _redacted_digest(exc.stdout), "stderr": _redacted_digest(exc.stderr)})
-            if attempt < max_attempts:
-                continue
-            return [_prediction_failure(baseline, attempt, "TIMEOUT", str(paths.trace_json.relative_to(output_dir)))]
-        elapsed_ms = int((time.time() - started) * 1000)
-        failure_code = _failure_from_process(completed.returncode, completed.stderr)
-        _atomic_write_json(paths.trace_json, {"command": command, "returncode": completed.returncode, "elapsed_ms": elapsed_ms, "cache_namespace": baseline.get("cache_namespace"), "adapter_id": adapter.adapter_id, "stdout": _redacted_digest(completed.stdout), "stderr": _redacted_digest(completed.stderr)})
-        if completed.returncode != 0:
-            last_failure = failure_code
-            if failure_code == "TRANSPORT_ERROR" and attempt < max_attempts:
-                continue
-            return [_prediction_failure(baseline, attempt, last_failure, str(paths.trace_json.relative_to(output_dir)))]
-
-        raw_rows = _read_jsonl(paths.raw_jsonl)
-        expected_ids = [question["qa_id"] for question in dataset["questions"]]
-        if [row.get("qa_id") for row in raw_rows] != expected_ids:
-            return [_prediction_failure(baseline, attempt, "INVALID_BASELINE_OUTPUT", str(paths.trace_json.relative_to(output_dir)))]
-        predictions: list[dict[str, Any]] = []
-        for row in raw_rows:
+            source = env.get("EAST_DATABAO_UPSTREAM_PATH", "")
+            env["PYTHONPATH"] = str(SRC) + (os.pathsep + source if source else "")
+            started = time.time()
             try:
-                sql, token_calls, token_total = adapter.parse(row)
-            except HarnessError:
-                return [_prediction_failure(baseline, attempt, "INVALID_BASELINE_OUTPUT", str(paths.trace_json.relative_to(output_dir)))]
-            if not isinstance(sql, str) or not READ_ONLY_SQL_RE.match(sql):
-                return [_prediction_failure(baseline, attempt, "ILLEGAL_SQL_OUTPUT", str(paths.trace_json.relative_to(output_dir)))]
-            if token_total > int(baseline["model_contract"].get("max_tokens", 0)):
-                return [_prediction_failure(baseline, attempt, "BUDGET_EXCEEDED", str(paths.trace_json.relative_to(output_dir)))]
+                completed = subprocess.run([runtime, "-m", "east_v5.experiments.databao_launcher", "--request", str(request_path), "--output", str(result_path)], cwd=ROOT, env=env, text=True, capture_output=True, timeout=int(baseline["timeout_seconds"]), check=False)
+            except subprocess.TimeoutExpired as exc:
+                _atomic_write_json(paths.trace_json, {"failure_code": "TIMEOUT", "adapter_id": baseline["native_adapter_id"], "cache_namespace": baseline["cache_namespace"], "stdout": _redacted_digest(exc.stdout), "stderr": _redacted_digest(exc.stderr)})
+                outputs.append(_prediction_failure(baseline, attempt, "TIMEOUT", str(paths.trace_json.relative_to(output_dir)), question["qa_id"]))
+                break
+            elapsed_ms = int((time.time() - started) * 1000)
+            _atomic_write_json(paths.trace_json, {"returncode": completed.returncode, "elapsed_ms": elapsed_ms, "adapter_id": baseline["native_adapter_id"], "cache_namespace": baseline["cache_namespace"], "stdout": _redacted_digest(completed.stdout), "stderr": _redacted_digest(completed.stderr)})
+            if completed.returncode:
+                last_code = _databao_failure_code(completed.stdout)
+                if last_code == "TRANSPORT_ERROR" and attempt < max_attempts:
+                    continue
+                outputs.append(_prediction_failure(baseline, attempt, last_code, str(paths.trace_json.relative_to(output_dir)), question["qa_id"]))
+                break
+            try:
+                result = load_json(result_path)
+                sql = result["sql"]
+                calls, tokens = result["model_calls"], result["model_tokens"]
+                if not isinstance(sql, str) or not READ_ONLY_SQL_RE.match(sql) or isinstance(calls, bool) or not isinstance(calls, int) or isinstance(tokens, bool) or not isinstance(tokens, int) or calls < 1 or tokens < 0:
+                    raise ValueError
+            except (KeyError, ValueError, TypeError, HarnessError):
+                outputs.append(_prediction_failure(baseline, attempt, "INVALID_BASELINE_OUTPUT", str(paths.trace_json.relative_to(output_dir)), question["qa_id"]))
+                break
             normalized = normalize_sql(sql)
-            predictions.append(
-                {
-                    "qa_id": row["qa_id"],
-                    "baseline_id": baseline_id,
-                    "baseline_commit": baseline["commit"],
-                    "backbone_model_id": baseline["model_contract"]["model_id"],
-                    "attempt": attempt,
-                    "prediction_sql_raw": "",
-                    "prediction_sql_normalized": "",
-                    "raw_sql_hash": hashlib.sha256(sql.encode("utf-8")).hexdigest(),
-                    "normalized_sql_hash": hashlib.sha256(normalized.encode("utf-8")).hexdigest(),
-                    "execution_status": "ok",
-                    "failure_code": "",
-                    "trace_ref": str(paths.trace_json.relative_to(output_dir)),
-                    "token_calls": token_calls,
-                    "token_total": token_total,
-                    "latency_ms": elapsed_ms,
-                }
-            )
-        _atomic_write_jsonl(paths.predictions_jsonl, predictions)
-        return predictions
-    return [_prediction_failure(baseline, max_attempts, last_failure, "")]
+            outputs.append({"qa_id": question["qa_id"], "baseline_id": baseline["baseline_id"], "baseline_commit": baseline["commit"], "backbone_model_id": baseline["model_contract"]["model_id"], "attempt": attempt, "prediction_sql_raw": "", "prediction_sql_normalized": "", "raw_sql_hash": hashlib.sha256(sql.encode("utf-8")).hexdigest(), "normalized_sql_hash": hashlib.sha256(normalized.encode("utf-8")).hexdigest(), "execution_status": "ok", "failure_code": "", "trace_ref": str(paths.trace_json.relative_to(output_dir)), "token_calls": calls, "token_total": tokens, "latency_ms": elapsed_ms})
+            break
+    return outputs
 
 
-def run_harness(experiment_contract_path: Path, dataset_manifest_path: Path, baseline_run_manifest_path: Path, output_dir: Path, mode: str = "concurrent", native_worktree_root: Path | None = None) -> dict[str, Any]:
+def _run_one(baseline: dict[str, Any], dataset_path: Path, dataset: dict[str, Any], output_dir: Path, max_attempts: int, native_worktree_root: Path | None, route: dict[str, Any]) -> list[dict[str, Any]]:
+    # The matrix is the authoritative first gate.  Incompatible routes must
+    # never fall through to the legacy fixture command surface.
+    if route["s0_method_compatibility"] == "S0_METHOD_INCOMPATIBLE":
+        return _stable_incompatible_rows(baseline, dataset, output_dir)
+    if baseline["baseline_id"] == "Databao Agent" and route["overall_runnable"]:
+        return _run_databao_native(baseline, dataset, output_dir, max_attempts)
+    raise HarnessError("ROUTE_LAUNCHER_CONTRACT_DRIFT")
+
+
+def run_harness(experiment_contract_path: Path, dataset_manifest_path: Path, baseline_run_manifest_path: Path, output_dir: Path, mode: str = "concurrent", native_worktree_root: Path | None = None, route_matrix_path: Path = ROUTE_MATRIX_PATH) -> dict[str, Any]:
     contract = load_json(experiment_contract_path)
     dataset = load_json(dataset_manifest_path)
     manifest = load_json(baseline_run_manifest_path)
     validate_experiment_contract(contract)
     validate_dataset_manifest(dataset)
     validate_run_manifest(manifest)
-
-    if native_worktree_root is None:
-        if not all(item["transport_mode"] == "fixture_stub" for item in manifest["baselines"]):
-            # Refuse missing credentials before reporting the worktree location.
-            # This keeps the native launch boundary deterministic and key-only.
-            for item in manifest["baselines"]:
-                NativeAdapter.from_manifest(item).require_credentials(item["model_contract"])
-            raise HarnessError("NATIVE_WORKTREE_ROOT_REQUIRED")
-        native_worktree_root = _fixture_worktrees(manifest, output_dir)
+    matrix = load_route_compatibility_matrix(route_matrix_path)
+    routes = {route["baseline_id"]: route for route in matrix["routes"]}
 
     output_dir.mkdir(parents=True, exist_ok=True)
     baselines = manifest["baselines"]
     max_attempts = contract["retry_policy"]["max_attempts"]
     if mode == "serial":
-        results = [_run_one(baseline, dataset_manifest_path, dataset, output_dir, max_attempts, native_worktree_root) for baseline in baselines]
+        results = [_run_one(baseline, dataset_manifest_path, dataset, output_dir, max_attempts, native_worktree_root, routes[baseline["baseline_id"]]) for baseline in baselines]
     elif mode == "concurrent":
         with concurrent.futures.ThreadPoolExecutor(max_workers=contract["concurrency"]) as executor:
-            futures = [executor.submit(_run_one, baseline, dataset_manifest_path, dataset, output_dir, max_attempts, native_worktree_root) for baseline in baselines]
+            futures = [executor.submit(_run_one, baseline, dataset_manifest_path, dataset, output_dir, max_attempts, native_worktree_root, routes[baseline["baseline_id"]]) for baseline in baselines]
             results = [future.result() for future in futures]
     else:
         raise HarnessError("INVALID_RUN_MODE")

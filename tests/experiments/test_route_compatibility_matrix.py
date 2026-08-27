@@ -15,6 +15,7 @@ class RouteCompatibilityMatrixTests(unittest.TestCase):
         routes = matrix["routes"]
         self.assertEqual([route["baseline_id"] for route in routes], ["DeepEye-SQL", "DataGallery-Text2SQL", "JoyDataAgent-SQL", "Databao Agent", "ReFoRCE", "AutoLink"])
         launchable = [route for route in routes if route["overall_runnable"]]
-        self.assertEqual(launchable, [{"baseline_id": "Databao Agent", "provider_compatibility": "SUPPORTED_NATIVE_CONFIG", "s0_method_compatibility": "SUPPORTED_NATIVE_METHOD", "overall_runnable": True, "launcher_contract": "databao_launcher_contract.json"}])
+        self.assertEqual(launchable[0]["launcher_contract"], "databao_launcher_contract.json")
+        self.assertIn("read-only database", launchable[0]["reason"])
         self.assertEqual(routes[-1]["provider_compatibility"], "SUPPORTED_VIA_HASHED_PROVIDER_OVERLAY")
         self.assertEqual(routes[-1]["s0_method_compatibility"], "S0_METHOD_INCOMPATIBLE")

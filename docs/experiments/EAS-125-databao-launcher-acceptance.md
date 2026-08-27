@@ -36,16 +36,20 @@ was persisted.
 ### Verification
 
 ```text
-test_databao_launcher + test_route_compatibility_matrix: 4/4
-test_s0_harness + test_autolink_overlay + route matrix: 23/23
-scripts/v5.py check: pass
+targeted harness/launcher/schema/overlay tests: 19/19
+scripts/v5.py check: 397 passed, 6 runtime-dependent tests skipped
 git diff --check: pass
 secret scan of changed experiment paths: pass
 ```
 
-### Residual boundary
+### Unified harness boundary
 
-The launcher is an independently callable closed native contract. It is not
-yet wired back into the earlier generic six-route harness; that harness's
-shaped-stub path is not evidence of native completion. Review and integration
-must preserve the dual-axis matrix and remove or fail-close that obsolete path.
+`s0_harness` consumes the dual-axis matrix before it reads credentials,
+worktrees, databases, or models. DeepEye, DataGallery, JoyDataAgent, ReFoRCE,
+and AutoLink emit `S0_METHOD_INCOMPATIBLE` with zero calls; only Databao invokes
+the isolated launcher and is converted into the common prediction fields
+(SQL hashes, attempt, calls/tokens, latency, trace, and stable failure code).
+The former pinned shaped-stub implementation has been removed. The Databao
+fake-endpoint matrix fixes one model-unavailable call, one invalid-output call,
+one timeout request, and at most three transport attempts; traces contain only
+redacted digests.
