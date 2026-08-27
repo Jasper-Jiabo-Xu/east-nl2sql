@@ -41,6 +41,29 @@ class FoundationAgentEntrypointTests(unittest.TestCase):
         self.bootstrap.foundation_260_launcher.return_value.verify_downstream.assert_called_once_with({"accepted": "242"})
         run.assert_called_once()
 
+    def test_no_envelope_241_entrypoint_derives_bootstrap_then_issues_its_own_identity(self) -> None:
+        with patch("east_v5.runtime.bootstrap.RuntimeBootstrap.from_current_foundation_task", return_value=self.bootstrap) as factory:
+            output, launch = generator.build_foundation_bound_data_from_current_task(self.assembly, {"closure": "sealed"})
+        self.assertEqual((output, launch["schema_version"]), ({"bound": "ok"}, "foundation-repo-launch-receipt/v1"))
+        factory.assert_called_once_with()
+        self.bootstrap.foundation_task_identity_issuer.return_value.issue.assert_called_once_with()
+
+    def test_no_envelope_242_entrypoint_derives_bootstrap_then_issues_its_own_identity(self) -> None:
+        with patch("east_v5.runtime.bootstrap.RuntimeBootstrap.from_current_foundation_task", return_value=self.bootstrap) as factory:
+            frozen, accepted = validator.freeze_foundation_bound_data_from_current_task(self.assembly, {"launch": "241"}, {"bound": "data"}, {"closure": "sealed"}, Mock())
+        self.assertEqual((frozen, accepted["status"]), ({"verified": "ok"}, "accepted"))
+        factory.assert_called_once_with()
+        self.bootstrap.foundation_task_identity_issuer.return_value.issue.assert_called_once_with()
+
+    def test_no_envelope_260_entrypoint_derives_bootstrap_then_issues_its_own_identity(self) -> None:
+        with patch("east_v5.runtime.bootstrap.RuntimeBootstrap.from_current_foundation_task", return_value=self.bootstrap) as factory, patch.object(regression, "run_foundation_regression", return_value={"report": "ok"}):
+            report, accepted = regression.run_foundation_regression_from_current_task({"accepted": "242"}, {}, {}, {}, {}, Mock(), Mock(), set())
+        self.assertEqual((report, accepted["status"]), ({"report": "ok"}, "accepted"))
+        factory.assert_called_once_with()
+        self.bootstrap.foundation_task_identity_issuer.return_value.issue.assert_called_once_with()
+        with self.assertRaises(TypeError):
+            regression.run_foundation_regression_from_current_task({"accepted": "242"}, {}, {}, {}, {}, Mock(), Mock(), set(), repo_root=Path("injected-repo"))  # type: ignore[call-arg]
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -460,6 +460,14 @@ def run_foundation_regression_from_runtime(bootstrap: Any, accepted_242_receipt:
     return report, accepted
 
 
+def run_foundation_regression_from_current_task(accepted_242_receipt: dict[str, Any], task_package: dict[str, Any], structure_closure: dict[str, Any], verified_bound_data: dict[str, Any], database_snapshot: dict[str, Any], copy_connection: sqlite3.Connection, formal_connection: sqlite3.Connection, event_owned_tables: set[str], *, attempt_no: int = 1) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Production 260 entrance with no injected bootstrap, identity, or path."""
+    from east_v5.runtime.bootstrap import RuntimeBootstrap
+    bootstrap = RuntimeBootstrap.from_current_foundation_task()
+    bootstrap.foundation_task_identity_issuer().issue()
+    return run_foundation_regression_from_runtime(bootstrap, accepted_242_receipt, bootstrap.checkout, task_package, structure_closure, verified_bound_data, database_snapshot, copy_connection, formal_connection, event_owned_tables, attempt_no=attempt_no)
+
+
 # Event-data support intentionally lives beside (not inside) the Foundation
 # execution path above.  Foundation has a distinct frozen task contract and
 # deterministic compiler; event data alone can execute the already validated

@@ -418,6 +418,14 @@ def freeze_foundation_bound_data_from_runtime(bootstrap: Any, assembly: Any, lau
     return frozen, accepted
 
 
+def freeze_foundation_bound_data_from_current_task(assembly: Any, launch_receipt: dict[str, Any], bound_data: dict[str, Any], structure_closure: dict[str, Any], resolver: RuleResolver, **kwargs: Any) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Production 242 entrance with task-local bootstrap and identity only."""
+    from east_v5.runtime.bootstrap import RuntimeBootstrap
+    bootstrap = RuntimeBootstrap.from_current_foundation_task()
+    bootstrap.foundation_task_identity_issuer().issue()
+    return freeze_foundation_bound_data_from_runtime(bootstrap, assembly, launch_receipt, bound_data, structure_closure, resolver, **kwargs)
+
+
 def _table_of(rule: dict[str, Any]) -> str:
     """The single table an INTRA_TABLE rule operates on (from its endpoints)."""
     fields = rule.get("fields") or []

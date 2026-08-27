@@ -34,6 +34,10 @@ _MATERIALIZER_CONFIG_SHA256 = "40edbcda48ac087cb2a755bc0cfb50d1aae8b0162e0f1cbad
 _MATERIALIZER_CONTAINER = "foundation-parent-chain-container-v1"
 _MATERIALIZER_MANIFEST = "foundation-parent-chain-container-manifest.json"
 _MATERIALIZER_KEY = ".foundation-parent-chain-materializer-v1.key"
+_FOUNDATION_WORKSPACE = "82db0426-715a-47e1-a66f-15b479c47654"
+_FOUNDATION_PROJECT = "3495da30-28d4-4cc6-b249-1e186ade6872"
+_FOUNDATION_DAEMON = "019fd128-7476-7d56-9ed0-cc49fbd7ecdc"
+_FOUNDATION_V12_MANIFEST = "0de0623e2a3922e22dfe25703eb76e4ccd38bb96b6b010a78fcc6c15da59746f"
 
 
 class RuntimeBootstrapError(ContractError):
@@ -80,7 +84,10 @@ def validate_bootstrap_declaration(envelope: dict[str, Any]) -> dict[str, Any]:
     skill_bundle = declaration["skill_bundle"]
     if not isinstance(skill_bundle, dict) or set(skill_bundle) != _SKILL_BUNDLE_KEYS:
         _fail("RUNTIME_SKILL_BUNDLE_MISSING")
-    if skill_bundle["skill_name"] != "east-v5-runtime-bootstrap-v1" or skill_bundle["skill_version"] != "v1" or not _is_sha(skill_bundle["skill_manifest_sha256"], 64):
+    if ((skill_bundle["skill_name"], skill_bundle["skill_version"]) not in {
+            ("east-v5-runtime-bootstrap-v1", "v1"),
+            ("east-v5-runtime-bootstrap-v12", "v12"),
+        } or not _is_sha(skill_bundle["skill_manifest_sha256"], 64)):
         _fail("RUNTIME_SKILL_BUNDLE_DRIFT")
     if not isinstance(envelope.get("root_binding_id"), str) or envelope["root_binding_id"] != root_binding_id(declaration["runtime_context"]):
         _fail("RUNTIME_BOOTSTRAP_ROOT_BINDING_DRIFT")
@@ -140,6 +147,44 @@ class RuntimeBootstrap:
         self.platform = sys.platform if platform is None else platform
         self.home = Path.home() if home is None else home
         self.runner = runner
+
+    @classmethod
+    def from_current_foundation_task(cls) -> "RuntimeBootstrap":
+        """Build the only production bootstrap from the daemon's task context.
+
+        This intentionally exposes no envelope or provenance parameters.  The
+        verifier rejects a stale/cross-task checkout before this declaration is
+        usable, and the returned bootstrap removes any environment root
+        override before provisioning.
+        """
+        from east_v5.runtime.foundation_task_context import current_foundation_task
+        task = current_foundation_task()
+        checkout = Path(__file__).resolve().parents[3]
+        try:
+            head = subprocess.run(["git", "-C", str(checkout), "rev-parse", "HEAD"], check=True, capture_output=True, text=True).stdout.strip()
+            main = subprocess.run(["git", "-C", str(checkout), "rev-parse", "refs/remotes/origin/main"], check=True, capture_output=True, text=True).stdout.strip()
+            base = subprocess.run(["git", "-C", str(checkout), "rev-parse", "HEAD^"], check=True, capture_output=True, text=True).stdout.strip()
+            dirty = subprocess.run(["git", "-C", str(checkout), "status", "--porcelain"], check=True, capture_output=True, text=True).stdout
+        except (OSError, subprocess.SubprocessError) as exc:
+            raise RuntimeBootstrapError("FOUNDATION_TASK_CONTEXT_CHECKOUT_UNAVAILABLE") from exc
+        if head != main or dirty:
+            _fail("FOUNDATION_TASK_CONTEXT_CHECKOUT_DRIFT")
+        context = {
+            "resolver_version": RESOLVER_VERSION, "workspace_id": task.workspace_id,
+            "project_id": _FOUNDATION_PROJECT, "daemon_id": _FOUNDATION_DAEMON,
+        }
+        if context["workspace_id"] != _FOUNDATION_WORKSPACE:
+            _fail("FOUNDATION_TASK_CONTEXT_WORKSPACE_DRIFT")
+        declaration = {
+            "bootstrap_version": BOOTSTRAP_VERSION, "candidate_base_sha": base,
+            "candidate_head_sha": head,
+            "adapter_sha256": _file_sha(checkout / "src/east_v5/runtime/adapter.py"),
+            "bootstrap_sha256": _file_sha(checkout / "src/east_v5/runtime/bootstrap.py"),
+            "runner_sha256": _file_sha(checkout / "scripts/runtime_bootstrap.py"),
+            "runtime_context": context,
+            "skill_bundle": {"skill_name": "east-v5-runtime-bootstrap-v12", "skill_version": "v12", "skill_manifest_sha256": _FOUNDATION_V12_MANIFEST},
+        }
+        return cls(checkout, {"root_binding_id": root_binding_id(context), "execution_bootstrap": declaration}, environ={})
 
     def _git_output(self, *args: str) -> str:
         try:
