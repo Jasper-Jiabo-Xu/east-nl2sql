@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from contextlib import ExitStack
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -96,73 +97,152 @@ class FoundationDataPlaneEntrypointTests(unittest.TestCase):
         with self.assertRaisesRegex(FoundationDataPlaneError, "FOUNDATION_DATA_PLANE_LOCATOR_INVALID"):
             self.entrypoint.resolve_formal_baseline(lock)
 
-    def test_platform_run_record_accepts_only_the_projected_cli_list(self) -> None:
-        """The production CLI list is the only accepted control-plane shape."""
-        valid = {
-            "id": "accepted-task", "status": "completed", "runtime_id": "runtime",
-            "delivered_comment_ids": ["trigger-comment"], "trigger_comment_id": "trigger-comment",
+    def _valid_target(self, **overrides: object) -> dict[str, object]:
+        record: dict[str, object] = {
+            "id": "target-task", "status": "completed", "runtime_id": "authorized-runtime",
+            "agent_id": "assistant-agent", "issue_id": "source-issue", "kind": "comment",
+            "trigger_comment_id": "trigger-comment", "delivered_comment_ids": ["trigger-comment"],
             "work_dir": "/controlled/run", "display_only": "must-not-survive-projection",
         }
+        record.update(overrides)
+        return record
+
+    def _direct_root(self) -> dict[str, object]:
+        return {
+            "id": "root-task", "status": "completed", "runtime_id": "other-runtime",
+            "agent_id": "other-agent", "issue_id": "source-issue", "kind": "direct",
+            "trigger_comment_id": None, "delivered_comment_ids": [],
+            "work_dir": "/controlled/root",
+        }
+
+    def _six_run_shape(self) -> list[dict[str, object]]:
+        comments = [
+            {
+                "id": f"comment-{index}", "status": "completed",
+                "runtime_id": "authorized-runtime" if index % 2 == 0 else "other-runtime",
+                "agent_id": "assistant-agent" if index % 2 == 0 else "other-agent",
+                "issue_id": "source-issue", "kind": "comment",
+                "trigger_comment_id": f"trigger-{index}", "delivered_comment_ids": [f"trigger-{index}"],
+                "work_dir": f"/controlled/run-{index}",
+            }
+            for index in range(4)
+        ]
+        return [self._valid_target(), *comments, self._direct_root()]
+
+    def _patched_run_record(self, runs: object) -> ExitStack:
+        stack = ExitStack()
+        stack.enter_context(patch.object(entrypoint_module, "_RECOVERY_SOURCE_ISSUE", "source-issue"))
+        stack.enter_context(patch.object(entrypoint_module, "_RECOVERY_SOURCE_TASK", "target-task"))
+        stack.enter_context(patch.object(entrypoint_module, "_RECOVERY_SOURCE_AGENT", "assistant-agent"))
+        stack.enter_context(patch.object(entrypoint_module, "_RECOVERY_SOURCE_RUNTIME", "authorized-runtime"))
+        stack.enter_context(patch.object(entrypoint_module, "_RECOVERY_SOURCE_TRIGGER_COMMENT", "trigger-comment"))
+        stack.enter_context(patch.object(
+            entrypoint_module.subprocess, "run",
+            return_value=subprocess.CompletedProcess([], 0, stdout=json.dumps(runs)),
+        ))
+        return stack
+
+    def test_platform_run_record_projects_the_unique_target_run(self) -> None:
+        """The six-run EAS-113 shape succeeds; only the target survives projection."""
+        runs = self._six_run_shape()
         calls: list[tuple[list[str], dict[str, object]]] = []
 
         def runner(argv: list[str], **kwargs: object) -> SimpleNamespace:
             calls.append((argv, kwargs))
-            return SimpleNamespace(stdout=json.dumps([valid]))
+            return SimpleNamespace(stdout=json.dumps(runs))
 
-        with patch.object(entrypoint_module.subprocess, "run", side_effect=runner):
+        with patch.object(entrypoint_module, "_RECOVERY_SOURCE_ISSUE", "source-issue"), patch.object(
+            entrypoint_module, "_RECOVERY_SOURCE_TASK", "target-task"
+        ), patch.object(entrypoint_module, "_RECOVERY_SOURCE_AGENT", "assistant-agent"), patch.object(
+            entrypoint_module, "_RECOVERY_SOURCE_RUNTIME", "authorized-runtime"
+        ), patch.object(entrypoint_module, "_RECOVERY_SOURCE_TRIGGER_COMMENT", "trigger-comment"), patch.object(
+            entrypoint_module.subprocess, "run", side_effect=runner
+        ):
             result = FoundationDataPlaneEntrypoint._platform_run_record()
         self.assertEqual(calls, [(
-            ["multica", "issue", "runs", entrypoint_module._RECOVERY_SOURCE_ISSUE, "--output", "json"],
+            ["multica", "issue", "runs", "source-issue", "--output", "json"],
             {"check": True, "capture_output": True, "text": True},
         )])
-        self.assertEqual(result, [{
-            "id": "accepted-task", "status": "completed", "runtime_id": "runtime",
-            "delivered_comment_ids": ["trigger-comment"], "trigger_comment_id": "trigger-comment",
-            "work_dir": "/controlled/run",
-        }])
-        invalid = {
-            "wrapper": {"runs": [valid]}, "empty": [], "scalar": "invalid", "non_object": ["invalid"],
-            "missing_field": [{key: value for key, value in valid.items() if key != "work_dir"}],
-            "wrong_delivered": [{**valid, "delivered_comment_ids": []}],
-            "wrong_trigger": [{**valid, "trigger_comment_id": 1}],
-            "duplicate_id": [valid, {**valid, "work_dir": "/controlled/other"}],
+        self.assertEqual(result, {
+            "id": "target-task", "status": "completed", "runtime_id": "authorized-runtime",
+            "delivered_comment_ids": ["trigger-comment"], "work_dir": "/controlled/run",
+            "trigger_comment_id": "trigger-comment",
+        })
+
+    def test_platform_run_record_is_order_independent(self) -> None:
+        runs = self._six_run_shape()
+        with self._patched_run_record(runs):
+            first = FoundationDataPlaneEntrypoint._platform_run_record()
+        with self._patched_run_record(list(reversed(runs))):
+            second = FoundationDataPlaneEntrypoint._platform_run_record()
+        self.assertEqual(first, second)
+
+    def test_platform_run_record_rejects_missing_or_duplicate_target(self) -> None:
+        cases = {
+            "target_missing": [self._direct_root()],
+            "target_duplicate": [self._valid_target(), self._valid_target(work_dir="/controlled/other")],
         }
-        for field in ("id", "status", "runtime_id", "work_dir"):
-            invalid[f"missing_{field}"] = [
-                {key: value for key, value in valid.items() if key != field}
-            ]
-            invalid[f"empty_{field}"] = [{**valid, field: ""}]
-            invalid[f"wrong_type_{field}"] = [{**valid, field: 1}]
-        for name, value in invalid.items():
-            with self.subTest(name=name), patch.object(
-                entrypoint_module.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, stdout=json.dumps(value)),
-            ):
+        for name, runs in cases.items():
+            with self.subTest(name=name), self._patched_run_record(runs):
                 with self.assertRaisesRegex(FoundationDataPlaneError, "FOUNDATION_PARENT_CHAIN_RUN_RECORD_INVALID"):
                     FoundationDataPlaneEntrypoint._platform_run_record()
 
-    def test_recovery_rejects_source_run_lineage_before_writes(self) -> None:
-        runtime = self.entrypoint.provision(self.context)
-        good = {
-            "id": "source-task", "status": "completed", "runtime_id": "source-runtime",
-            "delivered_comment_ids": ["source-trigger"], "trigger_comment_id": "source-trigger",
-            "work_dir": "/controlled/run",
+    def test_platform_run_record_rejects_target_provenance_drift(self) -> None:
+        target = self._valid_target()
+        drop = lambda *keys: {key: value for key, value in target.items() if key not in keys}
+        drift = {
+            "empty_delivered": self._valid_target(delivered_comment_ids=[]),
+            "wrong_delivered": self._valid_target(delivered_comment_ids=["wrong"]),
+            "non_string_delivered": self._valid_target(delivered_comment_ids=[1]),
+            "null_trigger": self._valid_target(trigger_comment_id=None),
+            "wrong_trigger": self._valid_target(trigger_comment_id="wrong"),
+            "wrong_agent": self._valid_target(agent_id="other-agent"),
+            "wrong_runtime": self._valid_target(runtime_id="other-runtime"),
+            "wrong_issue": self._valid_target(issue_id="other-issue"),
+            "wrong_status": self._valid_target(status="failed"),
+            "wrong_kind": self._valid_target(kind="direct"),
+            "missing_status": drop("status"),
+            "missing_runtime": drop("runtime_id"),
+            "missing_work_dir": drop("work_dir"),
+            "missing_agent": drop("agent_id"),
+            "missing_issue": drop("issue_id"),
+            "missing_kind": drop("kind"),
+            "missing_trigger": drop("trigger_comment_id"),
+            "missing_delivered": drop("delivered_comment_ids"),
         }
+        for name, target_record in drift.items():
+            with self.subTest(name=name), self._patched_run_record([target_record, self._direct_root()]):
+                with self.assertRaisesRegex(FoundationDataPlaneError, "FOUNDATION_PARENT_CHAIN_RUN_RECORD_INVALID"):
+                    FoundationDataPlaneEntrypoint._platform_run_record()
+
+    def test_platform_run_record_rejects_malformed_run_list(self) -> None:
+        target = self._valid_target()
         cases = {
-            "source_zero": ([], "FOUNDATION_PARENT_CHAIN_SOURCE_TASK_INVALID"),
-            "source_two": ([good, {**good, "work_dir": "/controlled/other"}], "FOUNDATION_PARENT_CHAIN_SOURCE_TASK_INVALID"),
-            "wrong_trigger": ([{**good, "trigger_comment_id": "wrong"}], "FOUNDATION_PARENT_CHAIN_SOURCE_LINEAGE_DRIFT"),
-            "wrong_delivered": ([{**good, "delivered_comment_ids": ["wrong"]}], "FOUNDATION_PARENT_CHAIN_SOURCE_LINEAGE_DRIFT"),
-            "wrong_runtime": ([{**good, "runtime_id": "wrong"}], "FOUNDATION_PARENT_CHAIN_SOURCE_LINEAGE_DRIFT"),
-            "wrong_status": ([{**good, "status": "failed"}], "FOUNDATION_PARENT_CHAIN_SOURCE_LINEAGE_DRIFT"),
-            "bad_work_dir": ([{**good, "work_dir": "relative"}], "FOUNDATION_PARENT_CHAIN_SOURCE_WORKDIR_INVALID"),
+            "wrapper": {"runs": [target]},
+            "empty": [],
+            "scalar": "invalid",
+            "non_object": ["invalid"],
+            "missing_id": [{key: value for key, value in target.items() if key != "id"}],
+            "empty_id": [{**target, "id": ""}],
+            "wrong_type_id": [{**target, "id": 1}],
+            "duplicate_id": [self._direct_root(), self._direct_root()],
         }
-        for name, (record, code) in cases.items():
+        for name, value in cases.items():
+            with self.subTest(name=name), self._patched_run_record(value):
+                with self.assertRaisesRegex(FoundationDataPlaneError, "FOUNDATION_PARENT_CHAIN_RUN_RECORD_INVALID"):
+                    FoundationDataPlaneEntrypoint._platform_run_record()
+
+    def test_recovery_rejects_invalid_source_work_dir(self) -> None:
+        runtime = self.entrypoint.provision(self.context)
+        cases = {
+            "relative": {"id": "source-task", "work_dir": "relative"},
+            "missing": {"id": "source-task"},
+        }
+        for name, record in cases.items():
             with self.subTest(name=name), patch.object(self.entrypoint, "_verify_materialization"), patch.object(
                 self.entrypoint, "_platform_run_record", return_value=record,
-            ), patch.object(entrypoint_module, "_RECOVERY_SOURCE_TASK", "source-task"), patch.object(
-                entrypoint_module, "_RECOVERY_SOURCE_RUNTIME", "source-runtime",
-            ), patch.object(entrypoint_module, "_RECOVERY_SOURCE_TRIGGER_COMMENT", "source-trigger"):
-                with self.assertRaisesRegex(FoundationDataPlaneError, code):
+            ):
+                with self.assertRaisesRegex(FoundationDataPlaneError, "FOUNDATION_PARENT_CHAIN_SOURCE_WORKDIR_INVALID"):
                     self.entrypoint.recover_parent_chain(runtime, {})
             self.assertFalse((runtime.runtime_root / "foundation-parent-chain-recovery-v1").exists())
 
@@ -201,7 +281,7 @@ class FoundationDataPlaneEntrypointTests(unittest.TestCase):
         closure["envelope"]["content_hash"] = content_hash(closure["envelope"], closure["payload"])
         (output / "structure_closure.json").write_text(json.dumps(closure))
         (output / "evidence.json").write_text(json.dumps({"asset_000": {"ref": {"content_hash": "d" * 64}}, "closure_220": {"ref": {"content_hash": closure["envelope"]["content_hash"]}}, "closure_self_validation": {"closure_envelope_hash_identical": True}, "forbidden_module_calls": {"230": 0, "251": 0, "252": 0}}))
-        record = [{"id": "accepted-task", "status": "completed", "runtime_id": "accepted-runtime", "trigger_comment_id": "accepted-comment", "delivered_comment_ids": ["accepted-comment"], "work_dir": str(source)}]
+        record = {"id": "accepted-task", "status": "completed", "runtime_id": "accepted-runtime", "trigger_comment_id": "accepted-comment", "delivered_comment_ids": ["accepted-comment"], "work_dir": str(source)}
         bytes_by_name = {path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in container.iterdir() if path.name in entrypoint_module._PARENT_CONTAINER_BYTES}
         config = self.base / "materializer-config.json"; config.write_text("{}")
         config_hash = hashlib.sha256(config.read_bytes()).hexdigest()
