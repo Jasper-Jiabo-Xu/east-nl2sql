@@ -226,21 +226,24 @@ class FoundationRepoLauncher:
         # repo-side Bootstrap entrypoint.  In particular, the task envelope
         # has no identity override field that a caller can simply move here.
         try:
-            value = self.bootstrap.foundation_task_identity_issuer().load(agent_id)
+            value = self.bootstrap.foundation_task_identity_issuer().load()
         except ContractError as exc:
             raise FoundationRepoLauncherError(str(exc)) from exc
-        needed = {"schema_version", "workspace_id", "project_id", "issue_id", "task_id", "agent_id", "agent_uuid", "runtime_id", "run_id", "attempt", "root_binding_id", "inputs_sha256", "git_head", "content_hash", "attestation"}
+        needed = {"schema_version", "workspace_id", "project_id", "issue_id", "task_id", "agent_id", "agent_uuid", "runtime_id", "run_id", "attempt", "input_issue_key", "input_run_id", "input_attempt", "root_binding_id", "inputs_sha256", "git_head", "content_hash", "attestation"}
         if not isinstance(value, dict) or set(value) != needed:
             _fail("FOUNDATION_REPO_LAUNCHER_TASK_IDENTITY_INVALID")
         context = self.bootstrap.declaration["runtime_context"]
         identity_body = {key: item for key, item in value.items() if key not in {"content_hash", "attestation"}}
         if (value.get("schema_version") != "foundation-task-identity/v1"
                 or value.get("content_hash") != sha256(identity_body)
-                or not all(isinstance(value[key], str) and value[key] for key in ("workspace_id", "project_id", "issue_id", "task_id", "agent_id", "agent_uuid", "runtime_id", "run_id", "root_binding_id", "inputs_sha256", "git_head"))
-                or agent_id not in {"241", "242", "260"} or value["agent_id"] != agent_id or value["issue_id"] != "EAS-114"
+                or not all(isinstance(value[key], str) and value[key] for key in ("workspace_id", "project_id", "issue_id", "task_id", "agent_id", "agent_uuid", "runtime_id", "run_id", "input_issue_key", "input_run_id", "root_binding_id", "inputs_sha256", "git_head"))
+                or not isinstance(value.get("attempt"), int) or isinstance(value["attempt"], bool)
+                or not isinstance(value.get("input_attempt"), int) or isinstance(value["input_attempt"], bool)
+                or agent_id not in {"241", "242", "260"} or value["agent_id"] != agent_id or value["issue_id"] != "01a0389c-5fe5-7a27-a214-574cd66d9a2e"
                 or value["agent_uuid"] != graph["real_agents"][agent_id]["uuid"]
                 or value["runtime_id"] != graph["real_agents"][agent_id]["runtime_id"]
-                or value["run_id"] != inputs["run_id"] or value["attempt"] != inputs["attempt"]
+                or value["task_id"] != value["run_id"]
+                or value["input_issue_key"] != inputs["issue_id"] or value["input_run_id"] != inputs["run_id"] or value["input_attempt"] != inputs["attempt"]
                 or value["root_binding_id"] != evidence.root_binding_id or value["inputs_sha256"] != inputs["inputs_sha256"]
                 or value["git_head"] != evidence.candidate_head_sha):
             _fail("FOUNDATION_REPO_LAUNCHER_TASK_IDENTITY_INVALID")

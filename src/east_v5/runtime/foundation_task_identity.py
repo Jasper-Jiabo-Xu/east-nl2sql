@@ -17,6 +17,7 @@ from typing import Any
 
 from east_v5.governance import ContractError, canonical_bytes, sha256
 from east_v5.runtime.bootstrap import RuntimeBootstrap, RuntimeBootstrapError
+from east_v5.runtime.foundation_task_context import current_foundation_task
 
 _KEY = ".foundation-task-identity-v1.key"
 _DIR = "foundation-task-identities-v1"
@@ -80,9 +81,10 @@ class FoundationTaskIdentityIssuer:
         except OSError as exc:
             raise FoundationTaskIdentityError("FOUNDATION_TASK_IDENTITY_KEY_UNAVAILABLE") from exc
 
-    def _expected(self, agent_id: str, *, create_key: bool) -> tuple[Path, Path, dict[str, Any]]:
-        if agent_id not in _AGENTS:
-            _fail("FOUNDATION_TASK_IDENTITY_AGENT_FORBIDDEN")
+    def _expected(self, *, create_key: bool) -> tuple[Path, Path, dict[str, Any]]:
+        """Reconstruct this process's sole, verified Multica task identity."""
+        task = current_foundation_task()
+        agent_id = task.role
         try:
             evidence = self.bootstrap.preflight()
         except RuntimeBootstrapError as exc:
@@ -99,17 +101,32 @@ class FoundationTaskIdentityIssuer:
                 or not hmac.compare_digest(str(inputs.get("attestation", "")), hmac.new(parent_key.read_bytes(), canonical_bytes(bare), hashlib.sha256).hexdigest())):
             _fail("FOUNDATION_TASK_IDENTITY_INPUTS_INVALID")
         uuid, runtime = _AGENTS[agent_id]
-        task_digest = sha256({"schema": "foundation-task-identity/v1", "root": evidence.root_binding_id, "issue": inputs.get("issue_id"), "run": inputs.get("run_id"), "attempt": inputs.get("attempt"), "agent": agent_id, "agent_uuid": uuid, "runtime": runtime})
+        if (task.agent_id, task.runtime_id) != (uuid, runtime):
+            _fail("FOUNDATION_TASK_IDENTITY_TASK_DRIFT")
         context = self.bootstrap.declaration["runtime_context"]
-        body = {"schema_version": "foundation-task-identity/v1", "workspace_id": context["workspace_id"], "project_id": context["project_id"], "issue_id": inputs.get("issue_id"), "task_id": f"foundation-{agent_id}-{task_digest[:24]}", "agent_id": agent_id, "agent_uuid": uuid, "runtime_id": runtime, "run_id": inputs.get("run_id"), "attempt": inputs.get("attempt"), "root_binding_id": evidence.root_binding_id, "inputs_sha256": inputs.get("inputs_sha256"), "git_head": evidence.candidate_head_sha}
+        # The signed identity's issue/run/attempt are the *current Multica
+        # task* coordinates.  The EAS-19 package coordinates are retained
+        # separately solely to bind the sealed input, never to impersonate a
+        # task or make a cross-task receipt reusable.
+        body = {
+            "schema_version": "foundation-task-identity/v1",
+            "workspace_id": context["workspace_id"], "project_id": context["project_id"],
+            "issue_id": task.issue_id, "task_id": task.task_id,
+            "agent_id": agent_id, "agent_uuid": uuid, "runtime_id": runtime,
+            "run_id": task.task_id, "attempt": task.attempt,
+            "input_issue_key": inputs.get("issue_id"), "input_run_id": inputs.get("run_id"),
+            "input_attempt": inputs.get("attempt"),
+            "root_binding_id": evidence.root_binding_id, "inputs_sha256": inputs.get("inputs_sha256"),
+            "git_head": evidence.candidate_head_sha,
+        }
         body["content_hash"] = sha256(body)
         key = self._key(root, create=create_key)
         record = {**body, "attestation": hmac.new(key, canonical_bytes(body), hashlib.sha256).hexdigest()}
         directory = root / _DIR
-        return directory, directory / f"{agent_id}-{task_digest}.json", record
+        return directory, directory / f"{agent_id}-{task.task_id}.json", record
 
-    def issue(self, agent_id: str) -> dict[str, Any]:
-        directory, path, record = self._expected(agent_id, create_key=True)
+    def issue(self) -> dict[str, Any]:
+        directory, path, record = self._expected(create_key=True)
         directory.mkdir(mode=0o700, exist_ok=True); self._private(directory, 0o700, "FOUNDATION_TASK_IDENTITY_REGISTRY_UNSAFE")
         if path.exists() or path.is_symlink():
             self._private(path, 0o600, "FOUNDATION_TASK_IDENTITY_REGISTRY_UNSAFE")
@@ -124,8 +141,8 @@ class FoundationTaskIdentityIssuer:
             _fail("FOUNDATION_TASK_IDENTITY_READBACK_DRIFT")
         return record
 
-    def load(self, agent_id: str) -> dict[str, Any]:
-        directory, path, expected = self._expected(agent_id, create_key=False)
+    def load(self) -> dict[str, Any]:
+        directory, path, expected = self._expected(create_key=False)
         self._private(directory, 0o700, "FOUNDATION_TASK_IDENTITY_REQUIRED")
         self._private(path, 0o600, "FOUNDATION_TASK_IDENTITY_REQUIRED")
         actual = _load(path, "FOUNDATION_TASK_IDENTITY_REGISTRY_INVALID")

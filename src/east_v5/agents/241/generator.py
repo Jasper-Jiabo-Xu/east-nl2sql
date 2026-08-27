@@ -671,3 +671,11 @@ def build_foundation_bound_data_from_runtime(bootstrap: Any, assembly: Any, stru
     launch = bootstrap.foundation_repo_launcher().launch()
     package = assembly.generator(Path(__file__).resolve().parents[4]).build_bound_data(structure_closure, **kwargs)
     return package, launch
+
+
+def build_foundation_bound_data_from_current_task(assembly: Any, structure_closure: dict[str, Any], **kwargs: Any) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Production 241 entrance with no caller-provided bootstrap or identity."""
+    from east_v5.runtime.bootstrap import RuntimeBootstrap
+    bootstrap = RuntimeBootstrap.from_current_foundation_task()
+    bootstrap.foundation_task_identity_issuer().issue()
+    return build_foundation_bound_data_from_runtime(bootstrap, assembly, structure_closure, **kwargs)
