@@ -1,0 +1,15 @@
+{
+  "launcher_id": "databao_native_launcher_v1",
+  "baseline_id": "Databao Agent",
+  "repo_url": "https://github.com/JetBrains/databao-agent.git",
+  "commit": "6a5c676a4e93e52b814459dcb8e48911105cbe33",
+  "entrypoint": {"path":"examples/benchmark_template/examples/databao_benchmark.py","symbol":"run","sha256":"7b5642f0b3ca3e7bd1ebef6fbbd99f68e28ff526a09d2abee72aac11567c0d2f"},
+  "native_api": {"path":"databao/agent/api.py","symbol":"agent","sha256":"13f90c88b73383ff1b41573f537b507c96adb37f41ba4f13a16a0c43e2e54416"},
+  "native_output": {"path":"databao/agent/core/thread.py","symbol":"Thread.code","sha256":"dc57b892c4abb039f2c3ae1f3ed877e9b228230573485b033d8cbf717e0b229d"},
+  "native_executor": {"path":"databao/agent/executors/lighthouse/graph.py","symbol":"ExecuteSubmit.get_result","sha256":"a362d0dad6500671ecbfd940d7cb9afa80dfd07f3ac64e797286d42e78662aa8"},
+  "provider": {"model":"deepseek-v4-flash","base_url":"https://api.deepseek.com","api_key_env":"DEEPSEEK_API_KEY","endpoint":"openai_chat_completions","temperature":0,"max_tokens":4096,"timeout_seconds":90,"retry_count":3,"config_path":"databao/agent/configs/llm.py","config_sha256":"e053434b244d6cfbe66152d9e686424823fb116c092350a12d39aaceb98e0a4d"},
+  "input_mapping": {"qa_id":"prediction correlation only","question":"thread.ask(question)","public_schema":"validated S0 boundary; upstream derives physical schema from read-only DB","read_only_db":"domain.add_db(duckdb.connect(path, read_only=True))"},
+  "output_mapping": {"sql":"thread.code()","result":"thread.df()","prediction":"launch/prediction.json"},
+  "prohibitions": ["gold_sql","answer_contract","business_events","east_private_kb","write_database"],
+  "runtime": {"python_major_minor":"3.11","requirements_lock_sha256":"3088cdeca16d49847f049297089034bf42a0d59fdf0cb1aff653b36e5f37ecd6"}
+}
