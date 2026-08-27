@@ -23,6 +23,8 @@
           "commit",
           "license",
           "native_entrypoint",
+          "native_adapter_id",
+          "transport_mode",
           "cache_namespace",
           "model_contract",
           "command",
@@ -54,11 +56,27 @@
           "cache_namespace": {
             "type": "string"
           },
+          "native_adapter_id": {
+            "enum": [
+              "deepeye_sql_native_v1",
+              "datagallery_text2sql_native_v1",
+              "joydataagent_sql_native_v1",
+              "databao_agent_native_v1",
+              "reforce_native_v1",
+              "autolink_native_v1"
+            ]
+          },
+          "transport_mode": {
+            "enum": ["native", "fake_transport"]
+          },
           "model_contract": {
             "type": "object",
             "required": [
+              "provider",
               "model_id",
               "base_url",
+              "api_key_env",
+              "reasoning_enabled",
               "temperature",
               "max_tokens",
               "timeout_seconds",

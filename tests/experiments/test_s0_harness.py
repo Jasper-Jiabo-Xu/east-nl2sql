@@ -6,6 +6,7 @@ import json
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -62,6 +63,39 @@ class S0HarnessTest(unittest.TestCase):
 
         self.assertEqual(raised.exception.code, "UNKNOWN_MODEL_ID")
 
+    def test_real_transport_requires_environment_only_deepseek_key(self) -> None:
+        manifest = copy.deepcopy(load_json(RUN_MANIFEST))
+        manifest["baselines"][0]["transport_mode"] = "native"
+        manifest["baselines"][0]["command"] = ["{upstream_worktree}/runner/run.py", "--dataset", "{dataset}", "--output-jsonl", "{output_jsonl}"]
+        with tempfile.TemporaryDirectory() as tmp, patch.dict("os.environ", {}, clear=True):
+            path = write_json(Path(tmp), "manifest.json", manifest)
+            with self.assertRaises(HarnessError) as raised:
+                run_harness(CONTRACT, DATASET, path, Path(tmp) / "out", "serial")
+        self.assertEqual(raised.exception.code, "DEEPSEEK_AUTH_MISSING")
+
+    def test_model_unavailable_and_invalid_native_response_do_not_retry(self) -> None:
+        for mode, code in (("model-unavailable", "MODEL_UNAVAILABLE"), ("invalid-response", "INVALID_BASELINE_OUTPUT")):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                manifest = copy.deepcopy(load_json(RUN_MANIFEST))
+                manifest["baselines"][0]["command"].extend(["--mode", mode])
+                summary = run_harness(CONTRACT, DATASET, write_json(root, "manifest.json", manifest), root / "out", "serial")
+                rows = (root / "out" / "predictions.jsonl").read_text(encoding="utf-8")
+                self.assertEqual(summary["failure_count"], 1)
+                self.assertIn('"failure_code": "' + code + '"', rows)
+                self.assertFalse((root / "out" / "runs" / "deepeye_sql" / "attempt-02").exists())
+
+    def test_trace_redacts_environment_key_and_all_six_adapters_stay_isolated(self) -> None:
+        manifest = copy.deepcopy(load_json(RUN_MANIFEST))
+        manifest["baselines"][0]["command"].extend(["--mode", "echo-secret"])
+        with tempfile.TemporaryDirectory() as tmp, patch.dict("os.environ", {"DEEPSEEK_API_KEY": "test-secret-never-persist"}, clear=False):
+            root = Path(tmp)
+            summary = run_harness(CONTRACT, DATASET, write_json(root, "manifest.json", manifest), root / "out", "serial")
+            trace = (root / "out" / "runs" / "deepeye_sql" / "attempt-03" / "trace.json").read_text(encoding="utf-8")
+        self.assertEqual(summary["failure_count"], 1)
+        self.assertTrue(summary["trace_refs_by_baseline_isolated"])
+        self.assertNotIn("test-secret-never-persist", trace)
+
     def test_missing_endpoint_fails_closed(self) -> None:
         manifest = copy.deepcopy(load_json(RUN_MANIFEST))
         manifest["baselines"][0]["model_contract"]["base_url"] = ""
@@ -72,6 +106,14 @@ class S0HarnessTest(unittest.TestCase):
                 validate_run_manifest(load_json(path))
 
         self.assertEqual(raised.exception.code, "MISSING_ENDPOINT")
+
+    def test_native_mode_rejects_generic_or_unpinned_wrapper(self) -> None:
+        manifest = copy.deepcopy(load_json(RUN_MANIFEST))
+        manifest["baselines"][0]["transport_mode"] = "native"
+        manifest["baselines"][0]["command"] = ["{python}", "-m", "east_v5.experiments.fixture_baseline"]
+        with self.assertRaises(HarnessError) as raised:
+            validate_run_manifest(manifest)
+        self.assertEqual(raised.exception.code, "GENERIC_WRAPPER_PROHIBITED")
 
     def test_cache_namespace_collision_fails_closed(self) -> None:
         manifest = copy.deepcopy(load_json(RUN_MANIFEST))

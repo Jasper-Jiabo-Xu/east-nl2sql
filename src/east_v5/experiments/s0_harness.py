@@ -18,7 +18,7 @@ BASELINE_IDS = ("DeepEye-SQL", "DataGallery-Text2SQL", "JoyDataAgent-SQL", "Data
 HARD_RULES_HASH = "d00fa6028ff729f2776a7e779db2f530bcba8fba892765c8aa08c6e0aee6b463"
 ROOT = Path(__file__).resolve().parents[3]
 SRC = ROOT / "src"
-ALLOWED_MODEL_IDS = {"synthetic-local-v1"}
+DEEPSEEK_MODEL_IDS = {"deepseek-chat", "deepseek-reasoner"}
 FORBIDDEN_KEYS = {
     "gold_sql",
     "answer_contract",
@@ -37,6 +37,10 @@ class HarnessError(ValueError):
     def __init__(self, code: str, message: str | None = None) -> None:
         self.code = code
         super().__init__(message or code)
+
+
+# Imported after HarnessError: native adapters use the same stable failure type.
+from east_v5.experiments.native_adapters import ADAPTER_IDS, NativeAdapter
 
 
 def load_json(path: Path) -> dict[str, Any]:
@@ -111,21 +115,35 @@ def validate_run_manifest(manifest: dict[str, Any]) -> None:
     if not isinstance(baselines, list) or [item.get("baseline_id") for item in baselines if isinstance(item, dict)] != list(BASELINE_IDS):
         raise HarnessError("INVALID_BASELINE_SET")
     cache_namespaces: set[str] = set()
-    for baseline in baselines:
+    adapter_ids: set[str] = set()
+    for index, baseline in enumerate(baselines):
         if not isinstance(baseline, dict):
             raise HarnessError("INVALID_BASELINE")
         model = baseline.get("model_contract")
         if not isinstance(model, dict):
             raise HarnessError("MISSING_MODEL_CONTRACT")
-        if model.get("model_id") not in ALLOWED_MODEL_IDS:
+        if model.get("provider") != "deepseek_openai_compatible":
+            raise HarnessError("INVALID_DEEPSEEK_PROVIDER")
+        if model.get("model_id") not in DEEPSEEK_MODEL_IDS:
             raise HarnessError("UNKNOWN_MODEL_ID")
-        if not model.get("base_url"):
+        if not isinstance(model.get("base_url"), str) or not model["base_url"].startswith("https://"):
             raise HarnessError("MISSING_ENDPOINT")
+        if model.get("api_key_env") != "DEEPSEEK_API_KEY":
+            raise HarnessError("INVALID_DEEPSEEK_KEY_SOURCE")
+        if not isinstance(model.get("reasoning_enabled"), bool):
+            raise HarnessError("INVALID_REASONING_FLAG")
+        if not isinstance(model.get("temperature"), (int, float)) or not isinstance(model.get("max_tokens"), int) or model["max_tokens"] < 1:
+            raise HarnessError("INVALID_MODEL_BUDGET")
+        if not isinstance(model.get("timeout_seconds"), int) or model["timeout_seconds"] < 1 or model.get("retry_count") != 3:
+            raise HarnessError("INVALID_MODEL_RETRY_POLICY")
         if baseline.get("commit") in ("", None, "unknown"):
             raise HarnessError("MISSING_BASELINE_COMMIT")
-        command = baseline.get("command")
-        if not isinstance(command, list) or not command:
-            raise HarnessError("INVALID_BASELINE_COMMAND")
+        if not isinstance(baseline.get("repo_url"), str) or not baseline["repo_url"].startswith("https://") or not isinstance(baseline.get("license"), str) or not baseline["license"] or not isinstance(baseline.get("native_entrypoint"), str) or not baseline["native_entrypoint"]:
+            raise HarnessError("INVALID_UPSTREAM_EVIDENCE")
+        adapter = NativeAdapter.from_manifest(baseline)
+        if adapter.adapter_id != ADAPTER_IDS[index] or adapter.adapter_id in adapter_ids:
+            raise HarnessError("NATIVE_ADAPTER_MAPPING_DRIFT")
+        adapter_ids.add(adapter.adapter_id)
         namespace = baseline.get("cache_namespace")
         if not isinstance(namespace, str) or not namespace:
             raise HarnessError("MISSING_CACHE_NAMESPACE")
@@ -231,11 +249,32 @@ def _prediction_failure(baseline: dict[str, Any], attempt: int, code: str, trace
         "trace_ref": trace_ref,
         "token_calls": 0,
         "token_total": 0,
+        "latency_ms": 0,
     }
+
+
+def _redacted_digest(value: str | bytes | None) -> dict[str, Any]:
+    if isinstance(value, bytes):
+        value = value.decode("utf-8", errors="replace")
+    value = value or ""
+    secret = os.environ.get("DEEPSEEK_API_KEY")
+    if secret:
+        value = value.replace(secret, "[REDACTED]")
+    return {"sha256": hashlib.sha256(value.encode("utf-8")).hexdigest(), "bytes": len(value.encode("utf-8")), "redacted": True}
+
+
+def _failure_from_process(returncode: int, stderr: str) -> str:
+    if "NATIVE_MODEL_UNAVAILABLE" in stderr:
+        return "MODEL_UNAVAILABLE"
+    if "NATIVE_TRANSPORT_ERROR" in stderr or returncode:
+        return "TRANSPORT_ERROR"
+    return "INVALID_BASELINE_OUTPUT"
 
 
 def _run_one(baseline: dict[str, Any], dataset_path: Path, dataset: dict[str, Any], output_dir: Path, max_attempts: int) -> list[dict[str, Any]]:
     baseline_id = baseline["baseline_id"]
+    adapter = NativeAdapter.from_manifest(baseline)
+    adapter.require_credentials(baseline["model_contract"])
     last_failure = "TRANSPORT_ERROR"
     for attempt in range(1, max_attempts + 1):
         paths = _paths(output_dir, baseline_id, attempt)
@@ -249,7 +288,7 @@ def _run_one(baseline: dict[str, Any], dataset_path: Path, dataset: dict[str, An
                 output_jsonl=str(paths.raw_jsonl),
                 baseline_id=baseline_id,
             )
-            for token in baseline["command"]
+            for token in adapter.command
         ]
         started = time.time()
         try:
@@ -257,13 +296,16 @@ def _run_one(baseline: dict[str, Any], dataset_path: Path, dataset: dict[str, An
             env["PYTHONPATH"] = str(SRC) if not env.get("PYTHONPATH") else str(SRC) + os.pathsep + env["PYTHONPATH"]
             completed = subprocess.run(command, cwd=ROOT, env=env, text=True, capture_output=True, timeout=int(baseline.get("timeout_seconds", 20)), check=False)
         except subprocess.TimeoutExpired as exc:
-            _atomic_write_json(paths.trace_json, {"failure_code": "TIMEOUT", "cache_namespace": baseline.get("cache_namespace"), "stdout": exc.stdout or "", "stderr": exc.stderr or ""})
+            _atomic_write_json(paths.trace_json, {"failure_code": "TIMEOUT", "cache_namespace": baseline.get("cache_namespace"), "adapter_id": adapter.adapter_id, "stdout": _redacted_digest(exc.stdout), "stderr": _redacted_digest(exc.stderr)})
+            if attempt < max_attempts:
+                continue
             return [_prediction_failure(baseline, attempt, "TIMEOUT", str(paths.trace_json.relative_to(output_dir)))]
         elapsed_ms = int((time.time() - started) * 1000)
-        _atomic_write_json(paths.trace_json, {"command": command, "returncode": completed.returncode, "elapsed_ms": elapsed_ms, "cache_namespace": baseline.get("cache_namespace"), "stdout": completed.stdout, "stderr": completed.stderr})
+        failure_code = _failure_from_process(completed.returncode, completed.stderr)
+        _atomic_write_json(paths.trace_json, {"command": command, "returncode": completed.returncode, "elapsed_ms": elapsed_ms, "cache_namespace": baseline.get("cache_namespace"), "adapter_id": adapter.adapter_id, "stdout": _redacted_digest(completed.stdout), "stderr": _redacted_digest(completed.stderr)})
         if completed.returncode != 0:
-            last_failure = "TRANSPORT_ERROR"
-            if attempt < max_attempts:
+            last_failure = failure_code
+            if failure_code == "TRANSPORT_ERROR" and attempt < max_attempts:
                 continue
             return [_prediction_failure(baseline, attempt, last_failure, str(paths.trace_json.relative_to(output_dir)))]
 
@@ -273,10 +315,12 @@ def _run_one(baseline: dict[str, Any], dataset_path: Path, dataset: dict[str, An
             return [_prediction_failure(baseline, attempt, "INVALID_BASELINE_OUTPUT", str(paths.trace_json.relative_to(output_dir)))]
         predictions: list[dict[str, Any]] = []
         for row in raw_rows:
-            sql = row.get("sql")
+            try:
+                sql, token_calls, token_total = adapter.parse(row)
+            except HarnessError:
+                return [_prediction_failure(baseline, attempt, "INVALID_BASELINE_OUTPUT", str(paths.trace_json.relative_to(output_dir)))]
             if not isinstance(sql, str) or not READ_ONLY_SQL_RE.match(sql):
                 return [_prediction_failure(baseline, attempt, "ILLEGAL_SQL_OUTPUT", str(paths.trace_json.relative_to(output_dir)))]
-            token_total = int(row.get("token_total", 0))
             if token_total > int(baseline["model_contract"].get("max_tokens", 0)):
                 return [_prediction_failure(baseline, attempt, "BUDGET_EXCEEDED", str(paths.trace_json.relative_to(output_dir)))]
             normalized = normalize_sql(sql)
@@ -287,15 +331,16 @@ def _run_one(baseline: dict[str, Any], dataset_path: Path, dataset: dict[str, An
                     "baseline_commit": baseline["commit"],
                     "backbone_model_id": baseline["model_contract"]["model_id"],
                     "attempt": attempt,
-                    "prediction_sql_raw": sql,
-                    "prediction_sql_normalized": normalized,
+                    "prediction_sql_raw": "",
+                    "prediction_sql_normalized": "",
                     "raw_sql_hash": hashlib.sha256(sql.encode("utf-8")).hexdigest(),
                     "normalized_sql_hash": hashlib.sha256(normalized.encode("utf-8")).hexdigest(),
                     "execution_status": "ok",
                     "failure_code": "",
                     "trace_ref": str(paths.trace_json.relative_to(output_dir)),
-                    "token_calls": int(row.get("token_calls", 0)),
+                    "token_calls": token_calls,
                     "token_total": token_total,
+                    "latency_ms": elapsed_ms,
                 }
             )
         _atomic_write_jsonl(paths.predictions_jsonl, predictions)
@@ -337,7 +382,7 @@ def run_harness(experiment_contract_path: Path, dataset_manifest_path: Path, bas
         "question_count": len(dataset["questions"]),
         "candidate_count": len([row for row in predictions if row["execution_status"] == "ok"]),
         "failure_count": len([row for row in predictions if row["execution_status"] != "ok"]),
-        "collection_hash": stable_hash(predictions),
+        "collection_hash": stable_hash([{key: value for key, value in row.items() if key not in {"latency_ms", "trace_ref"}} for row in predictions]),
         "predictions_jsonl": str(predictions_path),
         "trace_refs_by_baseline_isolated": all(len(refs) >= 1 for refs in trace_refs_by_baseline.values()) and len(trace_refs_by_baseline) == len(baselines),
         "cache_namespaces_unique": len({baseline["cache_namespace"] for baseline in baselines}) == len(baselines),
