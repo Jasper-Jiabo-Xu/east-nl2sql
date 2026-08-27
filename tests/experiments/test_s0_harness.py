@@ -47,7 +47,10 @@ class S0HarnessTest(unittest.TestCase):
             root = Path(temporary)
             run_harness(CONTRACT, DATASET, RUN_MANIFEST, root / "out", "serial")
             rows = [json.loads(line) for line in (root / "out" / "predictions.jsonl").read_text().splitlines()]
-            self.assertTrue((root / "out" / "runs" / "databao_agent" / "attempt-01" / "trace.json").exists())
+            databao_refs = [row["trace_ref"] for row in rows if row["baseline_id"] == "Databao Agent"]
+            self.assertEqual(len(databao_refs), len(set(databao_refs)))
+            self.assertTrue(all((root / "out" / ref).exists() for ref in databao_refs))
+            self.assertTrue(all("/qa-" in ref and "/attempt-01/" in ref for ref in databao_refs))
         databao = [row for row in rows if row["baseline_id"] == "Databao Agent"]
         self.assertEqual({row["failure_code"] for row in databao}, {"DATABAO_RUNTIME_OR_DB_UNAVAILABLE"})
 

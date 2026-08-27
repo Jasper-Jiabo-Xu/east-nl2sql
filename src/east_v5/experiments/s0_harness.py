@@ -237,9 +237,16 @@ class RunPaths:
     trace_json: Path
 
 
-def _paths(output_dir: Path, baseline_id: str, attempt: int) -> RunPaths:
+def _paths(output_dir: Path, baseline_id: str, attempt: int, qa_id: str | None = None) -> RunPaths:
     safe_id = baseline_id.lower().replace(" ", "_").replace("-", "_")
-    baseline_dir = output_dir / "runs" / safe_id / f"attempt-{attempt:02d}"
+    baseline_dir = output_dir / "runs" / safe_id
+    if qa_id is not None:
+        # qa_id is part of the permitted S0 boundary, but use a fixed digest in
+        # a filesystem path so neither the clear question nor an unsafe id can
+        # be disclosed or interpreted as a path component.
+        question_namespace = hashlib.sha256(qa_id.encode("utf-8")).hexdigest()[:20]
+        baseline_dir = baseline_dir / f"qa-{question_namespace}"
+    baseline_dir = baseline_dir / f"attempt-{attempt:02d}"
     return RunPaths(output_dir, baseline_dir, baseline_dir / "raw_predictions.jsonl", baseline_dir / "predictions.jsonl", baseline_dir / "trace.json")
 
 
@@ -323,18 +330,20 @@ def _run_databao_native(baseline: dict[str, Any], dataset: dict[str, Any], outpu
     runtime = os.environ.get("EAST_DATABAO_RUNTIME_PYTHON")
     db_path = os.environ.get("EAST_DATABAO_READ_ONLY_DB_PATH")
     if not runtime or not db_path:
-        paths = _paths(output_dir, baseline["baseline_id"], 1)
-        if paths.baseline_dir.exists():
-            raise HarnessError("DUPLICATE_ATTEMPT", str(paths.baseline_dir))
-        paths.baseline_dir.mkdir(parents=True, exist_ok=False)
-        _atomic_write_json(paths.trace_json, {"failure_code": "DATABAO_RUNTIME_OR_DB_UNAVAILABLE", "adapter_id": baseline["native_adapter_id"], "cache_namespace": baseline["cache_namespace"], "preflight_only": True})
-        ref = str(paths.trace_json.relative_to(output_dir))
-        return [_prediction_failure(baseline, 1, "DATABAO_RUNTIME_OR_DB_UNAVAILABLE", ref, question["qa_id"]) for question in dataset["questions"]]
+        outputs: list[dict[str, Any]] = []
+        for question in dataset["questions"]:
+            paths = _paths(output_dir, baseline["baseline_id"], 1, question["qa_id"])
+            if paths.baseline_dir.exists():
+                raise HarnessError("DUPLICATE_ATTEMPT", str(paths.baseline_dir))
+            paths.baseline_dir.mkdir(parents=True, exist_ok=False)
+            _atomic_write_json(paths.trace_json, {"failure_code": "DATABAO_RUNTIME_OR_DB_UNAVAILABLE", "adapter_id": baseline["native_adapter_id"], "cache_namespace": baseline["cache_namespace"], "preflight_only": True})
+            outputs.append(_prediction_failure(baseline, 1, "DATABAO_RUNTIME_OR_DB_UNAVAILABLE", str(paths.trace_json.relative_to(output_dir)), question["qa_id"]))
+        return outputs
     outputs: list[dict[str, Any]] = []
     for question in dataset["questions"]:
         last_code = "TRANSPORT_ERROR"
         for attempt in range(1, max_attempts + 1):
-            paths = _paths(output_dir, baseline["baseline_id"], attempt)
+            paths = _paths(output_dir, baseline["baseline_id"], attempt, question["qa_id"])
             if paths.baseline_dir.exists():
                 raise HarnessError("DUPLICATE_ATTEMPT", str(paths.baseline_dir))
             paths.baseline_dir.mkdir(parents=True, exist_ok=False)
@@ -414,7 +423,7 @@ def run_harness(experiment_contract_path: Path, dataset_manifest_path: Path, bas
     for row in predictions:
         trace_refs_by_baseline.setdefault(row["baseline_id"], set()).add(row["trace_ref"])
     summary = {
-        "callback_condition": "SIX_BASELINE_COMMON_HARNESS_CONCURRENCY6_STATIC_SMOKE_PASS",
+        "callback_condition": "EAS125_DUAL_AXIS_FIVE_FAIL_CLOSED_DATABAO_MULTI_QUESTION_COMMON_CONSUMPTION_PASS",
         "mode": mode,
         "baseline_count": len(baselines),
         "question_count": len(dataset["questions"]),

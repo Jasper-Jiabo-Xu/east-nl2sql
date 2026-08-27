@@ -38,13 +38,16 @@ class _Endpoint(BaseHTTPRequestHandler):
         if self.mode == "transport":
             self._write(503, {"error": {"message": "temporary transport failure"}})
             return
+        if self.mode == "first_transport_then_success" and len(self.requests) == 1:
+            self._write(503, {"error": {"message": "temporary transport failure"}})
+            return
         if self.mode == "model":
             self._write(404, {"error": {"message": "model not found"}})
             return
         if self.mode == "empty":
             self._write(200, self._completion("", None))
             return
-        number = len(self.requests)
+        number = len(self.requests) - (1 if self.mode == "first_transport_then_success" else 0)
         if number % 2:
             self._write(200, self._completion("run_sql_query", {"sql": "SELECT name FROM db1.main.items"}))
         else:
@@ -78,8 +81,8 @@ class DatabaoUnifiedHarnessTests(unittest.TestCase):
         if not self.runtime or not self.source:
             self.skipTest("requires prepared Databao Python 3.11 runtime and pinned source path")
 
-    def _run(self, mode: str, timeout: int = 60) -> tuple[dict[str, object], list[dict[str, object]], str]:
-        _Endpoint.mode, _Endpoint.requests = mode, []
+    def _run(self, endpoint_mode: str, harness_mode: str = "serial", question_count: int = 1, timeout: int = 60) -> tuple[dict[str, object], list[dict[str, object]], dict[str, str], set[str], int]:
+        _Endpoint.mode, _Endpoint.requests = endpoint_mode, []
         server = ThreadingHTTPServer(("127.0.0.1", 0), _Endpoint)
         worker = threading.Thread(target=server.serve_forever, daemon=True)
         worker.start()
@@ -89,40 +92,76 @@ class DatabaoUnifiedHarnessTests(unittest.TestCase):
                 db = root / "fixture.duckdb"
                 subprocess.run([self.runtime or "", "-c", "import duckdb,sys; c=duckdb.connect(sys.argv[1]); c.execute('create table items(name varchar)'); c.execute(\"insert into items values ('alpha')\"); c.close()", str(db)], check=True)
                 dataset = root / "dataset.json"
-                dataset.write_text(json.dumps({"s0_boundary": "qa_id_clear_question_public_schema", "questions": [{"qa_id": "fixture-1", "clear_question": "List item names", "public_semantic_schema": {"tables": ["items"]}}]}), encoding="utf-8")
+                questions = [{"qa_id": f"fixture-{index}", "clear_question": f"List item names {index}", "public_semantic_schema": {"tables": ["items"]}} for index in range(1, question_count + 1)]
+                dataset.write_text(json.dumps({"s0_boundary": "qa_id_clear_question_public_schema", "questions": questions}), encoding="utf-8")
                 manifest = copy.deepcopy(load_json(RUN_MANIFEST))
                 manifest["baselines"][3]["timeout_seconds"] = timeout
                 manifest_path = root / "manifest.json"
                 manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
                 env = {"EAST_DATABAO_RUNTIME_PYTHON": self.runtime or "", "EAST_DATABAO_UPSTREAM_PATH": self.source or "", "EAST_DATABAO_READ_ONLY_DB_PATH": str(db), "EAST_DATABAO_FAKE_ENDPOINT": f"http://127.0.0.1:{server.server_port}/v1", "DEEPSEEK_API_KEY": "fixture-key-not-a-secret"}
                 with patch.dict(os.environ, env, clear=False):
-                    summary = run_harness(CONTRACT, dataset, manifest_path, root / "out", "serial")
+                    summary = run_harness(CONTRACT, dataset, manifest_path, root / "out", harness_mode)
                 rows = [json.loads(line) for line in (root / "out" / "predictions.jsonl").read_text().splitlines()]
-                trace = (root / "out" / "runs" / "databao_agent" / ("attempt-03" if mode == "transport" else "attempt-01") / "trace.json").read_text(encoding="utf-8")
+                trace_paths = {row["qa_id"]: root / "out" / row["trace_ref"] for row in rows if row["baseline_id"] == "Databao Agent"}
+                traces = {qa_id: path.read_text(encoding="utf-8") for qa_id, path in trace_paths.items()}
+                present_paths = {str(path.relative_to(root / "out")) for path in (root / "out" / "runs" / "databao_agent").rglob("*")}
+                request_count = len(_Endpoint.requests)
         finally:
             server.shutdown()
             worker.join(timeout=5)
             server.server_close()
-        return summary, rows, trace
+        return summary, rows, traces, present_paths, request_count
 
     def test_common_prediction_consumes_actual_databao_launcher(self) -> None:
-        summary, rows, trace = self._run("success")
+        summary, rows, traces, _, request_count = self._run("success")
         databao = next(row for row in rows if row["baseline_id"] == "Databao Agent")
         self.assertEqual((summary["candidate_count"], summary["failure_count"]), (1, 5))
         self.assertEqual(databao["execution_status"], "ok")
         self.assertEqual(databao["token_calls"], 2)
         self.assertEqual(databao["token_total"], 4)
-        self.assertNotIn("fixture-key-not-a-secret", trace)
-        self.assertEqual(len(_Endpoint.requests), 2)
+        self.assertNotIn("fixture-key-not-a-secret", traces["fixture-1"])
+        self.assertEqual(request_count, 2)
 
     def test_fake_endpoint_failure_matrix_is_secret_safe(self) -> None:
         for mode, expected, harness_attempt, endpoint_requests in (("model", "MODEL_UNAVAILABLE", 1, 1), ("empty", "INVALID_BASELINE_OUTPUT", 1, 1), ("timeout", "TIMEOUT", 1, 1)):
             with self.subTest(mode=mode):
-                _, rows, trace = self._run(mode, timeout=5 if mode == "timeout" else 60)
+                _, rows, traces, _, request_count = self._run(mode, timeout=5 if mode == "timeout" else 60)
                 databao = next(row for row in rows if row["baseline_id"] == "Databao Agent")
                 self.assertEqual((databao["failure_code"], databao["attempt"]), (expected, harness_attempt))
-                self.assertNotIn("fixture-key-not-a-secret", trace)
-                self.assertEqual(len(_Endpoint.requests), endpoint_requests)
+                self.assertNotIn("fixture-key-not-a-secret", traces["fixture-1"])
+                self.assertEqual(request_count, endpoint_requests)
+
+    def test_two_questions_have_unique_safe_attempt_namespaces_in_serial_and_concurrent_modes(self) -> None:
+        for harness_mode in ("serial", "concurrent"):
+            with self.subTest(harness_mode=harness_mode):
+                summary, rows, traces, present_paths, request_count = self._run("success", harness_mode=harness_mode, question_count=2)
+                databao = [row for row in rows if row["baseline_id"] == "Databao Agent"]
+                self.assertEqual((summary["candidate_count"], summary["failure_count"]), (2, 10))
+                self.assertEqual([row["qa_id"] for row in databao], ["fixture-1", "fixture-2"])
+                self.assertEqual({row["attempt"] for row in databao}, {1})
+                self.assertEqual(len({row["trace_ref"] for row in databao}), 2)
+                self.assertEqual(request_count, 4)
+                for row in databao:
+                    self.assertRegex(row["trace_ref"], r"^runs/databao_agent/qa-[0-9a-f]{20}/attempt-01/trace\.json$")
+                    self.assertNotIn("List item names", row["trace_ref"])
+                    self.assertNotIn("fixture-key-not-a-secret", traces[row["qa_id"]])
+                    self.assertIn(row["trace_ref"], present_paths)
+
+    def test_transport_retry_for_first_question_does_not_consume_second_question_attempt_one(self) -> None:
+        for harness_mode in ("serial", "concurrent"):
+            with self.subTest(harness_mode=harness_mode):
+                summary, rows, _, present_paths, request_count = self._run("first_transport_then_success", harness_mode=harness_mode, question_count=2)
+                databao = {row["qa_id"]: row for row in rows if row["baseline_id"] == "Databao Agent"}
+                self.assertEqual((summary["candidate_count"], summary["failure_count"]), (2, 10))
+                self.assertEqual((databao["fixture-1"]["execution_status"], databao["fixture-1"]["attempt"]), ("ok", 2))
+                self.assertEqual((databao["fixture-2"]["execution_status"], databao["fixture-2"]["attempt"]), ("ok", 1))
+                self.assertEqual(request_count, 5)
+                first_namespace = Path(databao["fixture-1"]["trace_ref"]).parents[1]
+                second_namespace = Path(databao["fixture-2"]["trace_ref"]).parents[1]
+                self.assertNotEqual(first_namespace, second_namespace)
+                self.assertIn(str(first_namespace / "attempt-01"), present_paths)
+                self.assertIn(str(first_namespace / "attempt-02"), present_paths)
+                self.assertIn(str(second_namespace / "attempt-01"), present_paths)
 
     def test_only_transport_error_retries_three_times(self) -> None:
         from east_v5.experiments import s0_harness
