@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import importlib
+import stat
+import threading
 import sys
 import tempfile
 import unittest
@@ -38,6 +41,185 @@ def _evidence(envelope: dict[str, object]) -> BootstrapEvidence:
 
 
 class RuntimeAdapterTests(unittest.TestCase):
+    def _refresh_fixture(self) -> tuple[RuntimeBootstrap, Path, dict[str, object]]:
+        """A fully local, de-identified v2 container for refresh-contract tests."""
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        base = Path(temp.name); root = base / "runtime"; root.mkdir(); root.chmod(0o700)
+        checkout = base / "checkout"; checkout.mkdir(); (checkout / "asset.bin").write_bytes(b"asset")
+        field_mapping = {"CHILD": "PARENT"}
+        values = {
+            "foundation_intent_package.json": {"content_sha256": "a" * 64, "hierarchy_asset_refs": {"org_tree": {"field_mapping": field_mapping}}},
+            "foundation_task_package_projection.json": {"projection": "safe"},
+            "manifest.json": {"manifest": "safe"},
+        }
+        attachments = []
+        for index, (name, value) in enumerate(values.items(), 1):
+            raw = json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
+            attachments.append({"id": f"a-{index}", "filename": name, "byte_sha256": hashlib.sha256(raw).hexdigest(), "semantic_sha256": value["content_sha256"] if name == "foundation_intent_package.json" else bootstrap_mod.sha256(value)})
+        config = {
+            "schema_version": "foundation-parent-chain-materializer-config/v2", "container_schema_version": "foundation-parent-chain-container-manifest/v2",
+            "attachments": attachments, "eas111_evidence": {"id": "e", "download_filename": "evidence.json", "filename": "eas111-evidence.json", "byte_sha256": hashlib.sha256(b"evidence").hexdigest()},
+            "assets": [{"asset_version": "CA-V0.2.0", "artifact_id": "CA", "artifact_type": "constraint_asset_ref", "content_hash": "a" * 64, "role": "single_field", "logical_path": "asset.bin", "filename": "asset.bin", "byte_sha256": hashlib.sha256((checkout / "asset.bin").read_bytes()).hexdigest()}],
+            "runtime_manifest_without_locators_sha256": bootstrap_mod.sha256({}),
+            "hierarchy_mapping_sha256": bootstrap_mod.sha256({"schema_version": "foundation-hierarchy-endpoint-mapping/v1", "intent_content_hash": "a" * 64, "field_mapping": field_mapping}),
+        }
+        def runner(command, **_kwargs):
+            directory = Path(command[-1])
+            if command[3] == "e":
+                (directory / "evidence.json").write_bytes(b"evidence")
+            else:
+                item = next(item for item in attachments if item["id"] == command[3])
+                (directory / item["filename"]).write_text(json.dumps(values[item["filename"]], sort_keys=True, separators=(",", ":")))
+            return SimpleNamespace(stdout="")
+        bootstrap = RuntimeBootstrap.__new__(RuntimeBootstrap)
+        bootstrap.runner = runner; bootstrap.checkout = checkout
+        bootstrap.declaration = {"skill_bundle": {"skill_manifest_sha256": "b" * 64}}
+        bootstrap.preflight = lambda: BootstrapEvidence("c" * 40, "d" * 64, "e" * 64, "f" * 64, "g" * 64, "scripts/runtime_bootstrap.py")
+        bootstrap.resolve_runtime_root = lambda: root
+        bootstrap._materializer_config = lambda: (config, bootstrap_mod.sha256(config))
+        bootstrap._runtime_manifest = lambda *_args: {"schema_version": "v5.constraint-assets-runtime-manifest/v1", "assets": []}
+        bootstrap._without_locators = lambda _manifest: {}
+        bootstrap._verify_runtime_manifest = lambda *_args: None
+        return bootstrap, root, config
+
+    def _old_refresh_receipt(self, bootstrap: RuntimeBootstrap, root: Path) -> tuple[dict[str, object], dict[str, object]]:
+        current = bootstrap.materialize_foundation_parent_chain()
+        old = {**current, "bootstrap": {**current["bootstrap"], "bootstrap_sha256": "0" * 64}}
+        old.pop("receipt_sha256"); old.pop("attestation")
+        old["receipt_sha256"] = bootstrap_mod.sha256(old)
+        old["attestation"] = hmac.new((root / ".foundation-parent-chain-materializer-v1.key").read_bytes(), bootstrap_mod.canonical_bytes(old), hashlib.sha256).hexdigest()
+        RuntimeBootstrap._atomic_json(root / "foundation-parent-chain-materialization-receipt-v2.json", old)
+        return current, old
+
+    def test_explicit_materializer_receipt_refresh_is_allowlisted_and_idempotent(self) -> None:
+        bootstrap, root, _config = self._refresh_fixture()
+        current, old = self._old_refresh_receipt(bootstrap, root)
+        with patch.object(bootstrap_mod, "_MATERIALIZER_REFRESH_SOURCE", old["receipt_sha256"]):
+            refreshed = bootstrap.refresh_foundation_parent_chain_materialization_receipt()
+            self.assertEqual(refreshed, bootstrap.refresh_foundation_parent_chain_materialization_receipt())
+        self.assertEqual(refreshed["bootstrap"], current["bootstrap"])
+        bundle = root / "foundation-parent-chain-materialization-refresh-v1" / "migration-bundle.json"
+        self.assertEqual(json.loads(bundle.read_text())["source_receipt"], old)
+        self.assertEqual(stat.S_IMODE(bundle.stat().st_mode), 0o600)
+
+    def test_materializer_receipt_refresh_recovers_bundle_write_and_replace_failures(self) -> None:
+        for fault in ("bundle", "bundle_fsync", "publish_fsync", "replace", "receipt_fsync"):
+            with self.subTest(fault=fault):
+                bootstrap, root, _config = self._refresh_fixture()
+                current, old = self._old_refresh_receipt(bootstrap, root)
+                with patch.object(bootstrap_mod, "_MATERIALIZER_REFRESH_SOURCE", old["receipt_sha256"]):
+                    if fault == "bundle":
+                        with patch.object(bootstrap, "_write_refresh_bundle", side_effect=RuntimeBootstrapError("injected")):
+                            with self.assertRaisesRegex(RuntimeBootstrapError, "injected"):
+                                bootstrap.refresh_foundation_parent_chain_materialization_receipt()
+                    elif fault == "replace":
+                        with patch.object(bootstrap, "_atomic_json", side_effect=RuntimeBootstrapError("injected")):
+                            with self.assertRaisesRegex(RuntimeBootstrapError, "injected"):
+                                bootstrap.refresh_foundation_parent_chain_materialization_receipt()
+                    else:
+                        original = bootstrap._fsync_directory
+                        calls = 0
+                        fault_call = {"bundle_fsync": 1, "publish_fsync": 2, "receipt_fsync": 3}[fault]
+                        def fail_root(path: Path) -> None:
+                            nonlocal calls
+                            calls += 1
+                            if calls == fault_call:
+                                raise RuntimeBootstrapError("injected")
+                            original(path)
+                        with patch.object(bootstrap, "_fsync_directory", side_effect=fail_root):
+                            with self.assertRaisesRegex(RuntimeBootstrapError, "injected"):
+                                bootstrap.refresh_foundation_parent_chain_materialization_receipt()
+                    receipt = json.loads((root / "foundation-parent-chain-materialization-receipt-v2.json").read_text())
+                    self.assertIn(receipt, (old, current))
+                    self.assertEqual(bootstrap.refresh_foundation_parent_chain_materialization_receipt(), current)
+
+    def test_materializer_receipt_refresh_recovers_hard_crash_temp_and_resumes_complete_stage(self) -> None:
+        bootstrap, root, _config = self._refresh_fixture()
+        current, old = self._old_refresh_receipt(bootstrap, root)
+        staging = root / ".foundation-parent-chain-materialization-refresh-staging-hard-crash"
+        staging.mkdir(); staging.chmod(0o700)
+        temporary = staging / ".migration-bundle-interrupted"; temporary.write_bytes(b'{"truncated"'); temporary.chmod(0o600)
+        with patch.object(bootstrap_mod, "_MATERIALIZER_REFRESH_SOURCE", old["receipt_sha256"]):
+            self.assertEqual(bootstrap.refresh_foundation_parent_chain_materialization_receipt(), current)
+            self.assertFalse(staging.exists())
+            self.assertEqual(bootstrap.refresh_foundation_parent_chain_materialization_receipt(), current)
+
+        # A process which died after the final staging name was atomically
+        # published is resumed, rather than rebuilt or accepted unchecked.
+        bootstrap, root, _config = self._refresh_fixture()
+        current, old = self._old_refresh_receipt(bootstrap, root)
+        staging = root / ".foundation-parent-chain-materialization-refresh-staging-complete"
+        staging.mkdir(); staging.chmod(0o700)
+        evidence = bootstrap.preflight(); config, config_hash = bootstrap._materializer_config()
+        manifest = bootstrap._verify_refresh_container(root, evidence, config, config_hash)
+        target = bootstrap._receipt_for_container(evidence, config, config_hash, manifest, root, create_key=False)
+        with patch.object(bootstrap_mod, "_MATERIALIZER_REFRESH_SOURCE", old["receipt_sha256"]):
+            bootstrap._write_refresh_bundle(staging, bootstrap._refresh_bundle(old, target, evidence, manifest, config_hash, root))
+            self.assertEqual(bootstrap.refresh_foundation_parent_chain_materialization_receipt(), current)
+            self.assertFalse(staging.exists())
+
+    def test_materializer_receipt_refresh_rejects_complete_tampered_staging_bundle(self) -> None:
+        bootstrap, root, _config = self._refresh_fixture()
+        _current, old = self._old_refresh_receipt(bootstrap, root)
+        staging = root / ".foundation-parent-chain-materialization-refresh-staging-tampered"
+        staging.mkdir(); staging.chmod(0o700)
+        evidence = bootstrap.preflight(); config, config_hash = bootstrap._materializer_config()
+        manifest = bootstrap._verify_refresh_container(root, evidence, config, config_hash)
+        target = bootstrap._receipt_for_container(evidence, config, config_hash, manifest, root, create_key=False)
+        with patch.object(bootstrap_mod, "_MATERIALIZER_REFRESH_SOURCE", old["receipt_sha256"]):
+            bootstrap._write_refresh_bundle(staging, bootstrap._refresh_bundle(old, target, evidence, manifest, config_hash, root))
+            path = staging / "migration-bundle.json"; path.write_bytes(b"tampered"); path.chmod(0o600)
+            with self.assertRaisesRegex(RuntimeBootstrapError, "FOUNDATION_PARENT_MATERIALIZER_REFRESH_TRANSITION_DRIFT"):
+                bootstrap.refresh_foundation_parent_chain_materialization_receipt()
+            self.assertTrue(staging.exists())
+
+    def test_materializer_receipt_refresh_serializes_two_callers_and_rejects_bundle_symlink(self) -> None:
+        bootstrap, root, _config = self._refresh_fixture()
+        current, old = self._old_refresh_receipt(bootstrap, root)
+        results: list[dict[str, object]] = []; failures: list[BaseException] = []
+        barrier = threading.Barrier(2)
+        def invoke() -> None:
+            try:
+                barrier.wait(); results.append(bootstrap.refresh_foundation_parent_chain_materialization_receipt())
+            except BaseException as exc:
+                failures.append(exc)
+        with patch.object(bootstrap_mod, "_MATERIALIZER_REFRESH_SOURCE", old["receipt_sha256"]):
+            first = threading.Thread(target=invoke); second = threading.Thread(target=invoke)
+            first.start(); second.start(); first.join(); second.join()
+            self.assertEqual(failures, [])
+            self.assertEqual(results, [current, current])
+            final = root / "foundation-parent-chain-materialization-refresh-v1"
+            self.assertEqual({path.name for path in final.iterdir()}, {"migration-bundle.json"})
+            bundle = final / "migration-bundle.json"; bundle.unlink(); bundle.symlink_to("outside")
+            with self.assertRaisesRegex(RuntimeBootstrapError, "FOUNDATION_PARENT_MATERIALIZER_REFRESH_TRANSITION_DRIFT"):
+                bootstrap.refresh_foundation_parent_chain_materialization_receipt()
+
+    def test_materializer_receipt_refresh_rejects_nonallowlisted_or_stable_drift(self) -> None:
+        bootstrap, root, _config = self._refresh_fixture()
+        current = bootstrap.materialize_foundation_parent_chain()
+        path = root / "foundation-parent-chain-materialization-receipt-v2.json"
+        with self.assertRaisesRegex(RuntimeBootstrapError, "FOUNDATION_PARENT_MATERIALIZER_REFRESH_SOURCE_REJECTED"):
+            bootstrap.refresh_foundation_parent_chain_materialization_receipt()
+        old = {**current, "bootstrap": {**current["bootstrap"], "bootstrap_sha256": "0" * 64}}
+        old.pop("receipt_sha256"); old.pop("attestation"); old["config_sha256"] = "1" * 64
+        old["receipt_sha256"] = bootstrap_mod.sha256(old)
+        old["attestation"] = hmac.new((root / ".foundation-parent-chain-materializer-v1.key").read_bytes(), bootstrap_mod.canonical_bytes(old), hashlib.sha256).hexdigest()
+        RuntimeBootstrap._atomic_json(path, old)
+        with patch.object(bootstrap_mod, "_MATERIALIZER_REFRESH_SOURCE", old["receipt_sha256"]):
+            with self.assertRaisesRegex(RuntimeBootstrapError, "FOUNDATION_PARENT_MATERIALIZER_REFRESH_STABLE_DRIFT"):
+                bootstrap.refresh_foundation_parent_chain_materialization_receipt()
+        self.assertEqual(json.loads(path.read_text()), old)
+
+    def test_materializer_receipt_refresh_rejects_tampered_hmac_before_transition(self) -> None:
+        bootstrap, root, _config = self._refresh_fixture()
+        current = bootstrap.materialize_foundation_parent_chain()
+        current["attestation"] = "0" * 64
+        RuntimeBootstrap._atomic_json(root / "foundation-parent-chain-materialization-receipt-v2.json", current)
+        with self.assertRaisesRegex(RuntimeBootstrapError, "FOUNDATION_PARENT_MATERIALIZER_RECEIPT_DRIFT"):
+            bootstrap.refresh_foundation_parent_chain_materialization_receipt()
+        self.assertFalse((root / "foundation-parent-chain-materialization-refresh-v1").exists())
+
     def test_bootstrap_is_the_only_fixed_parent_container_materializer(self) -> None:
         """The approved public seam has no caller attachment or path arguments."""
         with tempfile.TemporaryDirectory() as tmp:
