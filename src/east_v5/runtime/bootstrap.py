@@ -17,6 +17,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import fcntl
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
@@ -34,6 +35,17 @@ _MATERIALIZER_CONFIG_SHA256 = "40edbcda48ac087cb2a755bc0cfb50d1aae8b0162e0f1cbad
 _MATERIALIZER_CONTAINER = "foundation-parent-chain-container-v1"
 _MATERIALIZER_MANIFEST = "foundation-parent-chain-container-manifest.json"
 _MATERIALIZER_KEY = ".foundation-parent-chain-materializer-v1.key"
+_MATERIALIZER_RECEIPT = "foundation-parent-chain-materialization-receipt-v2.json"
+_MATERIALIZER_REFRESH_LOCK = ".foundation-parent-chain-materialization-refresh-v1.lock"
+_MATERIALIZER_REFRESH_DIR = "foundation-parent-chain-materialization-refresh-v1"
+_MATERIALIZER_REFRESH_SOURCE = "af3041b5d14b967f52499e25b1d6c876bce7064b8b6548ae4bc44d42d7fe84cd"
+_MATERIALIZER_RECEIPT_KEYS = {
+    "schema_version", "root_binding_id", "bootstrap", "skill_manifest_sha256",
+    "config_sha256", "attachments", "eas111_evidence", "assets",
+    "runtime_manifest_sha256", "runtime_manifest_local_sha256",
+    "hierarchy_mapping_sha256", "container_sha256", "receipt_sha256", "attestation",
+}
+_MATERIALIZER_STABLE_RECEIPT_KEYS = _MATERIALIZER_RECEIPT_KEYS - {"bootstrap", "receipt_sha256", "attestation"}
 _FOUNDATION_WORKSPACE = "82db0426-715a-47e1-a66f-15b479c47654"
 _FOUNDATION_PROJECT = "3495da30-28d4-4cc6-b249-1e186ade6872"
 _FOUNDATION_DAEMON = "019fd128-7476-7d56-9ed0-cc49fbd7ecdc"
@@ -363,17 +375,19 @@ class RuntimeBootstrap:
             _fail("FOUNDATION_PARENT_MATERIALIZER_HIERARCHY_MAPPING_DRIFT")
         return result
 
-    def _materializer_key(self, root: Path) -> bytes:
+    def _materializer_key(self, root: Path, *, create: bool = True) -> bytes:
         key = root / _MATERIALIZER_KEY
         try:
             if key.exists() or key.is_symlink():
                 self._private(key, 0o600, "FOUNDATION_PARENT_MATERIALIZER_KEY_UNSAFE")
                 value = key.read_bytes()
-            else:
+            elif create:
                 descriptor = os.open(key, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
                 with os.fdopen(descriptor, "wb") as output:
                     output.write(secrets.token_bytes(32))
                 value = key.read_bytes()
+            else:
+                _fail("FOUNDATION_PARENT_MATERIALIZER_KEY_UNAVAILABLE")
             if len(value) != 32:
                 _fail("FOUNDATION_PARENT_MATERIALIZER_KEY_UNSAFE")
             return value
@@ -391,6 +405,117 @@ class RuntimeBootstrap:
         except OSError as exc:
             Path(temporary).unlink(missing_ok=True)
             raise RuntimeBootstrapError("FOUNDATION_PARENT_MATERIALIZER_WRITE_FAILED") from exc
+
+    @staticmethod
+    def _fsync_directory(path: Path) -> None:
+        try:
+            descriptor = os.open(path, os.O_RDONLY)
+            try:
+                os.fsync(descriptor)
+            finally:
+                os.close(descriptor)
+        except OSError as exc:
+            raise RuntimeBootstrapError("FOUNDATION_PARENT_MATERIALIZER_REFRESH_WRITE_FAILED") from exc
+
+    def _validate_materializer_receipt(self, receipt: Any, root: Path, code: str = "FOUNDATION_PARENT_MATERIALIZER_RECEIPT_DRIFT") -> dict[str, Any]:
+        if not isinstance(receipt, dict) or set(receipt) != _MATERIALIZER_RECEIPT_KEYS:
+            _fail(code)
+        unsigned = {key: receipt[key] for key in receipt if key not in {"receipt_sha256", "attestation"}}
+        if receipt["schema_version"] != "foundation-parent-chain-materialization-receipt/v2" or receipt.get("receipt_sha256") != sha256(unsigned):
+            _fail(code)
+        signed = {**unsigned, "receipt_sha256": receipt["receipt_sha256"]}
+        key = self._materializer_key(root, create=False)
+        expected = hmac.new(key, canonical_bytes(signed), hashlib.sha256).hexdigest()
+        if not isinstance(receipt.get("attestation"), str) or not hmac.compare_digest(receipt["attestation"], expected):
+            _fail(code)
+        return receipt
+
+    def _read_materializer_receipt(self, root: Path) -> dict[str, Any]:
+        """Read a v2 receipt only after proving its complete local integrity."""
+        path = root / _MATERIALIZER_RECEIPT
+        self._private(path, 0o600, "FOUNDATION_PARENT_MATERIALIZER_RECEIPT_UNSAFE")
+        try:
+            receipt = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            raise RuntimeBootstrapError("FOUNDATION_PARENT_MATERIALIZER_RECEIPT_DRIFT") from exc
+        return self._validate_materializer_receipt(receipt, root)
+
+    def _receipt_for_container(self, evidence: BootstrapEvidence, config: dict[str, Any], config_hash: str, manifest: dict[str, Any], root: Path, *, create_key: bool) -> dict[str, Any]:
+        body = {
+            "schema_version": "foundation-parent-chain-materialization-receipt/v2",
+            "root_binding_id": evidence.root_binding_id,
+            "bootstrap": evidence.redacted(),
+            "skill_manifest_sha256": self.declaration["skill_bundle"]["skill_manifest_sha256"],
+            "config_sha256": config_hash, "attachments": config["attachments"],
+            "eas111_evidence": config["eas111_evidence"], "assets": manifest["assets"],
+            "runtime_manifest_sha256": manifest["runtime_manifest_sha256"],
+            "runtime_manifest_local_sha256": manifest["runtime_manifest_local_sha256"],
+            "hierarchy_mapping_sha256": manifest["hierarchy_mapping_sha256"],
+            "container_sha256": manifest["container_sha256"],
+        }
+        body["receipt_sha256"] = sha256(body)
+        body["attestation"] = hmac.new(self._materializer_key(root, create=create_key), canonical_bytes(body), hashlib.sha256).hexdigest()
+        return body
+
+    def _verify_refresh_container(self, root: Path, evidence: BootstrapEvidence, config: dict[str, Any], config_hash: str) -> dict[str, Any]:
+        """Revalidate every root-local input before a provenance-only refresh."""
+        final = root / _MATERIALIZER_CONTAINER
+        manifest_path = final / _MATERIALIZER_MANIFEST
+        self._private(final, 0o700, "FOUNDATION_PARENT_MATERIALIZER_CONTAINER_UNSAFE")
+        self._private(manifest_path, 0o600, "FOUNDATION_PARENT_MATERIALIZER_CONTAINER_DRIFT")
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            raise RuntimeBootstrapError("FOUNDATION_PARENT_MATERIALIZER_CONTAINER_DRIFT") from exc
+        if not isinstance(manifest, dict) or manifest.get("container_sha256") != sha256({key: value for key, value in manifest.items() if key != "container_sha256"}):
+            _fail("FOUNDATION_PARENT_MATERIALIZER_CONTAINER_DRIFT")
+        if (manifest.get("root_binding_id"), manifest.get("config_sha256"), manifest.get("attachments"), manifest.get("eas111_evidence")) != (evidence.root_binding_id, config_hash, config["attachments"], config["eas111_evidence"]):
+            _fail("FOUNDATION_PARENT_MATERIALIZER_CONTAINER_DRIFT")
+        if manifest.get("assets") != [{key: item[key] for key in ("asset_version", "artifact_id", "artifact_type", "content_hash", "role", "filename", "byte_sha256")} for item in config["assets"]]:
+            _fail("FOUNDATION_PARENT_MATERIALIZER_CONTAINER_DRIFT")
+        expected_names = {item["filename"] for item in config["attachments"]} | {config["eas111_evidence"]["filename"], "approved-assets", "constraint-assets-runtime-manifest.json", "foundation-hierarchy-endpoint-mapping.json", _MATERIALIZER_MANIFEST}
+        try:
+            if {item.name for item in final.iterdir()} != expected_names:
+                _fail("FOUNDATION_PARENT_MATERIALIZER_PARTIAL_CONTAINER")
+        except OSError as exc:
+            raise RuntimeBootstrapError("FOUNDATION_PARENT_MATERIALIZER_CONTAINER_DRIFT") from exc
+        for item in config["attachments"]:
+            path = final / item["filename"]
+            self._private(path, 0o600, "FOUNDATION_PARENT_MATERIALIZER_ATTACHMENT_PERMISSION_DRIFT")
+            if _file_sha(path) != item["byte_sha256"]:
+                _fail("FOUNDATION_PARENT_MATERIALIZER_ATTACHMENT_DRIFT")
+            self._semantic_attachment(item, path)
+        evidence_path = final / config["eas111_evidence"]["filename"]
+        self._private(evidence_path, 0o600, "FOUNDATION_PARENT_MATERIALIZER_ATTACHMENT_PERMISSION_DRIFT")
+        if _file_sha(evidence_path) != config["eas111_evidence"]["byte_sha256"]:
+            _fail("FOUNDATION_PARENT_MATERIALIZER_EAS111_EVIDENCE_DRIFT")
+        assets = final / "approved-assets"; self._private(assets, 0o700, "FOUNDATION_PARENT_MATERIALIZER_ASSET_PERMISSION_DRIFT")
+        if {item.name for item in assets.iterdir()} != {item["filename"] for item in config["assets"]}:
+            _fail("FOUNDATION_PARENT_MATERIALIZER_ASSET_DRIFT")
+        for item in config["assets"]:
+            path = assets / item["filename"]
+            self._private(path, 0o600, "FOUNDATION_PARENT_MATERIALIZER_ASSET_PERMISSION_DRIFT")
+            if _file_sha(path) != item["byte_sha256"]:
+                _fail("FOUNDATION_PARENT_MATERIALIZER_ASSET_DRIFT")
+        runtime_manifest_path = final / "constraint-assets-runtime-manifest.json"
+        self._private(runtime_manifest_path, 0o600, "FOUNDATION_PARENT_MATERIALIZER_RUNTIME_MANIFEST_DRIFT")
+        try:
+            runtime_manifest = json.loads(runtime_manifest_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            raise RuntimeBootstrapError("FOUNDATION_PARENT_MATERIALIZER_RUNTIME_MANIFEST_DRIFT") from exc
+        self._verify_runtime_manifest(runtime_manifest, config, assets)
+        if manifest.get("runtime_manifest_sha256") != sha256(self._without_locators(runtime_manifest)) or manifest.get("runtime_manifest_local_sha256") != _file_sha(runtime_manifest_path):
+            _fail("FOUNDATION_PARENT_MATERIALIZER_V2_DRIFT")
+        mapping_path = final / "foundation-hierarchy-endpoint-mapping.json"
+        self._private(mapping_path, 0o600, "FOUNDATION_PARENT_MATERIALIZER_HIERARCHY_MAPPING_DRIFT")
+        expected_mapping = self._hierarchy_mapping(final / "foundation_intent_package.json", config)
+        try:
+            mapping = json.loads(mapping_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            raise RuntimeBootstrapError("FOUNDATION_PARENT_MATERIALIZER_HIERARCHY_MAPPING_DRIFT") from exc
+        if mapping != expected_mapping or manifest.get("hierarchy_mapping_sha256") != expected_mapping["content_hash"]:
+            _fail("FOUNDATION_PARENT_MATERIALIZER_HIERARCHY_MAPPING_DRIFT")
+        return manifest
 
     def materialize_foundation_parent_chain(self) -> dict[str, Any]:
         """The sole provisioning-only route for the frozen Foundation parents.
@@ -490,6 +615,130 @@ class RuntimeBootstrap:
             self._atomic_json(receipt_path, body)
             self._private(receipt_path, 0o600, "FOUNDATION_PARENT_MATERIALIZER_RECEIPT_UNSAFE")
         return body
+
+    def refresh_foundation_parent_chain_materialization_receipt(self) -> dict[str, Any]:
+        """Explicit, parameterless CAS refresh for one audited old provenance.
+
+        Normal materialization remains strict: it never accepts receipt drift.
+        This seam exists solely for the allowlisted receipt emitted before the
+        PR-66 bootstrap provenance changed, and validates the complete stable
+        container before replacing its receipt.
+        """
+        evidence = self.preflight()
+        root = self.resolve_runtime_root()
+        self._private(root, 0o700, "FOUNDATION_PARENT_MATERIALIZER_ROOT_UNSAFE")
+        config, config_hash = self._materializer_config()
+        manifest = self._verify_refresh_container(root, evidence, config, config_hash)
+        target = self._receipt_for_container(evidence, config, config_hash, manifest, root, create_key=False)
+        receipt_path = root / _MATERIALIZER_RECEIPT
+
+        def stable(receipt: dict[str, Any]) -> dict[str, Any]:
+            return {key: receipt[key] for key in sorted(_MATERIALIZER_STABLE_RECEIPT_KEYS)}
+
+        def transition_for(source: dict[str, Any]) -> dict[str, Any]:
+            projection = stable(source)
+            record = {
+                "schema_version": "foundation-parent-chain-materialization-refresh-transition/v1",
+                "root_binding_id": evidence.root_binding_id,
+                "source_receipt_sha256": source["receipt_sha256"],
+                "target_receipt_sha256": target["receipt_sha256"],
+                "source_bootstrap": source["bootstrap"], "target_bootstrap": target["bootstrap"],
+                "stable_projection_sha256": sha256(projection),
+                "container_sha256": manifest["container_sha256"], "config_sha256": config_hash,
+            }
+            record["transition_sha256"] = sha256(record)
+            record["attestation"] = hmac.new(self._materializer_key(root, create=False), canonical_bytes(record), hashlib.sha256).hexdigest()
+            return record
+
+        def verify_transition(path: Path, source: dict[str, Any]) -> None:
+            self._private(path, 0o600, "FOUNDATION_PARENT_MATERIALIZER_REFRESH_TRANSITION_DRIFT")
+            try:
+                observed = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+                raise RuntimeBootstrapError("FOUNDATION_PARENT_MATERIALIZER_REFRESH_TRANSITION_DRIFT") from exc
+            expected = transition_for(source)
+            if observed != expected:
+                _fail("FOUNDATION_PARENT_MATERIALIZER_REFRESH_TRANSITION_DRIFT")
+
+        def state() -> tuple[dict[str, Any], Path, Path]:
+            source = self._read_materializer_receipt(root)
+            if source["root_binding_id"] != evidence.root_binding_id:
+                _fail("FOUNDATION_PARENT_MATERIALIZER_RECEIPT_DRIFT")
+            archive_dir = root / _MATERIALIZER_REFRESH_DIR
+            archive = archive_dir / f"{_MATERIALIZER_REFRESH_SOURCE}.json"
+            transition = archive_dir / f"{_MATERIALIZER_REFRESH_SOURCE}-{target['receipt_sha256']}.json"
+            return source, archive, transition
+
+        source, archive, transition = state()
+        if source == target:
+            if not archive.exists() or not transition.exists():
+                _fail("FOUNDATION_PARENT_MATERIALIZER_REFRESH_SOURCE_REJECTED")
+            self._private(archive.parent, 0o700, "FOUNDATION_PARENT_MATERIALIZER_REFRESH_TRANSITION_DRIFT")
+            self._private(archive, 0o600, "FOUNDATION_PARENT_MATERIALIZER_REFRESH_TRANSITION_DRIFT")
+            try:
+                archived = self._validate_materializer_receipt(json.loads(archive.read_text(encoding="utf-8")), root, "FOUNDATION_PARENT_MATERIALIZER_REFRESH_TRANSITION_DRIFT")
+                if archived["receipt_sha256"] != _MATERIALIZER_REFRESH_SOURCE:
+                    _fail("FOUNDATION_PARENT_MATERIALIZER_REFRESH_TRANSITION_DRIFT")
+            except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+                raise RuntimeBootstrapError("FOUNDATION_PARENT_MATERIALIZER_REFRESH_TRANSITION_DRIFT") from exc
+            verify_transition(transition, archived)
+            return target
+        if source["receipt_sha256"] != _MATERIALIZER_REFRESH_SOURCE:
+            _fail("FOUNDATION_PARENT_MATERIALIZER_REFRESH_SOURCE_REJECTED")
+        if stable(source) != stable(target):
+            _fail("FOUNDATION_PARENT_MATERIALIZER_REFRESH_STABLE_DRIFT")
+
+        lock = root / _MATERIALIZER_REFRESH_LOCK
+        try:
+            descriptor = os.open(lock, os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0), 0o600)
+        except OSError as exc:
+            raise RuntimeBootstrapError("FOUNDATION_PARENT_MATERIALIZER_REFRESH_LOCK_UNAVAILABLE") from exc
+        try:
+            self._private(lock, 0o600, "FOUNDATION_PARENT_MATERIALIZER_REFRESH_LOCK_UNSAFE")
+            fcntl.flock(descriptor, fcntl.LOCK_EX)
+            source, archive, transition = state()
+            if source == target:
+                if not archive.exists() or not transition.exists():
+                    _fail("FOUNDATION_PARENT_MATERIALIZER_REFRESH_TRANSITION_DRIFT")
+                verify_transition(transition, json.loads(archive.read_text(encoding="utf-8")))
+                return target
+            if source["receipt_sha256"] != _MATERIALIZER_REFRESH_SOURCE or stable(source) != stable(target):
+                _fail("FOUNDATION_PARENT_MATERIALIZER_REFRESH_SOURCE_REJECTED")
+            archive_dir = archive.parent
+            if archive_dir.exists() or archive_dir.is_symlink():
+                self._private(archive_dir, 0o700, "FOUNDATION_PARENT_MATERIALIZER_REFRESH_TRANSITION_DRIFT")
+                if not archive.exists() or not transition.exists():
+                    _fail("FOUNDATION_PARENT_MATERIALIZER_REFRESH_TRANSITION_DRIFT")
+                try:
+                    archived = self._validate_materializer_receipt(json.loads(archive.read_text(encoding="utf-8")), root, "FOUNDATION_PARENT_MATERIALIZER_REFRESH_TRANSITION_DRIFT")
+                except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+                    raise RuntimeBootstrapError("FOUNDATION_PARENT_MATERIALIZER_REFRESH_TRANSITION_DRIFT") from exc
+                if archived != source:
+                    _fail("FOUNDATION_PARENT_MATERIALIZER_REFRESH_TRANSITION_DRIFT")
+                verify_transition(transition, source)
+            else:
+                try:
+                    archive_dir.mkdir(mode=0o700)
+                    self._private(archive_dir, 0o700, "FOUNDATION_PARENT_MATERIALIZER_REFRESH_TRANSITION_DRIFT")
+                    for path, value in ((archive, source), (transition, transition_for(source))):
+                        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
+                        with os.fdopen(fd, "wb") as output:
+                            output.write(canonical_bytes(value)); output.flush(); os.fsync(output.fileno())
+                    self._fsync_directory(archive_dir)
+                except OSError as exc:
+                    raise RuntimeBootstrapError("FOUNDATION_PARENT_MATERIALIZER_REFRESH_WRITE_FAILED") from exc
+            self._atomic_json(receipt_path, target)
+            self._fsync_directory(root)
+            refreshed = self._read_materializer_receipt(root)
+            if refreshed != target:
+                _fail("FOUNDATION_PARENT_MATERIALIZER_REFRESH_WRITE_FAILED")
+            self._verify_refresh_container(root, evidence, config, config_hash)
+            return target
+        finally:
+            try:
+                fcntl.flock(descriptor, fcntl.LOCK_UN)
+            finally:
+                os.close(descriptor)
 
     def build_adapter(self, roots: dict[str, Any]) -> Any:
         """Return an adapter only after the task-start gate has passed.
