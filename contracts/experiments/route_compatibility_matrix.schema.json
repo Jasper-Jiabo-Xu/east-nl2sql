@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["matrix_id", "s0_boundary", "routes"],
+  "properties": {
+    "matrix_id": {"const": "EAS-125-six-route-dual-axis-v1"},
+    "s0_boundary": {"const": "question_public_schema_read_only_db"},
+    "routes": {
+      "type": "array",
+      "minItems": 6,
+      "maxItems": 6,
+      "items": {
+        "type": "object",
+        "oneOf": [
+          {"additionalProperties": false, "required": ["baseline_id", "provider_compatibility", "s0_method_compatibility", "overall_runnable", "reason"], "properties": {"baseline_id": {"enum": ["DeepEye-SQL", "DataGallery-Text2SQL", "JoyDataAgent-SQL", "ReFoRCE", "AutoLink"]}, "provider_compatibility": {"enum": ["SUPPORTED_NATIVE_CONFIG", "SUPPORTED_VIA_HASHED_PROVIDER_OVERLAY"]}, "s0_method_compatibility": {"const": "S0_METHOD_INCOMPATIBLE"}, "overall_runnable": {"const": false}, "reason": {"type": "string", "minLength": 1}}},
+          {"additionalProperties": false, "required": ["baseline_id", "provider_compatibility", "s0_method_compatibility", "overall_runnable", "reason", "launcher_contract"], "properties": {"baseline_id": {"const": "Databao Agent"}, "provider_compatibility": {"const": "SUPPORTED_NATIVE_CONFIG"}, "s0_method_compatibility": {"const": "SUPPORTED_NATIVE_METHOD"}, "overall_runnable": {"const": true}, "reason": {"type": "string", "minLength": 1}, "launcher_contract": {"const": "databao_launcher_contract.json"}}}
+        ]
+      }
+    }
+  }
+}

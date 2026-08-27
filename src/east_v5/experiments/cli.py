@@ -22,6 +22,7 @@ def main() -> int:
     run_parser.add_argument("--dataset-manifest", required=True)
     run_parser.add_argument("--baseline-run-manifest", required=True)
     run_parser.add_argument("--output-dir", required=True)
+    run_parser.add_argument("--native-worktree-root")
     run_parser.add_argument("--mode", choices=["concurrent", "serial"], default="concurrent")
 
     consume_parser = subparsers.add_parser("consume-s0", help="Validate a frozen S0 dataset manifest without calling a model.")
@@ -36,7 +37,7 @@ def main() -> int:
             validate_run_manifest(load_json(Path(args.baseline_run_manifest)))
             print(json.dumps({"status": "ok"}, ensure_ascii=False, sort_keys=True))
         elif args.command == "run-smoke":
-            summary = run_harness(Path(args.experiment_contract), Path(args.dataset_manifest), Path(args.baseline_run_manifest), Path(args.output_dir), args.mode)
+            summary = run_harness(Path(args.experiment_contract), Path(args.dataset_manifest), Path(args.baseline_run_manifest), Path(args.output_dir), args.mode, Path(args.native_worktree_root) if args.native_worktree_root else None)
             print(json.dumps(summary, ensure_ascii=False, sort_keys=True))
         elif args.command == "consume-s0":
             receipt = Path(args.evidence_receipt) if args.evidence_receipt else None

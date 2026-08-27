@@ -1,0 +1,10 @@
+{
+  "overlay_version": "eas125-autolink-provider-v4-v1",
+  "upstream_commit": "26c723158445d5c831290315c9a93ba76eb5bd0e",
+  "routes": [
+    {"stage":"complete_schema","path":"run/complete_schema.py","original_sha256":"246759982c2ae7e315122f5860d613950a8ae08465d13c53d3f0c7cc5332c425","source_model":"deepseek-chat","route":"non_thinking"},
+    {"stage":"sql_generation","path":"run/sql_generation.py","original_sha256":"0d2400a50b55d01ec3530291993a0215fde2ef5d7b89c7ed72e2ba480f8887a0","source_model":"deepseek-reasoner","route":"thinking"},
+    {"stage":"sql_revise","path":"run/sql_revise.py","original_sha256":"df4ba9c513ac41e69f5893bcbd8ad55b1edc65a736488b25a5b61dd0a59ecd7e","source_model":"deepseek-reasoner","route":"thinking"},
+    {"stage":"sql_selection","path":"run/sql_selection.py","original_sha256":"74380c0c5d4406ce501be25d61a3da916ba877c03822a824024444d384d405a4","source_model":"deepseek-reasoner","route":"thinking"}
+  ]
+}

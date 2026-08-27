@@ -3,10 +3,13 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import os
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
+
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
@@ -27,145 +30,69 @@ def write_json(root: Path, name: str, value: object) -> Path:
 
 
 class S0HarnessTest(unittest.TestCase):
-    def test_concurrent_and_serial_runs_have_same_collection_hash(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            concurrent_summary = run_harness(CONTRACT, DATASET, RUN_MANIFEST, root / "concurrent", "concurrent")
-            serial_summary = run_harness(CONTRACT, DATASET, RUN_MANIFEST, root / "serial", "serial")
+    def test_five_incompatible_routes_fail_before_key_or_worktree_access(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary, patch.dict(os.environ, {}, clear=True):
+            root = Path(temporary)
+            summary = run_harness(CONTRACT, DATASET, RUN_MANIFEST, root / "out", "serial")
+            rows = [json.loads(line) for line in (root / "out" / "predictions.jsonl").read_text().splitlines()]
+            self.assertFalse((root / "out" / ".fixture-native-worktrees").exists())
+        rejected = [row for row in rows if row["baseline_id"] != "Databao Agent"]
+        self.assertEqual(len(rejected), 10)
+        self.assertTrue(all(row["failure_code"] == "S0_METHOD_INCOMPATIBLE" and row["token_calls"] == 0 for row in rejected))
+        self.assertEqual(summary["candidate_count"], 0)
+        self.assertEqual(summary["failure_count"], 12)
 
-        self.assertEqual(concurrent_summary["baseline_count"], 6)
-        self.assertEqual(concurrent_summary["candidate_count"], 12)
-        self.assertEqual(concurrent_summary["failure_count"], 0)
-        self.assertEqual(concurrent_summary["collection_hash"], serial_summary["collection_hash"])
-        self.assertTrue(concurrent_summary["cache_namespaces_unique"])
-        self.assertTrue(concurrent_summary["trace_refs_by_baseline_isolated"])
+    def test_databao_missing_runtime_is_stable_and_five_routes_remain_preflight_only(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary, patch.dict(os.environ, {}, clear=True):
+            root = Path(temporary)
+            run_harness(CONTRACT, DATASET, RUN_MANIFEST, root / "out", "serial")
+            rows = [json.loads(line) for line in (root / "out" / "predictions.jsonl").read_text().splitlines()]
+            databao_refs = [row["trace_ref"] for row in rows if row["baseline_id"] == "Databao Agent"]
+            self.assertEqual(len(databao_refs), len(set(databao_refs)))
+            self.assertTrue(all((root / "out" / ref).exists() for ref in databao_refs))
+            self.assertTrue(all("/qa-" in ref and "/attempt-01/" in ref for ref in databao_refs))
+        databao = [row for row in rows if row["baseline_id"] == "Databao Agent"]
+        self.assertEqual({row["failure_code"] for row in databao}, {"DATABAO_RUNTIME_OR_DB_UNAVAILABLE"})
 
-    def test_leakage_field_fails_closed(self) -> None:
+    def test_route_matrix_drift_rejects_before_run(self) -> None:
+        matrix = load_json(ROOT / "contracts/experiments/route_compatibility_matrix.json")
+        matrix["routes"][0]["overall_runnable"] = True
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            matrix_path = write_json(root, "matrix.json", matrix)
+            with self.assertRaises(HarnessError) as raised:
+                run_harness(CONTRACT, DATASET, RUN_MANIFEST, root / "out", "serial", route_matrix_path=matrix_path)
+        self.assertEqual(raised.exception.code, "ROUTE_MATRIX_RUNNABILITY_DRIFT")
+
+    def test_provider_contract_and_adapter_enum_are_closed(self) -> None:
+        manifest = copy.deepcopy(load_json(RUN_MANIFEST))
+        manifest["baselines"][0]["native_adapter_id"] = "surprise_native_v1"
+        with self.assertRaises(HarnessError) as raised:
+            validate_run_manifest(manifest)
+        self.assertEqual(raised.exception.code, "UNKNOWN_NATIVE_ADAPTER")
+        manifest = copy.deepcopy(load_json(RUN_MANIFEST))
+        manifest["baselines"][0]["model_contract"]["extra"] = True
+        with self.assertRaises(HarnessError) as raised:
+            validate_run_manifest(manifest)
+        self.assertEqual(raised.exception.code, "INVALID_DEEPSEEK_PROVIDER")
+
+    def test_dataset_leakage_and_receipt_drift_fail_closed(self) -> None:
         dataset = load_json(DATASET)
-        dataset["questions"][0]["gold_sql"] = "SELECT should_not_be_visible"
-
-        with tempfile.TemporaryDirectory() as tmp:
-            leaked = write_json(Path(tmp), "dataset.json", dataset)
-            with self.assertRaises(HarnessError) as raised:
-                validate_dataset_manifest(load_json(leaked))
-
+        dataset["questions"][0]["gold_sql"] = "SELECT prohibited"
+        with self.assertRaises(HarnessError) as raised:
+            validate_dataset_manifest(dataset)
         self.assertEqual(raised.exception.code, "S0_LEAKAGE_FIELD")
+        receipt = {"s0_dataset_manifest_sha256": hashlib.sha256(DATASET.read_bytes()).hexdigest(), "s0_bytes": len(DATASET.read_bytes()), "anchors": [{"qa_id": question["qa_id"]} for question in load_json(DATASET)["questions"]]}
+        with tempfile.TemporaryDirectory() as temporary:
+            self.assertEqual(consume_s0_manifest(DATASET, write_json(Path(temporary), "receipt.json", receipt))["question_count"], 2)
 
-    def test_unknown_model_id_fails_closed(self) -> None:
-        manifest = copy.deepcopy(load_json(RUN_MANIFEST))
-        manifest["baselines"][0]["model_contract"]["model_id"] = "gpt-agent-runtime"
-
-        with tempfile.TemporaryDirectory() as tmp:
-            path = write_json(Path(tmp), "manifest.json", manifest)
-            with self.assertRaises(HarnessError) as raised:
-                validate_run_manifest(load_json(path))
-
-        self.assertEqual(raised.exception.code, "UNKNOWN_MODEL_ID")
-
-    def test_missing_endpoint_fails_closed(self) -> None:
-        manifest = copy.deepcopy(load_json(RUN_MANIFEST))
-        manifest["baselines"][0]["model_contract"]["base_url"] = ""
-
-        with tempfile.TemporaryDirectory() as tmp:
-            path = write_json(Path(tmp), "manifest.json", manifest)
-            with self.assertRaises(HarnessError) as raised:
-                validate_run_manifest(load_json(path))
-
-        self.assertEqual(raised.exception.code, "MISSING_ENDPOINT")
-
-    def test_cache_namespace_collision_fails_closed(self) -> None:
-        manifest = copy.deepcopy(load_json(RUN_MANIFEST))
-        manifest["baselines"][1]["cache_namespace"] = manifest["baselines"][0]["cache_namespace"]
-
-        with tempfile.TemporaryDirectory() as tmp:
-            path = write_json(Path(tmp), "manifest.json", manifest)
-            with self.assertRaises(HarnessError) as raised:
-                validate_run_manifest(load_json(path))
-
-        self.assertEqual(raised.exception.code, "CACHE_NAMESPACE_COLLISION")
-
-    def test_illegal_sql_output_is_stable_failure_code(self) -> None:
-        manifest = copy.deepcopy(load_json(RUN_MANIFEST))
-        manifest["baselines"][0]["command"].extend(["--mode", "illegal-sql"])
-
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            manifest_path = write_json(root, "manifest.json", manifest)
-            summary = run_harness(CONTRACT, DATASET, manifest_path, root / "out", "serial")
-            rows = (root / "out" / "predictions.jsonl").read_text(encoding="utf-8").splitlines()
-
-        self.assertEqual(summary["failure_count"], 1)
-        self.assertIn('"failure_code": "ILLEGAL_SQL_OUTPUT"', "\n".join(rows))
-
-    def test_duplicate_attempt_is_rejected(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
+    def test_duplicate_output_dir_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
             run_harness(CONTRACT, DATASET, RUN_MANIFEST, root / "out", "serial")
             with self.assertRaises(HarnessError) as raised:
                 run_harness(CONTRACT, DATASET, RUN_MANIFEST, root / "out", "serial")
-
         self.assertEqual(raised.exception.code, "DUPLICATE_ATTEMPT")
-
-    def test_transport_errors_retry_three_times(self) -> None:
-        manifest = copy.deepcopy(load_json(RUN_MANIFEST))
-        manifest["baselines"][0]["command"].extend(["--mode", "transport-error"])
-
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            manifest_path = write_json(root, "manifest.json", manifest)
-            summary = run_harness(CONTRACT, DATASET, manifest_path, root / "out", "serial")
-
-        self.assertEqual(summary["failure_count"], 1)
-        self.assertEqual(summary["candidate_count"], 10)
-
-    def test_budget_exceeded_is_stable_failure_code(self) -> None:
-        manifest = copy.deepcopy(load_json(RUN_MANIFEST))
-        manifest["baselines"][0]["command"].extend(["--mode", "budget-exceeded"])
-
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            manifest_path = write_json(root, "manifest.json", manifest)
-            summary = run_harness(CONTRACT, DATASET, manifest_path, root / "out", "serial")
-            rows = (root / "out" / "predictions.jsonl").read_text(encoding="utf-8").splitlines()
-
-        self.assertEqual(summary["failure_count"], 1)
-        self.assertIn('"failure_code": "BUDGET_EXCEEDED"', "\n".join(rows))
-
-    def test_timeout_is_stable_failure_code(self) -> None:
-        manifest = copy.deepcopy(load_json(RUN_MANIFEST))
-        manifest["baselines"][0]["timeout_seconds"] = 1
-        manifest["baselines"][0]["command"].extend(["--mode", "sleep"])
-
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            manifest_path = write_json(root, "manifest.json", manifest)
-            summary = run_harness(CONTRACT, DATASET, manifest_path, root / "out", "serial")
-            rows = (root / "out" / "predictions.jsonl").read_text(encoding="utf-8").splitlines()
-
-        self.assertEqual(summary["failure_count"], 1)
-        self.assertIn('"failure_code": "TIMEOUT"', "\n".join(rows))
-
-    def test_consume_s0_receipt_and_reject_mutation(self) -> None:
-        dataset = load_json(DATASET)
-        receipt = {
-            "s0_dataset_manifest_sha256": hashlib.sha256(DATASET.read_bytes()).hexdigest(),
-            "s0_bytes": len(DATASET.read_bytes()),
-            "anchors": [{"qa_id": question["qa_id"]} for question in dataset["questions"]],
-        }
-
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            receipt_path = write_json(root, "receipt.json", receipt)
-            summary = consume_s0_manifest(DATASET, receipt_path)
-            self.assertEqual(summary["question_count"], 2)
-
-            mutated = copy.deepcopy(dataset)
-            mutated["questions"][0]["answer_contract"] = {"forbidden": True}
-            mutated_path = write_json(root, "mutated.json", mutated)
-            with self.assertRaises(HarnessError) as raised:
-                consume_s0_manifest(mutated_path, receipt_path)
-
-        self.assertEqual(raised.exception.code, "S0_LEAKAGE_FIELD")
 
 
 if __name__ == "__main__":

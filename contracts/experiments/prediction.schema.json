@@ -16,7 +16,8 @@
     "failure_code",
     "trace_ref",
     "token_calls",
-    "token_total"
+    "token_total",
+    "latency_ms"
   ],
   "additionalProperties": false,
   "properties": {
@@ -65,6 +66,10 @@
     },
     "token_total": {
       "type": "integer"
+    },
+    "latency_ms": {
+      "type": "integer",
+      "minimum": 0
     }
   }
 }
