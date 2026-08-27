@@ -125,7 +125,6 @@ class S0HarnessTest(unittest.TestCase):
     def test_real_transport_requires_environment_only_deepseek_key(self) -> None:
         manifest = copy.deepcopy(load_json(RUN_MANIFEST))
         manifest["baselines"][0]["transport_mode"] = "native"
-        manifest["baselines"][0]["command"] = ["{python}", "{upstream_worktree}/runner/run.py", "--dataset", "{dataset}", "--output-jsonl", "{output_jsonl}", "--provider-config", "{provider_config}"]
         with tempfile.TemporaryDirectory() as tmp, patch.dict("os.environ", {}, clear=True):
             path = write_json(Path(tmp), "manifest.json", manifest)
             with self.assertRaises(HarnessError) as raised:

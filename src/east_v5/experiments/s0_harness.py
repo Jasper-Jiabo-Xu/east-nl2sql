@@ -19,8 +19,7 @@ HARD_RULES_HASH = "d00fa6028ff729f2776a7e779db2f530bcba8fba892765c8aa08c6e0aee6b
 ROOT = Path(__file__).resolve().parents[3]
 SRC = ROOT / "src"
 DEEPSEEK_CONTRACTS = {
-    "deepseek-chat": {"endpoint_kind": "openai_chat_completions", "reasoning_enabled": False, "base_url": "https://api.deepseek.com/v1"},
-    "deepseek-reasoner": {"endpoint_kind": "openai_chat_completions", "reasoning_enabled": True, "base_url": "https://api.deepseek.com/v1"},
+    "deepseek-v4-flash": {"endpoint_kind": "openai_chat_completions", "reasoning_enabled": False, "base_url": "https://api.deepseek.com"},
 }
 FORBIDDEN_KEYS = {
     "gold_sql",
@@ -137,6 +136,25 @@ def validate_run_manifest(manifest: dict[str, Any]) -> None:
             raise HarnessError("INVALID_MODEL_BUDGET")
         if not isinstance(model.get("timeout_seconds"), int) or model["timeout_seconds"] < 1 or model.get("retry_count") != 3:
             raise HarnessError("INVALID_MODEL_RETRY_POLICY")
+        routes = baseline.get("model_routes")
+        route_keys = {"stage", "model", "thinking", "reasoning_effort", "temperature", "max_tokens", "timeout_seconds", "retry_count", "call_budget", "token_budget"}
+        if not isinstance(routes, list) or not routes or len({route.get("stage") for route in routes if isinstance(route, dict)}) != len(routes):
+            raise HarnessError("INVALID_MODEL_ROUTES")
+        if baseline["baseline_id"] == "AutoLink" and [route.get("stage") for route in routes if isinstance(route, dict)] != ["complete_schema", "sql_generation", "sql_revise", "sql_selection"]:
+            raise HarnessError("AUTOLINK_MODEL_ROUTE_DRIFT")
+        for route in routes:
+            if not isinstance(route, dict) or set(route) != route_keys or route.get("model") != "deepseek-v4-flash" or not isinstance(route.get("thinking"), bool) or route.get("retry_count") != 3 or not all(isinstance(route.get(key), int) and route[key] > 0 for key in ("max_tokens", "timeout_seconds", "call_budget", "token_budget")) or route["token_budget"] < route["max_tokens"]:
+                raise HarnessError("INVALID_MODEL_ROUTES")
+            if route["thinking"]:
+                if route.get("reasoning_effort") != "high" or route.get("temperature") is not None:
+                    raise HarnessError("INVALID_MODEL_ROUTES")
+            elif route.get("reasoning_effort") is not None or route.get("temperature") != 0:
+                raise HarnessError("INVALID_MODEL_ROUTES")
+        if baseline["baseline_id"] == "AutoLink":
+            overlay = baseline.get("provider_overlay")
+            expected_overlay = {"upstream_commit", "original_file_sha256", "patch_sha256", "patched_tree_sha256"}
+            if not isinstance(overlay, dict) or set(overlay) != expected_overlay or overlay.get("upstream_commit") != baseline["commit"] or not isinstance(overlay.get("original_file_sha256"), dict) or set(overlay["original_file_sha256"]) != {"complete_schema", "sql_generation", "sql_revise", "sql_selection"} or not all(isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value) for value in [overlay["patch_sha256"], overlay["patched_tree_sha256"], *overlay["original_file_sha256"].values()]):
+                raise HarnessError("AUTOLINK_OVERLAY_EVIDENCE_DRIFT")
         if not isinstance(baseline.get("commit"), str) or not re.fullmatch(r"[0-9a-f]{40}", baseline["commit"]): raise HarnessError("MISSING_BASELINE_COMMIT")
         if not isinstance(baseline.get("repo_url"), str) or not baseline["repo_url"].startswith("https://") or baseline.get("license") in {"", None, "upstream-license-review-required"} or not isinstance(baseline.get("native_entrypoint"), dict) or set(baseline["native_entrypoint"]) != {"path", "symbol", "arguments"} or not all(isinstance(baseline["native_entrypoint"].get(key), str) and baseline["native_entrypoint"][key] for key in ("path", "symbol")) or not isinstance(baseline["native_entrypoint"].get("arguments"), list):
             raise HarnessError("INVALID_UPSTREAM_EVIDENCE")
