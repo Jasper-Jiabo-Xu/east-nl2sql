@@ -18,7 +18,10 @@ BASELINE_IDS = ("DeepEye-SQL", "DataGallery-Text2SQL", "JoyDataAgent-SQL", "Data
 HARD_RULES_HASH = "d00fa6028ff729f2776a7e779db2f530bcba8fba892765c8aa08c6e0aee6b463"
 ROOT = Path(__file__).resolve().parents[3]
 SRC = ROOT / "src"
-DEEPSEEK_MODEL_IDS = {"deepseek-chat", "deepseek-reasoner"}
+DEEPSEEK_CONTRACTS = {
+    "deepseek-chat": {"endpoint_kind": "openai_chat_completions", "reasoning_enabled": False, "base_url": "https://api.deepseek.com/v1"},
+    "deepseek-reasoner": {"endpoint_kind": "openai_chat_completions", "reasoning_enabled": True, "base_url": "https://api.deepseek.com/v1"},
+}
 FORBIDDEN_KEYS = {
     "gold_sql",
     "answer_contract",
@@ -122,25 +125,25 @@ def validate_run_manifest(manifest: dict[str, Any]) -> None:
         model = baseline.get("model_contract")
         if not isinstance(model, dict):
             raise HarnessError("MISSING_MODEL_CONTRACT")
-        if model.get("provider") != "deepseek_openai_compatible":
-            raise HarnessError("INVALID_DEEPSEEK_PROVIDER")
-        if model.get("model_id") not in DEEPSEEK_MODEL_IDS:
-            raise HarnessError("UNKNOWN_MODEL_ID")
-        if not isinstance(model.get("base_url"), str) or not model["base_url"].startswith("https://"):
+        required_model = {"provider", "model_id", "base_url", "endpoint_kind", "api_key_env", "reasoning_enabled", "temperature", "max_tokens", "timeout_seconds", "retry_count"}
+        if set(model) != required_model or model.get("provider") != "deepseek_openai_compatible": raise HarnessError("INVALID_DEEPSEEK_PROVIDER")
+        expected = DEEPSEEK_CONTRACTS.get(model.get("model_id"))
+        if expected is None: raise HarnessError("UNKNOWN_MODEL_ID")
+        if not isinstance(model.get("base_url"), str) or not model["base_url"]:
             raise HarnessError("MISSING_ENDPOINT")
-        if model.get("api_key_env") != "DEEPSEEK_API_KEY":
-            raise HarnessError("INVALID_DEEPSEEK_KEY_SOURCE")
-        if not isinstance(model.get("reasoning_enabled"), bool):
-            raise HarnessError("INVALID_REASONING_FLAG")
-        if not isinstance(model.get("temperature"), (int, float)) or not isinstance(model.get("max_tokens"), int) or model["max_tokens"] < 1:
+        if any(model.get(key) != value for key, value in expected.items()): raise HarnessError("DEEPSEEK_CONTRACT_DRIFT")
+        if model.get("api_key_env") != "DEEPSEEK_API_KEY": raise HarnessError("INVALID_DEEPSEEK_KEY_SOURCE")
+        if isinstance(model.get("temperature"), bool) or not isinstance(model.get("temperature"), (int, float)) or isinstance(model.get("max_tokens"), bool) or not isinstance(model.get("max_tokens"), int) or model["max_tokens"] < 1:
             raise HarnessError("INVALID_MODEL_BUDGET")
         if not isinstance(model.get("timeout_seconds"), int) or model["timeout_seconds"] < 1 or model.get("retry_count") != 3:
             raise HarnessError("INVALID_MODEL_RETRY_POLICY")
-        if baseline.get("commit") in ("", None, "unknown"):
-            raise HarnessError("MISSING_BASELINE_COMMIT")
-        if not isinstance(baseline.get("repo_url"), str) or not baseline["repo_url"].startswith("https://") or not isinstance(baseline.get("license"), str) or not baseline["license"] or not isinstance(baseline.get("native_entrypoint"), str) or not baseline["native_entrypoint"]:
+        if not isinstance(baseline.get("commit"), str) or not re.fullmatch(r"[0-9a-f]{40}", baseline["commit"]): raise HarnessError("MISSING_BASELINE_COMMIT")
+        if not isinstance(baseline.get("repo_url"), str) or not baseline["repo_url"].startswith("https://") or baseline.get("license") in {"", None, "upstream-license-review-required"} or not isinstance(baseline.get("native_entrypoint"), dict) or set(baseline["native_entrypoint"]) != {"path", "symbol", "arguments"} or not all(isinstance(baseline["native_entrypoint"].get(key), str) and baseline["native_entrypoint"][key] for key in ("path", "symbol")) or not isinstance(baseline["native_entrypoint"].get("arguments"), list):
             raise HarnessError("INVALID_UPSTREAM_EVIDENCE")
         adapter = NativeAdapter.from_manifest(baseline)
+        evidence = baseline["upstream_evidence"]
+        if evidence["entrypoint_path"] != baseline["native_entrypoint"]["path"] or not any(evidence["entrypoint_path"] in token for token in baseline["command"]):
+            raise HarnessError("NATIVE_ENTRYPOINT_EVIDENCE_DRIFT")
         if adapter.adapter_id != ADAPTER_IDS[index] or adapter.adapter_id in adapter_ids:
             raise HarnessError("NATIVE_ADAPTER_MAPPING_DRIFT")
         adapter_ids.add(adapter.adapter_id)
@@ -201,6 +204,21 @@ def _paths(output_dir: Path, baseline_id: str, attempt: int) -> RunPaths:
     safe_id = baseline_id.lower().replace(" ", "_").replace("-", "_")
     baseline_dir = output_dir / "runs" / safe_id / f"attempt-{attempt:02d}"
     return RunPaths(output_dir, baseline_dir, baseline_dir / "raw_predictions.jsonl", baseline_dir / "predictions.jsonl", baseline_dir / "trace.json")
+
+
+def _fixture_worktrees(manifest: dict[str, Any], output_dir: Path) -> Path:
+    """Materialize six non-network pinned-worktree shapes for contract tests only."""
+    root = output_dir / ".fixture-native-worktrees"; root.mkdir(parents=True, exist_ok=True)
+    for baseline in manifest["baselines"]:
+        evidence = baseline["upstream_evidence"]; tree = root / evidence["worktree_id"]; tree.mkdir(exist_ok=True)
+        files = {"license": tree / evidence["license_path"], "entrypoint": tree / evidence["entrypoint_path"], "provider_config": tree / evidence["provider_config_path"]}
+        for path in files.values(): path.parent.mkdir(parents=True, exist_ok=True)
+        files["license"].write_text(baseline["license"] + "\n", encoding="utf-8")
+        files["provider_config"].write_text(json.dumps(baseline["model_contract"], sort_keys=True), encoding="utf-8")
+        files["entrypoint"].write_text("import sys\nfrom east_v5.experiments.pinned_native_stub import main\nsys.argv += ['--adapter-id', '" + baseline["native_adapter_id"] + "']\nraise SystemExit(main())\n", encoding="utf-8")
+        evidence["source_hashes"] = {name: _sha_file(path) for name, path in files.items()}
+        (tree / "east-upstream-lock.json").write_text(json.dumps({"repo_url": baseline["repo_url"], "commit": baseline["commit"]}, sort_keys=True), encoding="utf-8")
+    return root
 
 
 def _atomic_write_json(path: Path, value: Any) -> None:
@@ -271,22 +289,27 @@ def _failure_from_process(returncode: int, stderr: str) -> str:
     return "INVALID_BASELINE_OUTPUT"
 
 
-def _run_one(baseline: dict[str, Any], dataset_path: Path, dataset: dict[str, Any], output_dir: Path, max_attempts: int) -> list[dict[str, Any]]:
+def _run_one(baseline: dict[str, Any], dataset_path: Path, dataset: dict[str, Any], output_dir: Path, max_attempts: int, native_worktree_root: Path | None) -> list[dict[str, Any]]:
     baseline_id = baseline["baseline_id"]
     adapter = NativeAdapter.from_manifest(baseline)
     adapter.require_credentials(baseline["model_contract"])
+    worktree = adapter.resolve_worktree(native_worktree_root)
     last_failure = "TRANSPORT_ERROR"
     for attempt in range(1, max_attempts + 1):
         paths = _paths(output_dir, baseline_id, attempt)
         if paths.predictions_jsonl.exists() or paths.raw_jsonl.exists():
             raise HarnessError("DUPLICATE_ATTEMPT", str(paths.baseline_dir))
         paths.baseline_dir.mkdir(parents=True, exist_ok=False)
+        provider_config = paths.baseline_dir / "deepseek-provider.json"
+        _atomic_write_json(provider_config, baseline["model_contract"])
         command = [
             token.format(
                 python=sys.executable,
                 dataset=str(dataset_path),
                 output_jsonl=str(paths.raw_jsonl),
                 baseline_id=baseline_id,
+                upstream_worktree=str(worktree),
+                provider_config=str(provider_config),
             )
             for token in adapter.command
         ]
@@ -348,7 +371,7 @@ def _run_one(baseline: dict[str, Any], dataset_path: Path, dataset: dict[str, An
     return [_prediction_failure(baseline, max_attempts, last_failure, "")]
 
 
-def run_harness(experiment_contract_path: Path, dataset_manifest_path: Path, baseline_run_manifest_path: Path, output_dir: Path, mode: str = "concurrent") -> dict[str, Any]:
+def run_harness(experiment_contract_path: Path, dataset_manifest_path: Path, baseline_run_manifest_path: Path, output_dir: Path, mode: str = "concurrent", native_worktree_root: Path | None = None) -> dict[str, Any]:
     contract = load_json(experiment_contract_path)
     dataset = load_json(dataset_manifest_path)
     manifest = load_json(baseline_run_manifest_path)
@@ -356,14 +379,23 @@ def run_harness(experiment_contract_path: Path, dataset_manifest_path: Path, bas
     validate_dataset_manifest(dataset)
     validate_run_manifest(manifest)
 
+    if native_worktree_root is None:
+        if not all(item["transport_mode"] == "fixture_stub" for item in manifest["baselines"]):
+            # Refuse missing credentials before reporting the worktree location.
+            # This keeps the native launch boundary deterministic and key-only.
+            for item in manifest["baselines"]:
+                NativeAdapter.from_manifest(item).require_credentials(item["model_contract"])
+            raise HarnessError("NATIVE_WORKTREE_ROOT_REQUIRED")
+        native_worktree_root = _fixture_worktrees(manifest, output_dir)
+
     output_dir.mkdir(parents=True, exist_ok=True)
     baselines = manifest["baselines"]
     max_attempts = contract["retry_policy"]["max_attempts"]
     if mode == "serial":
-        results = [_run_one(baseline, dataset_manifest_path, dataset, output_dir, max_attempts) for baseline in baselines]
+        results = [_run_one(baseline, dataset_manifest_path, dataset, output_dir, max_attempts, native_worktree_root) for baseline in baselines]
     elif mode == "concurrent":
         with concurrent.futures.ThreadPoolExecutor(max_workers=contract["concurrency"]) as executor:
-            futures = [executor.submit(_run_one, baseline, dataset_manifest_path, dataset, output_dir, max_attempts) for baseline in baselines]
+            futures = [executor.submit(_run_one, baseline, dataset_manifest_path, dataset, output_dir, max_attempts, native_worktree_root) for baseline in baselines]
             results = [future.result() for future in futures]
     else:
         raise HarnessError("INVALID_RUN_MODE")

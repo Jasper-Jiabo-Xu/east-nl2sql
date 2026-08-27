@@ -12,7 +12,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 
-from east_v5.experiments.s0_harness import HarnessError, consume_s0_manifest, load_json, run_harness, validate_dataset_manifest, validate_run_manifest
+from east_v5.experiments.s0_harness import HarnessError, _fixture_worktrees, consume_s0_manifest, load_json, run_harness, validate_dataset_manifest, validate_run_manifest
 
 
 FIXTURE_ROOT = ROOT / "fixtures" / "experiments" / "s0_synthetic"
@@ -28,6 +28,65 @@ def write_json(root: Path, name: str, value: object) -> Path:
 
 
 class S0HarnessTest(unittest.TestCase):
+    def _native_manifest(self, root: Path) -> tuple[dict[str, object], Path, Path]:
+        """Create an attested six-worktree shape without cloning or contacting upstream."""
+        manifest = copy.deepcopy(load_json(RUN_MANIFEST))
+        worktree_root = _fixture_worktrees(manifest, root / "pinned-worktrees")
+        for baseline in manifest["baselines"]:
+            baseline["transport_mode"] = "native"
+        return manifest, write_json(root, "native-manifest.json", manifest), worktree_root
+
+    def test_native_keyed_launch_consumes_six_attested_worktrees_and_unified_output(self) -> None:
+        expected_outer = {
+            "DeepEye-SQL": "deepeye_result",
+            "DataGallery-Text2SQL": "dataagent_result",
+            "JoyDataAgent-SQL": "joydata_answer",
+            "Databao Agent": "databao_thread",
+            "ReFoRCE": "reforce_result",
+            "AutoLink": "autolink_result",
+        }
+        with tempfile.TemporaryDirectory() as tmp, patch.dict("os.environ", {"DEEPSEEK_API_KEY": "fixture-key-never-persist"}, clear=False):
+            root = Path(tmp)
+            manifest, manifest_path, worktree_root = self._native_manifest(root)
+            summary = run_harness(CONTRACT, DATASET, manifest_path, root / "out", "serial", worktree_root)
+            predictions = [json.loads(line) for line in (root / "out" / "predictions.jsonl").read_text().splitlines()]
+            for baseline in manifest["baselines"]:
+                safe = baseline["baseline_id"].lower().replace(" ", "_").replace("-", "_")
+                raw = (root / "out" / "runs" / safe / "attempt-01" / "raw_predictions.jsonl").read_text()
+                trace = (root / "out" / "runs" / safe / "attempt-01" / "trace.json").read_text()
+                provider = json.loads((root / "out" / "runs" / safe / "attempt-01" / "deepseek-provider.json").read_text())
+                self.assertIn(expected_outer[baseline["baseline_id"]], raw)
+                self.assertIn(str(worktree_root / baseline["upstream_evidence"]["worktree_id"]), trace)
+                self.assertNotIn("fixture-key-never-persist", trace)
+                self.assertEqual(provider, baseline["model_contract"])
+        self.assertEqual((summary["baseline_count"], summary["candidate_count"], summary["failure_count"]), (6, 12, 0))
+        self.assertTrue(all(row["token_calls"] == 1 and row["attempt"] == 1 for row in predictions))
+
+    def test_attested_native_worktree_rejects_lock_and_source_drift(self) -> None:
+        for drift, expected in (("lock", "NATIVE_WORKTREE_LOCK_DRIFT"), ("source", "NATIVE_WORKTREE_SOURCE_DRIFT")):
+            with self.subTest(drift=drift), tempfile.TemporaryDirectory() as tmp, patch.dict("os.environ", {"DEEPSEEK_API_KEY": "fixture-key"}, clear=False):
+                root = Path(tmp)
+                manifest, manifest_path, worktree_root = self._native_manifest(root)
+                evidence = manifest["baselines"][0]["upstream_evidence"]
+                tree = worktree_root / evidence["worktree_id"]
+                target = tree / ("east-upstream-lock.json" if drift == "lock" else evidence["entrypoint_path"])
+                target.write_text(json.dumps({"repo_url": "https://invalid.example", "commit": "0" * 40}) if drift == "lock" else "drift", encoding="utf-8")
+                with self.assertRaises(HarnessError) as raised:
+                    run_harness(CONTRACT, DATASET, manifest_path, root / "out", "serial", worktree_root)
+            self.assertEqual(raised.exception.code, expected)
+
+    def test_provider_contract_is_closed_and_model_reasoning_is_pinned(self) -> None:
+        manifest = copy.deepcopy(load_json(RUN_MANIFEST))
+        manifest["baselines"][0]["model_contract"]["extra"] = True
+        with self.assertRaises(HarnessError) as raised:
+            validate_run_manifest(manifest)
+        self.assertEqual(raised.exception.code, "INVALID_DEEPSEEK_PROVIDER")
+        manifest = copy.deepcopy(load_json(RUN_MANIFEST))
+        manifest["baselines"][0]["model_contract"]["reasoning_enabled"] = True
+        with self.assertRaises(HarnessError) as raised:
+            validate_run_manifest(manifest)
+        self.assertEqual(raised.exception.code, "DEEPSEEK_CONTRACT_DRIFT")
+
     def test_concurrent_and_serial_runs_have_same_collection_hash(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -66,7 +125,7 @@ class S0HarnessTest(unittest.TestCase):
     def test_real_transport_requires_environment_only_deepseek_key(self) -> None:
         manifest = copy.deepcopy(load_json(RUN_MANIFEST))
         manifest["baselines"][0]["transport_mode"] = "native"
-        manifest["baselines"][0]["command"] = ["{upstream_worktree}/runner/run.py", "--dataset", "{dataset}", "--output-jsonl", "{output_jsonl}"]
+        manifest["baselines"][0]["command"] = ["{python}", "{upstream_worktree}/runner/run.py", "--dataset", "{dataset}", "--output-jsonl", "{output_jsonl}", "--provider-config", "{provider_config}"]
         with tempfile.TemporaryDirectory() as tmp, patch.dict("os.environ", {}, clear=True):
             path = write_json(Path(tmp), "manifest.json", manifest)
             with self.assertRaises(HarnessError) as raised:
