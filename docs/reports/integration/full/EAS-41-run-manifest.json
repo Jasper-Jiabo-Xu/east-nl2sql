@@ -1,0 +1,34 @@
+{
+  "schema_version": "v5.integration-full-run-manifest/v1",
+  "issue_key": "EAS-41",
+  "source_main_head": "9bdf86b1c5f369a8ee05bb94ba2e47aeb04414de",
+  "contract_versions": {
+    "event_query_context": "v5.event-query-context/v2",
+    "query_parameter_binding": "v5.query-parameter-binding/v1",
+    "event_regression": "v5.regression-passed-data-orm/v2"
+  },
+  "sanitized_event_artifacts": {
+    "approved_question_sql": "fcbb00d0c835a0f4873f284f0db54e404fcfac732ccee9392a8ddf728417ea2c",
+    "query_parameter_binding": "7f697df3a556e8aa9480999f39200f3baee8ba5a27f599c38400c8429372b27a",
+    "event_query_context": "e65407925bd1a39fa143c478eaf1bbb114454ea7154488eebc697b101de13e7f",
+    "database_copy_regression": "113e3d74c59c1771dc83606dd24da7cbc44ef65219d76f683b0365945e45f413",
+    "release_candidate": "d1cf1e16826c6389f2df58f544bba8e745a2733e466a1e6ce9cf6207ad7e8f4d"
+  },
+  "paths": {
+    "event": "010→110/QS→210→220→230→241/242+251/252→260(copy)→210→010",
+    "foundation_initial": "010→210→220→241→242→260(copy)→210→010",
+    "foundation_expansion_resume": "260 FOUNDATION_REQUIRED→210 foundation expansion→220→241→242→260(copy)→210→010"
+  },
+  "safety": {
+    "fixture_class": "approved_sanitized",
+    "formal_store": "temporary test SQLite only",
+    "copy_regression_keeps_source_unchanged": true,
+    "raw_data_or_model_response_persisted": false
+  },
+  "verification": {
+    "targeted_integration_tests": 39,
+    "repository_check_tests": 360,
+    "repository_check_command": "python3 scripts/v5.py check"
+  },
+  "replay_command": "python3 -m unittest tests.integration.full.test_full_release_e2e tests.integration.qs.test_question_sql_e2e tests.integration.data.test_event_dual_path tests.integration.foundation.test_foundation_e2e tests.agents.010.test_committer -v"
+}
